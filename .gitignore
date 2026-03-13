@@ -1,0 +1,24 @@
+.agents/
+.cursor/
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backend local caches and logs
+Backend/.gradle-user-home/
+Backend/bootrun.out.log
+Backend/bootrun.err.log
+
+# Frontend local dependencies and build output
+Frontend/node_modules/
+Frontend/.next/
+
+# Environment files
+.env
+.env.*
+
+# Temporary commit message file
+COMMIT_MSG.txt
