@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { useEffect, useState } from "react"
+import { Info, Sparkles } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Sparkles, Info } from "lucide-react"
-import axios from "axios"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { type Experience } from "@/lib/mock-data"
 import { DropZone } from "./drop-zone"
 import { ExperienceCard } from "./experience-card"
@@ -14,13 +14,47 @@ export function ExperienceVault() {
   const [selectedExperience, setSelectedExperience] = useState<Experience | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [experiences, setExperiences] = useState<Experience[]>([])
+  const [isClassifying, setIsClassifying] = useState(false)
 
   const fetchExperiences = async () => {
     try {
-      const { data } = await axios.get("/api/experiences")
+      const response = await fetch("/api/experiences", {
+        cache: "no-store",
+      })
+
+      if (!response.ok) {
+        throw new Error("경험 목록을 불러오는 데 실패했습니다.")
+      }
+
+      const data = (await response.json()) as Experience[]
       setExperiences(data)
     } catch (error) {
       console.error("Failed to fetch experiences:", error)
+    }
+  }
+
+  const handleAutoClassify = async () => {
+    try {
+      setIsClassifying(true)
+      const response = await fetch("/api/experiences/reclassify-all", {
+        method: "POST",
+      })
+
+      if (!response.ok) {
+        throw new Error("자동 분류에 실패했습니다.")
+      }
+
+      await fetchExperiences()
+      toast.success("자동 분류 완료", {
+        description: "모든 경험 데이터가 AI에 의해 재분류되었습니다.",
+      })
+    } catch (error) {
+      console.error("Auto classify failed:", error)
+      toast.error("자동 분류 실패", {
+        description: error instanceof Error ? error.message : "오류가 발생했습니다.",
+      })
+    } finally {
+      setIsClassifying(false)
     }
   }
 
@@ -40,39 +74,44 @@ export function ExperienceVault() {
 
   return (
     <TooltipProvider>
-      <div className="space-y-8 max-w-6xl mx-auto">
+      <div className="mx-auto max-w-6xl space-y-8">
         <DropZone onUploadSuccess={fetchExperiences} />
-        
+
         <div>
-          <div className="flex items-center justify-between mb-6">
+          <div className="mb-6 flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold">내 경험</h2>
-              <p className="text-sm text-muted-foreground">
-                {experiences.length}개의 경험 저장됨
-              </p>
+              <h2 className="text-lg font-semibold">저장된 경험들</h2>
+              <p className="text-sm text-muted-foreground">보관소에 {experiences.length}개의 항목이 있습니다</p>
             </div>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2">
-                  <Sparkles className="size-4" />
-                  자동 분류
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="gap-2"
+                  onClick={handleAutoClassify}
+                  disabled={isClassifying || experiences.length === 0}
+                >
+                  <Sparkles className={`size-4 ${isClassifying ? "animate-spin" : ""}`} />
+                  {isClassifying ? "분류 중..." : "자동 분류"}
                   <Info className="size-3 text-muted-foreground" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-xs">
                 <p className="text-sm">
-                  업로드된 통짜 .md 파일을 AI가 분석하여 개별 경험 카드로 자동 분리합니다.
+                  업로드된 `.md` 또는 `.json` 파일은 AI가 분석하여 자동으로 경험 카드로 분류합니다.
                 </p>
               </TooltipContent>
             </Tooltip>
           </div>
-          
+
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {experiences.map((experience) => (
-              <ExperienceCard 
-                key={experience.id} 
+              <ExperienceCard
+                key={experience.id}
                 experience={experience}
                 onClick={() => handleCardClick(experience)}
+                onDelete={fetchExperiences}
               />
             ))}
           </div>

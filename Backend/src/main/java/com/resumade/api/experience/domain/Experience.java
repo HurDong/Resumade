@@ -44,6 +44,9 @@ public class Experience {
     @Column(length = 100)
     private String role;
 
+    @Column(columnDefinition = "TEXT")
+    private String rawContent;
+
     @Column(nullable = false, updatable = false)
     private String originalFileName;
 
@@ -55,7 +58,7 @@ public class Experience {
     private LocalDateTime updatedAt;
 
     @Builder
-    public Experience(String title, String category, String description, String techStack, String metrics, String period, String role, String originalFileName) {
+    public Experience(String title, String category, String description, String techStack, String metrics, String period, String role, String rawContent, String originalFileName) {
         this.title = title;
         this.category = category;
         this.description = description;
@@ -63,6 +66,17 @@ public class Experience {
         this.metrics = metrics;
         this.period = period;
         this.role = role;
+        this.rawContent = rawContent;
         this.originalFileName = originalFileName;
+    }
+
+    public void updateFromAi(String title, String category, String description, String techStack, String metrics, String period, String role) {
+        this.title = title;
+        this.category = category;
+        this.description = description;
+        this.techStack = techStack;
+        this.metrics = metrics;
+        this.period = period;
+        this.role = role;
     }
 }

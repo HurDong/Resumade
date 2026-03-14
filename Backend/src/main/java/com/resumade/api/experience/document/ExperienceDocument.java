@@ -9,7 +9,7 @@ import org.springframework.data.elasticsearch.annotations.Document;
 import org.springframework.data.elasticsearch.annotations.Field;
 import org.springframework.data.elasticsearch.annotations.FieldType;
 
-@Document(indexName = "experience-docs", createIndex = false)
+@Document(indexName = "experience-docs")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -21,7 +21,7 @@ public class ExperienceDocument {
     @Field(type = FieldType.Long)
     private Long experienceId;
 
-    @Field(type = FieldType.Text, analyzer = "nori") // nori analyzer for Korean
+    @Field(type = FieldType.Text, analyzer = "standard") 
     private String chunkText;
 
     @Field(type = FieldType.Dense_Vector, dims = 1536) // 1536 is for text-embedding-3-small

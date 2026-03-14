@@ -8,4 +8,5 @@ import java.util.List;
 @Repository
 public interface ExperienceDocumentRepository extends ElasticsearchRepository<ExperienceDocument, String> {
     List<ExperienceDocument> findByExperienceId(Long experienceId);
+    void deleteByExperienceId(Long experienceId);
 }

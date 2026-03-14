@@ -2,15 +2,63 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Folder, Sparkles, Calendar, User } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Folder, Sparkles, Calendar, User, Trash2 } from "lucide-react"
 import { type Experience } from "@/lib/mock-data"
+import { toast } from "sonner"
+import { useState } from "react"
 
-export function ExperienceCard({ experience, onClick }: { experience: Experience; onClick: () => void }) {
+export function ExperienceCard({ 
+  experience, 
+  onClick,
+  onDelete
+}: { 
+  experience: Experience; 
+  onClick: () => void;
+  onDelete?: () => void;
+}) {
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm("이 경험 항목을 삭제하시겠습니까?")) return
+
+    try {
+      setIsDeleting(true)
+      const response = await fetch(`/api/experiences/${experience.id}`, {
+        method: "DELETE",
+      })
+
+      if (!response.ok) throw new Error("삭제 실패")
+
+      toast.success("삭제 완료", {
+        description: "경험 항목이 보관소에서 삭제되었습니다."
+      })
+      onDelete?.()
+    } catch (error) {
+      toast.error("삭제 실패", {
+        description: "항목을 삭제하는 중 오류가 발생했습니다."
+      })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   return (
     <Card 
-      className="group transition-all hover:shadow-md hover:border-primary/30 cursor-pointer"
+      className={`group relative transition-all hover:shadow-md hover:border-primary/30 cursor-pointer ${isDeleting ? "opacity-50 pointer-events-none" : ""}`}
       onClick={onClick}
     >
+      <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          onClick={handleDelete}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
