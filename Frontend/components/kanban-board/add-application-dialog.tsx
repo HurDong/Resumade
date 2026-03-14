@@ -158,7 +158,7 @@ export function AddApplicationDialog({ isOpen, onClose, onAdd }: AddApplicationD
   }
 
   const handleSubmit = () => {
-    onAdd({ company, position, rawJd, questions: extractedQuestions })
+    onAdd({ company, position, rawJd, aiInsight, questions: extractedQuestions })
     handleReset()
     onClose()
   }

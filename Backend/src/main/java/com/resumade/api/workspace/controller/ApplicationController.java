@@ -62,6 +62,7 @@ public class ApplicationController {
                 .companyName(request.getCompanyName())
                 .position(request.getPosition())
                 .rawJd(request.getRawJd())
+                .aiInsight(request.getAiInsight())
                 .build();
         
         List<WorkspaceQuestion> questions = request.getQuestions().stream()
@@ -86,6 +87,7 @@ public class ApplicationController {
         private String companyName;
         private String position;
         private String rawJd;
+        private String aiInsight;
         private List<String> questions;
     }
 

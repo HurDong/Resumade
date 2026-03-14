@@ -48,6 +48,7 @@ export function KanbanBoard() {
         deadline: new Date(),
         techStack: [],
         rawJd: app.rawJd || "",
+        aiInsight: app.aiInsight || "",
         questions: (app.questions || []).map((q: any) => ({
           id: q.id.toString(),
           title: q.title,
@@ -86,6 +87,7 @@ export function KanbanBoard() {
           companyName: newApp.company,
           position: newApp.position,
           rawJd: newApp.rawJd,
+          aiInsight: newApp.aiInsight,
           questions: newApp.questions
         })
       })
@@ -103,6 +105,7 @@ export function KanbanBoard() {
         deadline: new Date(),
         techStack: [],
         rawJd: savedApp.rawJd || "",
+        aiInsight: savedApp.aiInsight || "",
         questions: (savedApp.questions || []).map((q: any) => ({
           id: q.id.toString(),
           title: q.title,

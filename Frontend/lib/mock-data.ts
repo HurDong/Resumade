@@ -16,6 +16,7 @@ export interface Application {
   status: ApplicationStatus
   logoColor: string
   rawJd?: string
+  aiInsight?: string
 }
 
 export interface Experience {

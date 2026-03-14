@@ -33,6 +33,9 @@ public class Application {
     @Column(columnDefinition = "TEXT")
     private String rawJd;
 
+    @Column(columnDefinition = "TEXT")
+    private String aiInsight;
+
     @OneToMany(mappedBy = "application", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<WorkspaceQuestion> questions = new ArrayList<>();
 
@@ -44,10 +47,11 @@ public class Application {
     private LocalDateTime updatedAt;
 
     @Builder
-    public Application(String companyName, String position, String rawJd) {
+    public Application(String companyName, String position, String rawJd, String aiInsight) {
         this.companyName = companyName;
         this.position = position;
         this.rawJd = rawJd;
+        this.aiInsight = aiInsight;
     }
 
     public void addQuestion(WorkspaceQuestion question) {
