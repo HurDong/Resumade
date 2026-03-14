@@ -67,7 +67,7 @@ export function ApplicationCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap gap-1.5">
-          {application.techStack.map((tech) => (
+          {(application.techStack || []).map((tech) => (
             <Badge key={tech} variant="secondary" className="text-xs font-normal">
               {tech}
             </Badge>
@@ -81,8 +81,8 @@ export function ApplicationCard({
             </div>
             <Progress value={progress} className="h-2" />
             <div className="flex gap-1">
-              {application.questions.map((q, idx) => {
-                const qProgress = Math.round((q.currentLength / q.maxLength) * 100)
+              {(application.questions || []).map((q, idx) => {
+                const qProgress = q.maxLength ? Math.round(((q.currentLength || 0) / q.maxLength) * 100) : 0
                 return (
                   <div
                     key={q.id}

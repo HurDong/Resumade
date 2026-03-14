@@ -3,7 +3,9 @@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { FileText, ClipboardList } from "lucide-react"
+import { FileText, ClipboardList, Wand2 } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
 import { type Application } from "@/lib/mock-data"
 import { JDAnalysisPanel } from "./jd-analysis-panel"
 import { QuestionsPanel } from "./questions-panel"
@@ -17,6 +19,7 @@ export function ApplicationDetailSheet({
   isOpen: boolean
   onClose: () => void
 }) {
+  const router = useRouter()
   if (!application) return null
 
   return (
@@ -32,6 +35,15 @@ export function ApplicationDetailSheet({
             <div>
               <SheetTitle className="text-left">{application.company}</SheetTitle>
               <p className="text-sm text-muted-foreground">{application.position}</p>
+            </div>
+            <div className="ml-auto">
+              <Button 
+                onClick={() => router.push(`/workspace/${application.id}`)}
+                className="gap-2 rounded-full shadow-sm"
+              >
+                <Wand2 className="size-4" />
+                자소서 작업실
+              </Button>
             </div>
           </div>
         </SheetHeader>
