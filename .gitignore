@@ -1,7 +1,6 @@
-.agents/
-.cursor/
-.idea/
-.vscode/
+# .agents/
+# .cursor/
+TestData/
 
 # OS files
 .DS_Store
