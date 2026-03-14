@@ -15,6 +15,7 @@ export interface Application {
   }[]
   status: ApplicationStatus
   logoColor: string
+  rawJd?: string
 }
 
 export interface Experience {
@@ -334,7 +335,11 @@ export function getDDay(deadline: Date): string {
 
 // 진행도 계산 헬퍼 함수
 export function calculateProgress(questions: Application["questions"]): number {
-  const totalMax = questions.reduce((sum, q) => sum + q.maxLength, 0)
-  const totalCurrent = questions.reduce((sum, q) => sum + q.currentLength, 0)
+  if (!questions || questions.length === 0) return 0
+  
+  const totalMax = questions.reduce((sum, q) => sum + (q.maxLength || 1000), 0)
+  const totalCurrent = questions.reduce((sum, q) => sum + (q.currentLength || 0), 0)
+  
+  if (totalMax === 0) return 0
   return Math.round((totalCurrent / totalMax) * 100)
 }

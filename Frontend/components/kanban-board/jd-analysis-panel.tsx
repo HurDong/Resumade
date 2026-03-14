@@ -15,8 +15,8 @@ const mockJDAnalysis = {
 }
 
 export function JDAnalysisPanel({ application }: { application: Application }) {
-  const [jdText, setJdText] = useState("")
-  const [isAnalyzed, setIsAnalyzed] = useState(true) // Mock: pretend already analyzed
+  const [jdText, setJdText] = useState(application.rawJd || "")
+  const [isAnalyzed, setIsAnalyzed] = useState(!!application.rawJd)
 
   return (
     <div className="space-y-6">
