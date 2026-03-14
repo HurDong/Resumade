@@ -25,5 +25,13 @@ spring:
   elasticsearch:
     uris: http://localhost:9200
   
+openai:
+  api:
+    key: ${OPENAI_API_KEY:demo}
+  
+deepl:
+  api:
+    key: ${DEEPL_API_KEY:demo}
+  
 server:
   port: 8080
