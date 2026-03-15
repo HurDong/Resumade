@@ -96,6 +96,14 @@ public class ApplicationController {
         return applicationRepository.findAll();
     }
 
+    @Transactional
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteApplication(@PathVariable Long id) {
+        Application application = applicationRepository.findById(id).orElseThrow();
+        applicationRepository.delete(application);
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping
     public Application createApplication(@RequestBody Application application) {
         return applicationRepository.save(application);

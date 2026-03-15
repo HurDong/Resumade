@@ -79,6 +79,34 @@ export function KanbanBoard() {
     setSelectedApplication(null)
   }
 
+  // 데이터 변경 시 선택된 공고 정보 동기화 (실시간 반영)
+  useEffect(() => {
+    if (selectedApplication) {
+      const updated = localApplications.find(app => app.id === selectedApplication.id)
+      if (updated) {
+        // ID는 같지만 내용이 변경된 경우 업데이트
+        setSelectedApplication(updated)
+      } else if (isSheetOpen) {
+        // 목록에서 사라진 경우 (삭제 등) 시트 닫기
+        handleCloseSheet()
+      }
+    }
+  }, [localApplications])
+
+  const handleDeleteApplication = async (id: string) => {
+    if (!confirm("정말 이 공고를 삭제하시겠습니까?\n연관된 모든 자소서 문항과 데이터가 영구적으로 삭제됩니다.")) return
+    try {
+      const response = await fetch(`/api/applications/${id}`, {
+        method: "DELETE"
+      })
+      if (!response.ok) throw new Error("공고 삭제 실패")
+      await fetchApplications()
+    } catch (err) {
+      console.error(err)
+      alert("공고 삭제에 실패했습니다.")
+    }
+  }
+
   const handleAddApplication = async (newApp: { company: string; position: string; rawJd: string; questions: string[] }) => {
     try {
       const response = await fetch("/api/applications/full", {
@@ -175,6 +203,7 @@ export function KanbanBoard() {
         isOpen={isSheetOpen}
         onClose={handleCloseSheet}
         onRefresh={fetchApplications}
+        onDelete={handleDeleteApplication}
       />
 
       <AddApplicationDialog

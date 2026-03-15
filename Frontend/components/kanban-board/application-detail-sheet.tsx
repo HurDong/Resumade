@@ -3,23 +3,31 @@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { FileText, ClipboardList, Wand2 } from "lucide-react"
+import { FileText, ClipboardList, Wand2, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { type Application } from "@/lib/mock-data"
 import { JDAnalysisPanel } from "./jd-analysis-panel"
 import { QuestionsPanel } from "./questions-panel"
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu"
 
 export function ApplicationDetailSheet({ 
   application, 
   isOpen, 
   onClose,
-  onRefresh
+  onRefresh,
+  onDelete
 }: { 
   application: Application | null
   isOpen: boolean
   onClose: () => void
   onRefresh: () => void
+  onDelete: (id: string) => void
 }) {
   const router = useRouter()
   if (!application) return null
@@ -38,14 +46,30 @@ export function ApplicationDetailSheet({
               <SheetTitle className="text-left">{application.company}</SheetTitle>
               <p className="text-sm text-muted-foreground">{application.position}</p>
             </div>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
               <Button 
                 onClick={() => router.push(`/workspace/${application.id}`)}
-                className="gap-2 rounded-full shadow-sm"
+                className="gap-2 rounded-full shadow-sm bg-primary hover:bg-primary/90"
               >
                 <Wand2 className="size-4" />
                 자소서 작업실
               </Button>
+              
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="size-10 rounded-full">
+                    <Trash2 className="size-5 text-muted-foreground hover:text-destructive transition-colors" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem 
+                    className="text-destructive focus:text-destructive cursor-pointer font-medium"
+                    onClick={() => onDelete(application.id)}
+                  >
+                    공고 아예 삭제하기
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </SheetHeader>
