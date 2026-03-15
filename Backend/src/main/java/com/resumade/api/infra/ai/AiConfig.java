@@ -20,7 +20,7 @@ public class AiConfig {
     public OpenAiChatModel openAiChatModel() {
         return OpenAiChatModel.builder()
                 .apiKey(openAiApiKey)
-                .modelName("gpt-4o-mini")
+                .modelName("gpt-5.4")
                 .timeout(Duration.ofSeconds(60))
                 .responseFormat("json_object")
                 .logRequests(true)

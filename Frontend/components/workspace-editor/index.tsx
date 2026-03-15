@@ -17,7 +17,7 @@ export function WorkspaceEditor({ applicationId }: WorkspaceEditorProps) {
   }, [applicationId, fetchApplicationData])
 
   return (
-    <div className="grid h-full grid-cols-2">
+    <div className="grid h-full grid-cols-2 overflow-hidden">
       <ContextPanel />
       <TranslationPanel />
     </div>

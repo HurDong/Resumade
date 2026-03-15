@@ -1,7 +1,10 @@
 package com.resumade.api.infra.exception;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -14,11 +17,17 @@ import java.util.Map;
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, String>> handleAllExceptions(Exception e) {
+    public ResponseEntity<Map<String, String>> handleAllExceptions(Exception e, HttpServletRequest request, HttpServletResponse response) {
         log.error("Global exception caught: {}", e.getMessage(), e);
-        Map<String, String> response = new HashMap<>();
-        response.put("message", e.getMessage());
-        response.put("type", e.getClass().getSimpleName());
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+
+        String accept = request.getHeader("Accept");
+        if (response.isCommitted() || (accept != null && accept.contains(MediaType.TEXT_EVENT_STREAM_VALUE))) {
+            return null;
+        }
+
+        Map<String, String> responseBody = new HashMap<>();
+        responseBody.put("message", e.getMessage());
+        responseBody.put("type", e.getClass().getSimpleName());
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(responseBody);
     }
 }
