@@ -150,10 +150,16 @@ public class WorkspaceService {
             question = questionRepository.findById(questionId).orElseThrow();
             question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
             question.setAiReview(objectMapper.writeValueAsString(analysis.getAiReviewReport()));
+            
+            // AI가 글자수를 수동으로 맞춘 humanPatchedText를 최종 결과로 사용
+            String finalResult = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
+                    ? analysis.getHumanPatchedText()
+                    : washedKr;
+            question.setWashedKr(finalResult);
             questionRepository.save(question);
 
             Map<String, Object> result = new HashMap<>();
-            result.put("draft", washedKr);
+            result.put("draft", finalResult);
             result.put("mistranslations", analysis.getMistranslations());
             result.put("aiReviewReport", analysis.getAiReviewReport());
 
@@ -261,10 +267,16 @@ public class WorkspaceService {
             question = questionRepository.findById(questionId).orElseThrow();
             question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
             question.setAiReview(objectMapper.writeValueAsString(analysis.getAiReviewReport()));
+            
+            // AI가 글자수를 수동으로 맞춘 humanPatchedText를 최종 결과로 사용
+            String finalResult = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
+                    ? analysis.getHumanPatchedText()
+                    : washedKr;
+            question.setWashedKr(finalResult);
             questionRepository.save(question);
 
             Map<String, Object> result = new HashMap<>();
-            result.put("draft", washedKr);
+            result.put("draft", finalResult);
             result.put("mistranslations", analysis.getMistranslations());
             result.put("aiReviewReport", analysis.getAiReviewReport());
 

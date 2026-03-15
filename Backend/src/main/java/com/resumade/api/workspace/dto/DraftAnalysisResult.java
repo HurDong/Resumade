@@ -10,6 +10,7 @@ import java.util.List;
 public class DraftAnalysisResult {
     private List<Mistranslation> mistranslations;
     private AiReviewReport aiReviewReport;
+    private String humanPatchedText;
 
     @Getter
     @Setter
