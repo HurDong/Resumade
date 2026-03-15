@@ -13,7 +13,8 @@ import java.time.LocalDateTime;
 @Table(name = "workspace_questions")
 @Getter
 @Setter
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@NoArgsConstructor
+@AllArgsConstructor
 @EntityListeners(AuditingEntityListener.class)
 public class WorkspaceQuestion {
 
@@ -32,17 +33,25 @@ public class WorkspaceQuestion {
     @Column(nullable = false)
     private Integer maxLength;
 
-    @Column(columnDefinition = "TEXT")
+    @Lob
+    @Column(length = 16777215)
     private String content;
 
-    @Column(columnDefinition = "TEXT")
+    @Lob
+    @Column(length = 16777215)
     private String washedKr;
 
-    @Column(columnDefinition = "JSON")
+    @Lob
+    @Column(length = 16777215)
     private String mistranslations;
 
-    @Column(columnDefinition = "JSON")
+    @Lob
+    @Column(length = 16777215)
     private String aiReview;
+
+    @Lob
+    @Column(length = 16777215)
+    private String userDirective;
 
     @CreatedDate
     @Column(updatable = false)
@@ -52,12 +61,13 @@ public class WorkspaceQuestion {
     private LocalDateTime updatedAt;
 
     @Builder
-    public WorkspaceQuestion(String title, Integer maxLength, String content, String washedKr, String mistranslations, String aiReview) {
+    public WorkspaceQuestion(String title, Integer maxLength, String content, String washedKr, String mistranslations, String aiReview, String userDirective) {
         this.title = title;
         this.maxLength = maxLength;
         this.content = content;
         this.washedKr = washedKr;
         this.mistranslations = mistranslations;
         this.aiReview = aiReview;
+        this.userDirective = userDirective;
     }
 }
