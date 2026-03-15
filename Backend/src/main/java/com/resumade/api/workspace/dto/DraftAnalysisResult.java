@@ -2,6 +2,7 @@ package com.resumade.api.workspace.dto;
 
 import lombok.Builder;
 import lombok.Getter;
+import lombok.Setter;
 import java.util.List;
 
 @Getter
@@ -11,6 +12,7 @@ public class DraftAnalysisResult {
     private AiReviewReport aiReviewReport;
 
     @Getter
+    @Setter
     @Builder
     public static class Mistranslation {
         private String original;
@@ -20,11 +22,9 @@ public class DraftAnalysisResult {
     }
 
     @Getter
+    @Setter
     @Builder
     public static class AiReviewReport {
         private String summary;
-        private int overallScore;
-        private int technicalAccuracy;
-        private int readability;
     }
 }
