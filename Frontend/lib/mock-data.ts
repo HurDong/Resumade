@@ -12,6 +12,7 @@ export interface Application {
     title: string
     maxLength: number
     currentLength: number
+    content?: string
   }[]
   status: ApplicationStatus
   logoColor: string

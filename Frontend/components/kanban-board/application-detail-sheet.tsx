@@ -13,11 +13,13 @@ import { QuestionsPanel } from "./questions-panel"
 export function ApplicationDetailSheet({ 
   application, 
   isOpen, 
-  onClose 
+  onClose,
+  onRefresh
 }: { 
   application: Application | null
   isOpen: boolean
   onClose: () => void
+  onRefresh: () => void
 }) {
   const router = useRouter()
   if (!application) return null
@@ -71,7 +73,7 @@ export function ApplicationDetailSheet({
               <JDAnalysisPanel application={application} />
             </TabsContent>
             <TabsContent value="questions" className="m-0 p-6">
-              <QuestionsPanel application={application} />
+              <QuestionsPanel application={application} onRefresh={onRefresh} />
             </TabsContent>
           </ScrollArea>
         </Tabs>

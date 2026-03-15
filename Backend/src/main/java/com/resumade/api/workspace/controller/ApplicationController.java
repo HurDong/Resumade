@@ -113,12 +113,25 @@ public class ApplicationController {
         return questionRepository.save(question);
     }
 
+    @Transactional
     @PutMapping("/questions/{questionId}")
     public WorkspaceQuestion updateQuestion(@PathVariable Long questionId, @RequestBody WorkspaceQuestion questionDetails) {
         WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
-        question.setTitle(questionDetails.getTitle());
-        question.setMaxLength(questionDetails.getMaxLength());
-        question.setContent(questionDetails.getContent());
+        if (questionDetails.getTitle() != null) question.setTitle(questionDetails.getTitle());
+        if (questionDetails.getMaxLength() != null) question.setMaxLength(questionDetails.getMaxLength());
+        if (questionDetails.getContent() != null) question.setContent(questionDetails.getContent());
         return questionRepository.save(question);
+    }
+
+    @Transactional
+    @DeleteMapping("/questions/{questionId}")
+    public ResponseEntity<?> deleteQuestion(@PathVariable Long questionId) {
+        WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
+        Application app = question.getApplication();
+        if (app != null) {
+            app.getQuestions().remove(question);
+        }
+        questionRepository.delete(question);
+        return ResponseEntity.ok().build();
     }
 }

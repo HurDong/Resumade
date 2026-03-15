@@ -53,7 +53,8 @@ export function KanbanBoard() {
           id: q.id.toString(),
           title: q.title,
           maxLength: q.maxLength || 1000,
-          currentLength: q.content?.length || 0
+          currentLength: q.content?.length || 0,
+          content: q.content || ""
         }))
       }))
       setLocalApplications(mapped)
@@ -110,7 +111,8 @@ export function KanbanBoard() {
           id: q.id.toString(),
           title: q.title,
           maxLength: q.maxLength || 1000,
-          currentLength: q.content?.length || 0
+          currentLength: q.content?.length || 0,
+          content: q.content || ""
         }))
       }
       setLocalApplications([application, ...localApplications])
@@ -172,6 +174,7 @@ export function KanbanBoard() {
         application={selectedApplication}
         isOpen={isSheetOpen}
         onClose={handleCloseSheet}
+        onRefresh={fetchApplications}
       />
 
       <AddApplicationDialog
