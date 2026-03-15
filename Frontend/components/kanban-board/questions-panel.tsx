@@ -12,7 +12,8 @@ import {
   Plus, 
   MoreVertical, 
   ExternalLink,
-  Loader2
+  Loader2,
+  CheckCircle2
 } from "lucide-react"
 import { 
   Dialog, 
@@ -32,10 +33,12 @@ import { type Application } from "@/lib/mock-data"
 
 export function QuestionsPanel({ 
   application, 
-  onRefresh 
+  onRefresh,
+  onUpdateApplication
 }: { 
   application: Application,
-  onRefresh: () => void
+  onRefresh: () => void,
+  onUpdateApplication?: (updates: Partial<Application>) => void
 }) {
   const router = useRouter()
   const [isAddOpen, setIsAddOpen] = useState(false)
@@ -173,7 +176,7 @@ export function QuestionsPanel({
                             <MoreVertical className="size-5" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-40 p-1">
+                        <DropdownMenuContent align="end" className="w-44 p-1">
                           <DropdownMenuItem className="cursor-pointer" onClick={() => {
                             setEditingQuestion({
                               id: question.id,
@@ -184,6 +187,35 @@ export function QuestionsPanel({
                           }}>
                             <PenLine className="size-4 mr-2 text-primary" />
                             문항 내용 수정
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            className="cursor-pointer font-medium text-emerald-600 focus:text-emerald-700" 
+                            onClick={async () => {
+                              try {
+                                const newIsCompleted = !question.isCompleted
+                                // Optimistic update
+                                if (onUpdateApplication) {
+                                  onUpdateApplication({
+                                    questions: application.questions.map(q => 
+                                      q.id === question.id ? { ...q, isCompleted: newIsCompleted } : q
+                                    )
+                                  })
+                                }
+
+                                const response = await fetch(`/api/applications/questions/${question.id}`, {
+                                  method: "PUT",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ isCompleted: newIsCompleted })
+                                })
+                                if (!response.ok) throw new Error("상태 변경 실패")
+                              } catch (err) {
+                                console.error(err)
+                                onRefresh()
+                              }
+                            }}
+                          >
+                            <CheckCircle2 className={`size-4 mr-2 ${question.isCompleted ? 'text-emerald-600' : 'text-muted-foreground'}`} />
+                            {question.isCompleted ? "작성 중으로 변경" : "작성 완료로 변경"}
                           </DropdownMenuItem>
                           <DropdownMenuItem 
                             className="text-destructive focus:text-destructive cursor-pointer"

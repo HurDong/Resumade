@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import { ContextPanel } from "./context-panel"
 import { TranslationPanel } from "./translation-panel"
+import { WorkspaceSelector } from "./workspace-selector"
 import { useWorkspaceStore } from "@/lib/store/workspace-store"
 
 interface WorkspaceEditorProps {
@@ -16,8 +17,12 @@ export function WorkspaceEditor({ applicationId }: WorkspaceEditorProps) {
     }
   }, [applicationId, fetchApplicationData])
 
+  if (!applicationId) {
+    return <WorkspaceSelector />
+  }
+
   return (
-    <div className="grid h-full grid-cols-2 overflow-hidden">
+    <div className="grid h-full grid-cols-2 overflow-hidden animate-in fade-in duration-500">
       <ContextPanel />
       <TranslationPanel />
     </div>

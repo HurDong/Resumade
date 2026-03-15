@@ -27,7 +27,7 @@ import {
 interface AddApplicationDialogProps {
   isOpen: boolean
   onClose: () => void
-  onAdd: (app: { company: string; position: string; rawJd: string; questions: string[] }) => void
+  onAdd: (app: { company: string; position: string; rawJd: string; aiInsight: string; questions: string[] }) => void
 }
 
 export function AddApplicationDialog({ isOpen, onClose, onAdd }: AddApplicationDialogProps) {

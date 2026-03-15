@@ -49,6 +49,10 @@ public class WorkspaceQuestion {
     @Column(length = 16777215)
     private String aiReview;
 
+    @com.fasterxml.jackson.annotation.JsonProperty("isCompleted")
+    @Column(nullable = false)
+    private boolean isCompleted = false;
+
     @Lob
     @Column(length = 16777215)
     private String userDirective;
@@ -61,7 +65,7 @@ public class WorkspaceQuestion {
     private LocalDateTime updatedAt;
 
     @Builder
-    public WorkspaceQuestion(String title, Integer maxLength, String content, String washedKr, String mistranslations, String aiReview, String userDirective) {
+    public WorkspaceQuestion(String title, Integer maxLength, String content, String washedKr, String mistranslations, String aiReview, String userDirective, Boolean isCompleted) {
         this.title = title;
         this.maxLength = maxLength;
         this.content = content;
@@ -69,5 +73,6 @@ public class WorkspaceQuestion {
         this.mistranslations = mistranslations;
         this.aiReview = aiReview;
         this.userDirective = userDirective;
+        this.isCompleted = isCompleted != null ? isCompleted : false;
     }
 }

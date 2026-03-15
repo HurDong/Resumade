@@ -42,20 +42,47 @@ public class DeepLTranslationService implements TranslationService {
             return text;
         }
 
+        if (text == null || text.isBlank()) {
+            return text;
+        }
+
+        try {
+            // Split by newlines while preserving formatting
+            String[] lines = text.split("\n", -1);
+            StringBuilder result = new StringBuilder();
+
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i];
+                if (!line.isBlank()) {
+                    result.append(requestDeepL(line, targetLang));
+                } else {
+                    result.append(line);
+                }
+
+                if (i < lines.length - 1) {
+                    result.append("\n");
+                }
+            }
+            return result.toString();
+        } catch (Exception e) {
+            log.error("DeepL translation wrapper failed", e);
+            return text;
+        }
+    }
+
+    private String requestDeepL(String text, String targetLang) {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-            // Modern header way
             headers.set("Authorization", "DeepL-Auth-Key " + authKey.trim());
 
-            // Using LinkedMultiValueMap ensures proper URL encoding by RestTemplate
             org.springframework.util.MultiValueMap<String, String> map = new org.springframework.util.LinkedMultiValueMap<>();
             map.add("text", text);
             map.add("target_lang", targetLang.toUpperCase());
 
             HttpEntity<org.springframework.util.MultiValueMap<String, String>> entity = new HttpEntity<>(map, headers);
 
-            log.info("Requesting DeepL translation (target: {})", targetLang);
+            log.info("Requesting DeepL translation (target: {}, text length: {})", targetLang, text.length());
             Map<String, Object> response = restTemplate.postForObject(DEEPL_API_URL, entity, Map.class);
             
             if (response != null && response.containsKey("translations")) {
@@ -63,11 +90,11 @@ public class DeepLTranslationService implements TranslationService {
                 return translations.get(0).get("text");
             }
         } catch (org.springframework.web.client.HttpClientErrorException.Forbidden e) {
-            log.error("DeepL 403 Forbidden. Is the key valid and for the FREE plan? Key suffix: {}", 
+            log.error("DeepL 403 Forbidden. Is the key valid? Key suffix: {}", 
                 authKey.length() > 3 ? authKey.substring(authKey.length() - 3) : "too-short");
         } catch (Exception e) {
-            log.error("DeepL translation failed", e);
+            log.error("DeepL single segment translation failed", e);
         }
-        return text; // Return original on failure
+        return text;
     }
 }

@@ -2,6 +2,8 @@ package com.resumade.api.workspace.controller;
 
 import com.resumade.api.workspace.domain.Application;
 import com.resumade.api.workspace.domain.ApplicationRepository;
+import com.resumade.api.workspace.domain.ApplicationResult;
+import com.resumade.api.workspace.domain.ApplicationStatus;
 import com.resumade.api.workspace.domain.WorkspaceQuestion;
 import com.resumade.api.workspace.domain.WorkspaceQuestionRepository;
 import com.resumade.api.workspace.dto.JdAnalysisResponse;
@@ -39,8 +41,10 @@ public class ApplicationController {
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     @GetMapping("/questions/{id}/rag")
-    public ResponseEntity<com.resumade.api.workspace.dto.ExperienceContextResponse> getRagContext(@PathVariable Long id) {
-        List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> context = workspaceService.getMatchedExperiences(id);
+    public ResponseEntity<com.resumade.api.workspace.dto.ExperienceContextResponse> getRagContext(
+            @PathVariable Long id, 
+            @RequestParam(required = false) String query) {
+        List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> context = workspaceService.getMatchedExperiences(id, query);
         return ResponseEntity.ok(new com.resumade.api.workspace.dto.ExperienceContextResponse(context));
     }
 
@@ -71,6 +75,7 @@ public class ApplicationController {
                 .position(request.getPosition())
                 .rawJd(request.getRawJd())
                 .aiInsight(request.getAiInsight())
+                .logoUrl(request.getLogoUrl())
                 .build();
         
         List<WorkspaceQuestion> questions = request.getQuestions().stream()
@@ -96,12 +101,64 @@ public class ApplicationController {
         private String position;
         private String rawJd;
         private String aiInsight;
+        private String logoUrl;
         private List<String> questions;
     }
 
     @GetMapping
     public List<Application> getAllApplications() {
         return applicationRepository.findAll();
+    }
+
+    @GetMapping("/workspace-selector")
+    public List<Application> getWorkspaceSelectorApplications() {
+        return applicationRepository.findAll().stream()
+                .filter(app -> app.getStatus() == ApplicationStatus.DOCUMENT)
+                .filter(app -> {
+                    if (app.getQuestions().isEmpty()) return true;
+                    return app.getQuestions().stream().anyMatch(q -> !q.isCompleted());
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    @PutMapping("/{id}")
+    public Application updateApplication(@PathVariable Long id, @RequestBody Map<String, Object> updates) {
+        Application application = applicationRepository.findById(id).orElseThrow();
+        
+        if (updates.containsKey("companyName")) application.setCompanyName((String) updates.get("companyName"));
+        if (updates.containsKey("position")) application.setPosition((String) updates.get("position"));
+        if (updates.containsKey("status")) application.setStatus(ApplicationStatus.fromId((String) updates.get("status")));
+        if (updates.containsKey("result")) application.setResult(ApplicationResult.fromId((String) updates.get("result")));
+        if (updates.containsKey("logoUrl")) application.setLogoUrl((String) updates.get("logoUrl"));
+        if (updates.containsKey("deadline")) {
+            String deadlineStr = (String) updates.get("deadline");
+            if (deadlineStr != null && !deadlineStr.isBlank()) {
+                try {
+                    // Handle ISO-8601 (e.g., 2026-03-16T14:29:00.000Z)
+                    if (deadlineStr.endsWith("Z")) {
+                        // Convert UTC to System Local (KST) to avoid 9-hour shift
+                        application.setDeadline(java.time.OffsetDateTime.parse(deadlineStr)
+                                .atZoneSameInstant(java.time.ZoneId.systemDefault())
+                                .toLocalDateTime());
+                    } else {
+                        // Handle YYYY-MM-DDTHH:mm format from datetime-local input
+                        if (deadlineStr.length() == 16) {
+                            deadlineStr += ":00";
+                        }
+                        application.setDeadline(java.time.LocalDateTime.parse(deadlineStr));
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to parse deadline: {}", deadlineStr, e);
+                    // Keep existing deadline on parse failure or set to null?
+                    // application.setDeadline(null); 
+                }
+            } else {
+                application.setDeadline(null);
+            }
+        }
+        
+        return applicationRepository.save(application);
     }
 
     @Transactional
@@ -147,6 +204,7 @@ public class ApplicationController {
             if (questionDetails.getMistranslations() != null) question.setMistranslations(questionDetails.getMistranslations());
             if (questionDetails.getAiReview() != null) question.setAiReview(questionDetails.getAiReview());
             if (questionDetails.getUserDirective() != null) question.setUserDirective(questionDetails.getUserDirective());
+            question.setCompleted(questionDetails.isCompleted());
             
             WorkspaceQuestion saved = questionRepository.save(question);
             log.info("Successfully updated question ID: {}", questionId);
