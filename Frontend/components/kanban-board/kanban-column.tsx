@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Trophy } from "lucide-react"
 import { type Application, type ApplicationStatus } from "@/lib/mock-data"
 import { ApplicationCard } from "./application-card"
+import { Droppable } from "@hello-pangea/dnd"
 
 export interface ColumnDefinition {
   id: ApplicationStatus;
@@ -24,7 +25,7 @@ export function KanbanColumn({
   const isPassed = column.id === "passed"
 
   return (
-    <div className={`flex w-72 shrink-0 flex-col rounded-xl border ${
+    <div className={`flex flex-1 min-w-[280px] shrink-0 flex-col rounded-xl border ${
       isPassed 
         ? "bg-gradient-to-b from-amber-50/50 to-card border-amber-200 dark:from-amber-950/20 dark:border-amber-800" 
         : "bg-card border-border"
@@ -45,25 +46,35 @@ export function KanbanColumn({
         </Badge>
       </div>
       <ScrollArea className="flex-1 p-3 max-h-[calc(100vh-280px)]">
-        <div className="space-y-3">
-          {applications.map((app) => (
-            <ApplicationCard 
-              key={app.id} 
-              application={app} 
-              isPassed={isPassed}
-              onClick={() => onCardClick(app)}
-            />
-          ))}
-          {applications.length === 0 && (
-            <div className={`flex h-32 items-center justify-center rounded-lg border border-dashed ${
-              isPassed ? "border-amber-300 dark:border-amber-700" : "border-border"
-            }`}>
-              <p className="text-sm text-muted-foreground">
-                {isPassed ? "아직 합격 없음" : "지원 내역 없음"}
-              </p>
+        <Droppable droppableId={column.id}>
+          {(provided) => (
+            <div 
+              {...provided.droppableProps}
+              ref={provided.innerRef}
+              className="space-y-3 min-h-[150px]"
+            >
+              {applications.map((app, index) => (
+                <ApplicationCard 
+                  key={app.id} 
+                  application={app} 
+                  isPassed={isPassed}
+                  onClick={() => onCardClick(app)}
+                  index={index}
+                />
+              ))}
+              {provided.placeholder}
+              {applications.length === 0 && (
+                <div className={`flex h-32 items-center justify-center rounded-lg border border-dashed ${
+                  isPassed ? "border-amber-300 dark:border-amber-700" : "border-border"
+                }`}>
+                  <p className="text-sm text-muted-foreground">
+                    {isPassed ? "아직 합격 없음" : "지원 내역 없음"}
+                  </p>
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </Droppable>
       </ScrollArea>
     </div>
   )

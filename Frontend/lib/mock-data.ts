@@ -1,11 +1,12 @@
 // Application Status Types
 export type ApplicationStatus = "document" | "aptitude" | "interview1" | "interview2" | "passed"
+export type ApplicationResult = "pending" | "pass" | "fail"
 
 export interface Application {
   id: string
   company: string
   position: string
-  deadline: Date
+  deadline: Date | string | null
   techStack: string[]
   questions: {
     id: string
@@ -13,11 +14,14 @@ export interface Application {
     maxLength: number
     currentLength: number
     content?: string
+    isCompleted?: boolean
   }[]
   status: ApplicationStatus
   logoColor: string
+  logoUrl?: string
   rawJd?: string
   aiInsight?: string
+  result: ApplicationResult
 }
 
 export interface Experience {
@@ -322,26 +326,48 @@ export const mockWorkspaceData = {
 }
 
 // D-Day 계산 헬퍼 함수
-export function getDDay(deadline: Date): string {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+export function getDDay(deadline: Date | string | null | undefined): string {
+  if (!deadline) return "날짜 미정"
+  
   const target = new Date(deadline)
-  target.setHours(0, 0, 0, 0)
+  const now = new Date()
   
-  const diff = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  // Calculate difference in milliseconds
+  const diffTime = target.getTime() - now.getTime()
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
   
-  if (diff === 0) return "D-Day"
-  if (diff > 0) return `D-${diff}`
-  return `D+${Math.abs(diff)}`
+  if (diffTime < 0) {
+    // Already passed
+    const passedDays = Math.floor(Math.abs(diffTime) / (1000 * 60 * 60 * 24))
+    return passedDays === 0 ? "마감됨" : `D+${passedDays}`
+  }
+  
+  // Under 24 hours (D-Day)
+  if (diffTime <= 1000 * 60 * 60 * 24 && target.getDate() === now.getDate()) {
+    const diffHours = Math.floor(diffTime / (1000 * 60 * 60))
+    const diffMinutes = Math.floor((diffTime % (1000 * 60 * 60)) / (1000 * 60))
+    
+    if (diffHours > 0) {
+      return `오늘 (${diffHours}시간 남음)`
+    }
+    return `오늘 (${diffMinutes}분 남음!)`
+  }
+  
+  const targetDate = new Date(target)
+  targetDate.setHours(0, 0, 0, 0)
+  const todayDate = new Date(now)
+  todayDate.setHours(0, 0, 0, 0)
+  
+  const dayDiff = Math.ceil((targetDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24))
+  
+  if (dayDiff === 0) return "D-Day"
+  return `D-${dayDiff}`
 }
 
 // 진행도 계산 헬퍼 함수
 export function calculateProgress(questions: Application["questions"]): number {
   if (!questions || questions.length === 0) return 0
   
-  const totalMax = questions.reduce((sum, q) => sum + (q.maxLength || 1000), 0)
-  const totalCurrent = questions.reduce((sum, q) => sum + (q.currentLength || 0), 0)
-  
-  if (totalMax === 0) return 0
-  return Math.round((totalCurrent / totalMax) * 100)
+  const completedCount = questions.filter(q => q.isCompleted).length
+  return Math.round((completedCount / questions.length) * 100)
 }

@@ -2,10 +2,12 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, Plus, Loader2 } from "lucide-react"
-import { type Application } from "@/lib/mock-data"
+import { ChevronRight, Plus, Loader2, Eye, EyeOff } from "lucide-react"
+import { type Application, type ApplicationStatus } from "@/lib/mock-data"
+import { getCompanyLogo } from "@/lib/logo-utils"
 import { KanbanColumn, type ColumnDefinition } from "./kanban-column"
 import { ApplicationDetailSheet } from "./application-detail-sheet"
+import { DragDropContext, DropResult } from "@hello-pangea/dnd"
 
 export const columns: ColumnDefinition[] = [
   { id: "document", title: "서류 전형", color: "bg-primary" },
@@ -14,14 +16,6 @@ export const columns: ColumnDefinition[] = [
   { id: "interview2", title: "2차 면접", color: "bg-chart-4" },
   { id: "passed", title: "최종 합격", color: "bg-emerald-500" },
 ]
-
-function JourneyArrow() {
-  return (
-    <div className="flex items-center justify-center shrink-0 -mx-1">
-      <ChevronRight className="size-5 text-muted-foreground/40" />
-    </div>
-  )
-}
 
 import { AddApplicationDialog } from "./add-application-dialog"
 import { useEffect } from "react"
@@ -32,20 +26,42 @@ export function KanbanBoard() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [localApplications, setLocalApplications] = useState<Application[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [showFailed, setShowFailed] = useState(true)
+
+  // Sort applications: 1. Pass > Pending > Fail, 2. Deadline (Urgent first), 3. Stable ID
+  const sortedApplications = [...localApplications].sort((a, b) => {
+    const resultPriority = { pass: 0, pending: 1, fail: 2 };
+    const pA = resultPriority[a.result || "pending"];
+    const pB = resultPriority[b.result || "pending"];
+    
+    if (pA !== pB) return pA - pB;
+    
+    const timeA = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+    const timeB = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+    
+    if (timeA !== timeB) return timeA - timeB;
+    
+    return a.id.localeCompare(b.id);
+  });
 
   const fetchApplications = async () => {
     setIsLoading(true)
     try {
       const response = await fetch("/api/applications")
       const data = await response.json()
+      if (!Array.isArray(data)) {
+        console.error("Expected array from /api/applications, but got:", data)
+        return
+      }
       // Map backend data to frontend Application type
       const mapped = data.map((app: any) => ({
         id: app.id.toString(),
         company: app.companyName,
         position: app.position,
-        status: "document",
+        status: app.status?.toLowerCase() || "document",
         logoColor: "bg-blue-500",
-        deadline: new Date(),
+        logoUrl: app.logoUrl,
+        deadline: app.deadline,
         techStack: [],
         rawJd: app.rawJd || "",
         aiInsight: app.aiInsight || "",
@@ -54,8 +70,10 @@ export function KanbanBoard() {
           title: q.title,
           maxLength: q.maxLength || 1000,
           currentLength: q.content?.length || 0,
-          content: q.content || ""
-        }))
+          content: q.content || "",
+          isCompleted: !!q.isCompleted || !!q.completed
+        })),
+        result: (app.result?.toLowerCase() || "pending") as any
       }))
       setLocalApplications(mapped)
     } catch (err) {
@@ -68,6 +86,42 @@ export function KanbanBoard() {
   useEffect(() => {
     fetchApplications()
   }, [])
+
+  // Auto-fetch and save logos for applications missing them
+  useEffect(() => {
+    if (localApplications.length > 0) {
+      const fetchMissingLogos = async () => {
+        let hasUpdates = false
+        const updatedApps = [...localApplications]
+
+        for (let i = 0; i < updatedApps.length; i++) {
+          const app = updatedApps[i]
+          if (!app.logoUrl) {
+            const logoUrl = getCompanyLogo(app.company)
+            try {
+              const response = await fetch(`/api/applications/${app.id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ logoUrl })
+              })
+              if (response.ok) {
+                updatedApps[i] = { ...app, logoUrl }
+                hasUpdates = true
+              }
+            } catch (err) {
+              console.error(`Failed to auto-update logo for ${app.company}`, err)
+            }
+          }
+        }
+
+        if (hasUpdates) {
+          setLocalApplications(updatedApps)
+        }
+      }
+
+      fetchMissingLogos()
+    }
+  }, [localApplications.length > 0]) // Run when we have applications
 
   const handleCardClick = (app: Application) => {
     setSelectedApplication(app)
@@ -107,7 +161,7 @@ export function KanbanBoard() {
     }
   }
 
-  const handleAddApplication = async (newApp: { company: string; position: string; rawJd: string; questions: string[] }) => {
+  const handleAddApplication = async (newApp: { company: string; position: string; rawJd: string; aiInsight: string; questions: string[] }) => {
     try {
       const response = await fetch("/api/applications/full", {
         method: "POST",
@@ -129,9 +183,9 @@ export function KanbanBoard() {
         id: savedApp.id.toString(),
         company: savedApp.companyName,
         position: savedApp.position,
-        status: "document",
+        status: savedApp.status?.toLowerCase() || "document",
         logoColor: "bg-primary",
-        deadline: new Date(),
+        deadline: savedApp.deadline,
         techStack: [],
         rawJd: savedApp.rawJd || "",
         aiInsight: savedApp.aiInsight || "",
@@ -140,14 +194,57 @@ export function KanbanBoard() {
           title: q.title,
           maxLength: q.maxLength || 1000,
           currentLength: q.content?.length || 0,
-          content: q.content || ""
-        }))
+          content: q.content || "",
+          isCompleted: !!q.isCompleted || !!q.completed
+        })),
+        result: (savedApp.result?.toLowerCase() || "pending") as any
       }
       setLocalApplications([application, ...localApplications])
     } catch (err) {
       console.error(err)
       alert("공고 등록에 실패했습니다.")
     }
+  }
+
+  const handleUpdateApplication = async (id: string, updates: Partial<Application>) => {
+    try {
+      setLocalApplications(prev => prev.map(app => 
+        app.id === id ? { ...app, ...updates } : app
+      ))
+
+      const response = await fetch(`/api/applications/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates)
+      })
+      if (!response.ok) throw new Error("Update failed")
+    } catch (err) {
+      console.error(err)
+      fetchApplications()
+    }
+  }
+
+  const handleStatusChange = async (id: string, newStatus: ApplicationStatus) => {
+    handleUpdateApplication(id, { status: newStatus })
+    try {
+      const response = await fetch(`/api/applications/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus.toUpperCase() })
+      })
+      if (!response.ok) throw new Error("Status update failed")
+    } catch (err) {
+      console.error(err)
+      fetchApplications()
+    }
+  }
+
+  const onDragEnd = (result: DropResult) => {
+    const { destination, source, draggableId } = result
+    if (!destination) return
+    if (destination.droppableId === source.droppableId && destination.index === source.index) return
+    const newStatus = destination.droppableId as ApplicationStatus
+    handleStatusChange(draggableId, newStatus)
   }
 
   if (isLoading) {
@@ -179,30 +276,48 @@ export function KanbanBoard() {
             </div>
           ))}
         </div>
-        <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2 shadow-md">
-          <Plus className="size-4" />
-          새 공고 추가
-        </Button>
+        <div className="flex items-center gap-4">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setShowFailed(!showFailed)}
+            className={`gap-2 text-[10px] uppercase font-bold tracking-tighter transition-all ${showFailed ? "text-muted-foreground" : "text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-950/20"}`}
+          >
+            {showFailed ? (
+              <><Eye className="size-3.5" /> 불합격 공고 표시 중</>
+            ) : (
+              <><EyeOff className="size-3.5" /> 불합격 공고 숨김</>
+            )}
+          </Button>
+          <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2 shadow-md">
+            <Plus className="size-4" />
+            새 공고 추가
+          </Button>
+        </div>
       </div>
 
-      <div className="flex gap-3 overflow-x-auto pb-4 flex-1 scroll-smooth">
-        {columns.map((column, index) => (
-          <div key={column.id} className="flex items-start">
-            <KanbanColumn
-              column={column}
-              applications={localApplications.filter((app) => app.status === column.id)}
-              onCardClick={handleCardClick}
-            />
-            {index < columns.length - 1 && <JourneyArrow />}
-          </div>
-        ))}
-      </div>
+      <DragDropContext onDragEnd={onDragEnd}>
+        <div className="flex gap-4 pb-4 flex-1 min-h-0 w-full">
+          {columns.map((column) => (
+            <div key={column.id} className="flex-1 min-w-0 h-full">
+              <KanbanColumn
+                column={column}
+                applications={sortedApplications.filter((app) => 
+                  app.status === column.id && (showFailed || app.result !== "fail")
+                )}
+                onCardClick={handleCardClick}
+              />
+            </div>
+          ))}
+        </div>
+      </DragDropContext>
 
       <ApplicationDetailSheet
         application={selectedApplication}
         isOpen={isSheetOpen}
         onClose={handleCloseSheet}
         onRefresh={fetchApplications}
+        onUpdateApplication={(updates) => selectedApplication && handleUpdateApplication(selectedApplication.id, updates)}
         onDelete={handleDeleteApplication}
       />
 
