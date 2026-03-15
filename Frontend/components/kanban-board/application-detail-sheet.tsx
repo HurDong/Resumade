@@ -74,7 +74,11 @@ export function ApplicationDetailSheet({
           </div>
         </SheetHeader>
 
-        <Tabs defaultValue="jd" className="flex-1">
+        <Tabs 
+          key={application.id + (application.aiInsight ? "-insight" : "-noinsight")}
+          defaultValue={application.aiInsight ? "questions" : "jd"} 
+          className="flex-1"
+        >
           <TabsList className="w-full justify-start rounded-none border-b border-border bg-transparent p-0 h-auto">
             <TabsTrigger 
               value="jd" 
