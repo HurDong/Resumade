@@ -89,18 +89,18 @@ export function ContextPanel() {
       {/* Header Context */}
       <div className="shrink-0 border-b border-border bg-muted/20 p-6">
         <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
-          <Settings className="size-4 shrink-0 text-muted-foreground/50" />
+          <Settings className="size-4 shrink-0 text-muted-foreground/60" />
           <input
             value={company}
             onChange={(e) => setCompany(e.target.value)}
             className="bg-transparent border-none p-0 focus:ring-0 w-24 font-bold text-foreground"
             placeholder="회사명"
           />
-          <span className="text-muted-foreground/30">|</span>
+          <span className="text-muted-foreground/40">|</span>
           <input
             value={position}
             onChange={(e) => setPosition(e.target.value)}
-            className="bg-transparent border-none p-0 focus:ring-0 flex-1 text-muted-foreground"
+            className="bg-transparent border-none p-0 focus:ring-0 flex-1 text-muted-foreground/80"
             placeholder="지원 직무"
           />
         </div>
@@ -129,7 +129,7 @@ export function ContextPanel() {
             <Textarea
               value={activeQuestion.title}
               onChange={(e) => updateActiveQuestion({ title: e.target.value })}
-              className="text-lg font-bold leading-tight bg-transparent border-none focus-visible:ring-0 p-0 min-h-[50px] resize-none overflow-hidden placeholder:text-muted-foreground/30"
+              className="text-lg font-bold leading-tight bg-transparent border-none focus-visible:ring-0 p-0 min-h-[50px] resize-none overflow-hidden placeholder:text-muted-foreground/50"
               placeholder="자소서 문항 내용을 입력하세요..."
               rows={2}
             />
@@ -137,21 +137,21 @@ export function ContextPanel() {
 
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-              <span className="font-medium">글자수 진행도</span>
+              <span className="font-semibold text-muted-foreground/80">글자수 진행도</span>
               <div className="flex items-center gap-1.5">
                 <Input 
                   type="number" 
                   value={activeQuestion.maxLength} 
                   onChange={(e) => updateActiveQuestion({ maxLength: parseInt(e.target.value) || 0 })}
-                  className="w-16 h-6 px-1.5 py-0 text-center text-[11px] bg-background border-muted-foreground/20"
+                  className="w-16 h-6 px-1.5 py-0 text-center text-[11px] bg-background border-muted-foreground/30"
                 />
-                <span className="opacity-50">자 제한</span>
+                <span className="font-medium">자 제한</span>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <Progress value={(activeQuestion.content.length / (activeQuestion.maxLength || 1000)) * 100} className="h-1.5 flex-1" />
               <span className={`text-xs tabular-nums font-semibold ${activeQuestion.content.length > activeQuestion.maxLength ? 'text-destructive' : 'text-primary'}`}>
-                {activeQuestion.content.length} <span className="font-normal text-muted-foreground/50">/ {activeQuestion.maxLength}</span>
+                {activeQuestion.content.length} <span className="font-normal text-muted-foreground/60">/ {activeQuestion.maxLength}</span>
               </span>
             </div>
           </div>
@@ -178,7 +178,7 @@ export function ContextPanel() {
           <section>
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="size-4 text-primary" />
-              <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground/70">관련 경험 콘텍스트 (RAG)</h3>
+              <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground/90">관련 경험 콘텍스트 (RAG)</h3>
             </div>
             <div className="space-y-3">
               {extractedContext.map((ctx) => (
@@ -203,7 +203,7 @@ export function ContextPanel() {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Wand2 className="size-4 text-primary" />
-                <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground/70">AI 초안 작업장</h3>
+                <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground/90">AI 초안 작업장</h3>
               </div>
               <Button 
                 size="sm" 
@@ -221,14 +221,14 @@ export function ContextPanel() {
               </Button>
             </div>
             <div className="relative">
-              <div className="absolute top-3 left-3 flex items-center gap-1.5 pointer-events-none opacity-20">
+              <div className="absolute top-3 left-3 flex items-center gap-1.5 pointer-events-none opacity-40">
                 <FileText className="size-4" />
                 <span className="text-[10px] font-bold uppercase tracking-tighter">Draft Pad</span>
               </div>
               <Textarea
                 value={activeQuestion.content}
                 onChange={(e) => updateActiveQuestion({ content: e.target.value })}
-                className="min-h-[400px] w-full bg-muted/10 border-none focus-visible:ring-1 focus-visible:ring-primary/20 p-8 pt-12 text-sm leading-relaxed rounded-2xl placeholder:opacity-20"
+                className="min-h-[400px] w-full bg-muted/10 border-none focus-visible:ring-1 focus-visible:ring-primary/20 p-8 pt-12 text-sm leading-relaxed rounded-2xl placeholder:opacity-40"
                 placeholder="나의 경험 데이터를 기반으로 AI가 초안을 작성합니다. 직접 내용을 입력하거나 수정할 수도 있습니다."
               />
             </div>

@@ -42,11 +42,11 @@ export function TranslationPanel() {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-muted/5 text-muted-foreground p-10 text-center">
         <div className="relative mb-6">
-          <Wand2 className="size-16 opacity-10" />
-          <div className="absolute inset-0 size-16 bg-primary/5 rounded-full blur-2xl -z-10" />
+          <Wand2 className="size-16 opacity-20" />
+          <div className="absolute inset-0 size-16 bg-primary/10 rounded-full blur-2xl -z-10" />
         </div>
         <h3 className="text-xl font-bold mb-3">휴먼 패치 작업실</h3>
-        <p className="text-sm max-w-sm text-balance text-muted-foreground/60 leading-relaxed">
+        <p className="text-sm max-w-md text-balance text-muted-foreground/80 leading-relaxed font-medium">
           왼쪽 패널에서 초안을 생성하면 [영어 → 한국어] 역번역을 통한 
           AI 탐지 우회 및 문맥 정제 과정이 이곳에 표시됩니다.
         </p>
@@ -83,18 +83,18 @@ export function TranslationPanel() {
             {/* Original AI Draft */}
             <Card className="shadow-sm border-none bg-background/80">
               <CardHeader className="pb-4">
-                <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50 flex items-center gap-2">
+                <CardTitle className="text-xs font-black uppercase tracking-widest text-muted-foreground/60 flex items-center gap-2">
                   <FileText className="size-3.5" />
                   원문 (AI 초안)
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-sm leading-relaxed text-muted-foreground/80 whitespace-pre-wrap min-h-[200px] font-medium italic opacity-70">
+                <div className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap min-h-[200px] font-medium italic">
                   {draft || "초안 생성 대기 중..."}
                 </div>
               </CardContent>
             </Card>
-
+ 
             {/* Washed Version (Human Patch) */}
             <Card className="shadow-lg border-primary/20 bg-background ring-1 ring-primary/5">
               <CardHeader className="pb-4">
@@ -102,7 +102,7 @@ export function TranslationPanel() {
                   <CheckCircle className="size-3.5" />
                   번역본 (Human Patch)
                 </CardTitle>
-                <CardDescription className="text-[10px] text-muted-foreground/60 italic font-medium">
+                <CardDescription className="text-[10px] text-muted-foreground/80 italic font-semibold">
                   하이라이트된 용어는 IT 문맥에 맞춰 검수가 필요한 부분입니다.
                 </CardDescription>
               </CardHeader>
@@ -126,7 +126,7 @@ export function TranslationPanel() {
             <div className="space-y-6 pt-4">
               <div className="flex items-center gap-2">
                 <div className="h-px flex-1 bg-border" />
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 px-4 italic">Analysis Report</span>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 px-4 italic">Analysis Report</span>
                 <div className="h-px flex-1 bg-border" />
               </div>
 
@@ -198,8 +198,8 @@ export function TranslationPanel() {
                               <div className="px-3 py-1.5 rounded-lg bg-background border text-sm font-mono font-bold italic">
                                 {mis.original}
                               </div>
-                              <ArrowRight className="size-4 text-muted-foreground/30 animate-pulse" />
-                              <div className="px-3 py-1.5 rounded-lg bg-background border line-through text-sm font-mono text-muted-foreground/50">
+                              <ArrowRight className="size-4 text-muted-foreground/50 animate-pulse" />
+                              <div className="px-3 py-1.5 rounded-lg bg-background border line-through text-sm font-mono text-muted-foreground/70">
                                 {mis.translated}
                               </div>
                             </div>
