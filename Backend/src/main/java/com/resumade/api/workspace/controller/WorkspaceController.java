@@ -27,4 +27,13 @@ public class WorkspaceController {
         executorService.execute(() -> workspaceService.processHumanPatch(questionId, emitter));
         return emitter;
     }
+
+    @GetMapping("/refine-stream/{questionId}")
+    public SseEmitter streamRefinement(
+            @PathVariable Long questionId,
+            @RequestParam String directive) {
+        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
+        executorService.execute(() -> workspaceService.processRefinement(questionId, directive, emitter));
+        return emitter;
+    }
 }

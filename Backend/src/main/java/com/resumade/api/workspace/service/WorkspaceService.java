@@ -30,12 +30,12 @@ public class WorkspaceService {
     private final ObjectMapper objectMapper;
     private final WorkspaceQuestionRepository questionRepository;
 
-    public List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> getMatchedExperiences(Long questionId) {
+    public List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> getMatchedExperiences(Long questionId, String customQuery) {
         WorkspaceQuestion question = questionRepository.findById(questionId)
                 .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
         
         List<Experience> allExperiences = experienceRepository.findAll();
-        String query = question.getTitle();
+        String query = (customQuery != null && !customQuery.isBlank()) ? customQuery : question.getTitle();
 
         // Simple relevance matching logic for now (can be improved with Elasticsearch later)
         return allExperiences.stream()
@@ -66,6 +66,112 @@ public class WorkspaceService {
     }
 
     @Transactional(readOnly = true)
+    public void processRefinement(Long questionId, String directive, SseEmitter emitter) {
+        try {
+            WorkspaceQuestion initialQuestion = questionRepository.findById(questionId)
+                    .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
+
+            String company = initialQuestion.getApplication().getCompanyName();
+            String position = initialQuestion.getApplication().getPosition();
+            
+            // For refinement, we use the current washed text if available, otherwise fallback to draft
+            String currentInput = initialQuestion.getWashedKr() != null ? initialQuestion.getWashedKr() : initialQuestion.getContent();
+
+            // Step 1: Collect Context (Experiences)
+            sendSse(emitter, "progress", "RAG: 관련 경험 데이터를 재추출 중입니다...");
+            List<Experience> experiences = experienceRepository.findAll();
+            String context = experiences.stream()
+                    .map(Experience::getRawContent)
+                    .collect(Collectors.joining("\n---\n"));
+            paceProcessing();
+
+            // Step 2: Refine Draft with new Directive
+            sendSse(emitter, "progress", "DRAFT: 지시사항을 반영하여 초안을 정교하게 수정 중입니다...");
+            WorkspaceAiService.DraftResponse refineResponse = workspaceAiService.refineDraft(
+                    company,
+                    position,
+                    currentInput,
+                    initialQuestion.getMaxLength(),
+                    context,
+                    directive
+            );
+            String refinedDraft = refineResponse.text;
+
+            // Post-process
+            refinedDraft = refinedDraft.replaceAll("\\*\\*\\[", "[")
+                                     .replaceAll("\\]\\*\\*", "]");
+            if (refinedDraft.contains("]") && !refinedDraft.contains("]\n\n")) {
+                refinedDraft = refinedDraft.replaceFirst("\\]\n", "]\n\n");
+            }
+
+            // Save refined draft as the new base content
+            WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
+            question.setContent(refinedDraft);
+            question.setUserDirective(directive); // Update Directive for history
+            questionRepository.save(question);
+            sendSse(emitter, "draft_intermediate", refinedDraft);
+
+            // Step 3: Translate to English (DeepL)
+            paceProcessing();
+            sendSse(emitter, "progress", "TRANSLATE_EN: 다시 영어로 번역하여 AI 탐지기를 세탁 중입니다...");
+            String translatedEn = translationService.translateToEnglish(refinedDraft);
+
+            // Step 4: Translate back to Korean (Papago/DeepL)
+            paceProcessing();
+            sendSse(emitter, "progress", "TRANSLATE_KR: 자연스러운 한국어로 새롭게 다듬는 중입니다...");
+            String washedKr = translationService.translateToKorean(translatedEn);
+
+            // Post-process washed text
+            washedKr = washedKr.replaceAll("\\*\\*\\[", "[")
+                               .replaceAll("\\]\\*\\*", "]");
+            if (washedKr.contains("]") && !washedKr.contains("]\n\n")) {
+                washedKr = washedKr.replaceFirst("\\]\n", "]\n\n");
+            }
+
+            question = questionRepository.findById(questionId).orElseThrow();
+            question.setWashedKr(washedKr);
+            questionRepository.save(question);
+            sendSse(emitter, "washed_intermediate", washedKr);
+
+            // Step 5: Human Patch & Analysis
+            paceProcessing();
+            sendSse(emitter, "progress", "PATCH: 최종 휴먼 패치 및 오역 검토를 진행 중입니다...");
+            DraftAnalysisResult analysis = workspaceAiService.analyzePatch(refinedDraft, washedKr, initialQuestion.getMaxLength());
+            
+            paceProcessing();
+
+            // Post-process analysis
+            analysis.getMistranslations().forEach(m -> {
+                if (m.getSuggestion() != null) {
+                    m.setSuggestion(m.getSuggestion().replaceAll("\\*\\*\\[", "[").replaceAll("\\]\\*\\*", "]"));
+                }
+            });
+
+            question = questionRepository.findById(questionId).orElseThrow();
+            question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
+            question.setAiReview(objectMapper.writeValueAsString(analysis.getAiReviewReport()));
+            questionRepository.save(question);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("draft", washedKr);
+            result.put("mistranslations", analysis.getMistranslations());
+            result.put("aiReviewReport", analysis.getAiReviewReport());
+
+            sendSse(emitter, "complete", result);
+            emitter.complete();
+
+        } catch (Exception e) {
+            log.error("Refinement process failed", e);
+            sendSse(emitter, "error", "수정 처리 중 오류가 발생했습니다: " + e.getMessage());
+            try {
+                emitter.complete();
+            } catch (Exception ex) {
+                // Ignore
+            }
+        }
+    }
+
+    @Transactional(readOnly = true)
     public void processHumanPatch(Long questionId, SseEmitter emitter) {
         try {
             WorkspaceQuestion initialQuestion = questionRepository.findById(questionId)
@@ -87,6 +193,7 @@ public class WorkspaceService {
             String context = experiences.stream()
                     .map(Experience::getRawContent)
                     .collect(Collectors.joining("\n---\n"));
+            paceProcessing();
 
             // Step 2: Generate Draft
             sendSse(emitter, "progress", "DRAFT: AI가 전체 자소서와의 조화를 고려하여 초안을 작성 중입니다...");
@@ -116,10 +223,12 @@ public class WorkspaceService {
             sendSse(emitter, "draft_intermediate", draft);
 
             // Step 3: Translate to English (DeepL)
+            paceProcessing();
             sendSse(emitter, "progress", "TRANSLATE_EN: 영어로 번역하여 AI 탐지기를 세탁 중입니다...");
             String translatedEn = translationService.translateToEnglish(draft);
 
             // Step 4: Translate back to Korean (Papago/DeepL)
+            paceProcessing();
             sendSse(emitter, "progress", "TRANSLATE_KR: 다시 한국어로 번역하여 자연스럽게 다듬는 중입니다...");
             String washedKr = translationService.translateToKorean(translatedEn);
             
@@ -136,8 +245,11 @@ public class WorkspaceService {
             sendSse(emitter, "washed_intermediate", washedKr);
 
             // Step 5: Human Patch & Analysis
+            paceProcessing();
             sendSse(emitter, "progress", "PATCH: 최종 휴먼 패치 및 오역 검토를 진행 중입니다...");
-            DraftAnalysisResult analysis = workspaceAiService.analyzePatch(draft, washedKr);
+            DraftAnalysisResult analysis = workspaceAiService.analyzePatch(draft, washedKr, initialQuestion.getMaxLength());
+            
+            paceProcessing(); // Final breath before completion
             
             // Ensure suggestions also don't have bolding if they were titles
             analysis.getMistranslations().forEach(m -> {
@@ -167,6 +279,14 @@ public class WorkspaceService {
             } catch (Exception ex) {
                 // Ignore if already completed
             }
+        }
+    }
+
+    private void paceProcessing() {
+        try {
+            Thread.sleep(700);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 

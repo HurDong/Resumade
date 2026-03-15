@@ -25,6 +25,7 @@ export interface WorkspaceQuestion {
   washedKr: string;
   mistranslations: Mistranslation[];
   aiReviewReport: AiReviewReport | null;
+  isCompleted: boolean;
 }
 
 export interface ContextItem {
@@ -52,6 +53,7 @@ interface WorkspaceState {
   // Transient processing state
   isProcessing: boolean;
   progressMessage: string;
+  saveTimeout: any;
 
   // Actions
   setCompany: (company: string) => void;
@@ -64,10 +66,14 @@ interface WorkspaceState {
   addQuestion: () => void;
   updateActiveQuestion: (updates: Partial<WorkspaceQuestion>) => void;
   applySuggestion: (mistranslationId: string) => void;
+  updateMistranslationSuggestion: (mistranslationId: string, suggestion: string) => void;
   dismissMistranslation: (mistranslationId: string) => void;
   
   fetchApplicationData: (id: string) => Promise<void>;
-  fetchRAGContext: (questionId: number) => Promise<void>;
+  fetchRAGContext: (questionId: number, query?: string) => Promise<void>;
+  
+  deleteActiveQuestion: () => Promise<void>;
+  toggleActiveQuestionCompletion: () => Promise<void>;
   
   startProcessing: () => void;
   updateProgress: (message: string) => void;
@@ -75,6 +81,7 @@ interface WorkspaceState {
   updateWashedIntermediate: (washed: string) => void;
   completeProcessing: (data: any) => void;
   setError: (error: string) => void;
+  refineDraft: (directive: string) => Promise<void>;
 }
 
 const defaultQuestion: WorkspaceQuestion = {
@@ -85,11 +92,13 @@ const defaultQuestion: WorkspaceQuestion = {
   washedKr: "",
   mistranslations: [],
   aiReviewReport: null,
+  userDirective: "",
+  isCompleted: false,
 };
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   applicationId: null,
-  company: "로딩 중...",
+  company: "",
   position: "",
   questions: [defaultQuestion],
   activeQuestionId: "q-default",
@@ -98,6 +107,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   hoveredMistranslationId: null,
   isProcessing: false,
   progressMessage: "",
+  saveTimeout: null,
 
   setCompany: (company) => set({ company }),
   setPosition: (position) => set({ position }),
@@ -109,7 +119,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const state = get();
     const activeQ = state.questions.find(q => q.id === activeQuestionId);
     if (activeQ?.dbId) {
-      state.fetchRAGContext(activeQ.dbId);
+      state.fetchRAGContext(activeQ.dbId, activeQ.title);
     }
   },
   
@@ -124,7 +134,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const newQuestion: WorkspaceQuestion = {
       ...defaultQuestion,
       id: newId,
-      title: "새로운 문항을 입력하세요.",
+      title: "",
       content: "",
       washedKr: "",
     };
@@ -141,7 +151,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: newQuestion.title,
-          maxLength: newQuestion.maxLength
+          maxLength: newQuestion.maxLength,
+          isCompleted: false
         })
       });
       if (!response.ok) throw new Error("Failed to sync new question");
@@ -167,20 +178,46 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     // Sync to backend if dbId exists and relevant fields changed
     const activeQuestion = updatedQuestions.find(q => q.id === state.activeQuestionId);
-    if (activeQuestion?.dbId && (updates.content !== undefined || updates.washedKr !== undefined || updates.mistranslations !== undefined || updates.userDirective !== undefined)) {
-      fetch(`/api/applications/questions/${activeQuestion.dbId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: activeQuestion.title,
-          maxLength: activeQuestion.maxLength,
-          userDirective: activeQuestion.userDirective,
-          content: activeQuestion.content,
-          washedKr: activeQuestion.washedKr,
-          mistranslations: JSON.stringify(activeQuestion.mistranslations),
-          aiReview: JSON.stringify(activeQuestion.aiReviewReport)
+    
+    if (activeQuestion?.dbId && (
+      updates.title !== undefined || 
+      updates.maxLength !== undefined ||
+      updates.content !== undefined || 
+      updates.washedKr !== undefined || 
+      updates.mistranslations !== undefined || 
+      updates.userDirective !== undefined ||
+      updates.isCompleted !== undefined
+    )) {
+      // Debounce sync and RAG fetch
+      if (get().saveTimeout) {
+        clearTimeout(get().saveTimeout);
+      }
+
+      const timeout = setTimeout(() => {
+        fetch(`/api/applications/questions/${activeQuestion.dbId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: activeQuestion.title,
+            maxLength: activeQuestion.maxLength,
+            userDirective: activeQuestion.userDirective,
+            content: activeQuestion.content,
+            washedKr: activeQuestion.washedKr,
+            mistranslations: JSON.stringify(activeQuestion.mistranslations),
+            aiReview: JSON.stringify(activeQuestion.aiReviewReport),
+            isCompleted: activeQuestion.isCompleted
+          })
         })
-      }).catch(err => console.error("Auto-save failed", err));
+        .then(() => {
+          // If title was updated, refresh RAG context using the NEW title for real-time relevance
+          if (updates.title !== undefined) {
+             get().fetchRAGContext(activeQuestion.dbId!, activeQuestion.title);
+          }
+        })
+        .catch(err => console.error("Auto-save failed", err));
+      }, 800); // 800ms debounce for title/RAG sync
+
+      set({ saveTimeout: timeout });
     }
   },
   
@@ -188,26 +225,24 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const state = get();
     const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
     if (!activeQ) return;
-    
     const mistranslation = activeQ.mistranslations.find(m => m.id === mistranslationId);
     if (!mistranslation) return;
+
+    const normalizedSuggestion = mistranslation.suggestion?.trim() || "";
+    const normalizedTranslated = mistranslation.translated?.trim() || "";
     
-    // Replace the translated text with the suggestion
+    // If suggestion is identical to the one that was flagged (user didn't change it),
+    // it means the user wants to revert to the original draft version.
+    const finalSuggestion = normalizedSuggestion === normalizedTranslated
+      ? mistranslation.original 
+      : normalizedSuggestion;
+    
+    // Replace the translated text with the final suggestion
     let searchTerms = [mistranslation.translated];
     
-    // If the search term contains slashes or common separators, add variants as fallbacks
-    if (mistranslation.translated.includes("/")) {
-      const variants = mistranslation.translated.split("/").map(v => v.trim()).filter(v => v.length > 0);
-      searchTerms = [...searchTerms, ...variants];
-    }
-    
-    // Smart extraction for suggestion if it contains AI reasoning (e.g., "Use 'Word' instead")
-    let finalSuggestion = mistranslation.suggestion;
-    if (finalSuggestion.length > 30) {
-      const quoted = finalSuggestion.match(/['"“](.*?)['"”]/);
-      if (quoted && quoted[1].length < 30) {
-        finalSuggestion = quoted[1];
-      }
+    // Also try variant without spaces for robustness in matching
+    if (mistranslation.translated.includes(" ")) {
+       searchTerms.push(mistranslation.translated.replace(/\s+/g, ""));
     }
     
     let newWashedKr = activeQ.washedKr;
@@ -216,7 +251,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     // Try each search term variant
     for (const term of searchTerms) {
       if (newWashedKr.includes(term)) {
-        // Simple literal replacement for all occurrences
         newWashedKr = newWashedKr.split(term).join(finalSuggestion);
         found = true;
         break;
@@ -230,6 +264,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       washedKr: newWashedKr,
       mistranslations: newMistranslations
     });
+  },
+
+  updateMistranslationSuggestion: (mistranslationId, suggestion) => {
+    const state = get();
+    const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
+    if (!activeQ) return;
+
+    const updatedMistranslations = activeQ.mistranslations.map(m => 
+      m.id === mistranslationId ? { ...m, suggestion } : m
+    );
+
+    state.updateActiveQuestion({ mistranslations: updatedMistranslations });
   },
 
   dismissMistranslation: (mistranslationId) => {
@@ -261,6 +307,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           id: m.id || `mis-${idx}`
         })) : [],
         aiReviewReport: q.aiReview ? JSON.parse(q.aiReview) : null,
+        isCompleted: !!q.completed || !!q.isCompleted
       }));
 
       set({
@@ -275,7 +322,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
       // Fetch RAG context for the first question
       if (mappedQuestions.length > 0 && mappedQuestions[0].dbId) {
-        get().fetchRAGContext(mappedQuestions[0].dbId);
+        get().fetchRAGContext(mappedQuestions[0].dbId, mappedQuestions[0].title);
       }
     } catch (err) {
       console.error(err);
@@ -283,9 +330,46 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
-  fetchRAGContext: async (questionId) => {
+  deleteActiveQuestion: async () => {
+    const state = get();
+    const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
+    if (!activeQ || !activeQ.dbId) return;
+
+    if (!confirm("정말 이 문항을 삭제하시겠습니까?")) return;
+
     try {
-      const response = await fetch(`/api/applications/questions/${questionId}/rag`);
+      const response = await fetch(`/api/applications/questions/${activeQ.dbId}`, {
+        method: "DELETE"
+      });
+      if (!response.ok) throw new Error("Failed to delete question");
+
+      const remainingQuestions = state.questions.filter(q => q.id !== state.activeQuestionId);
+      set({ 
+        questions: remainingQuestions,
+        activeQuestionId: remainingQuestions.length > 0 ? remainingQuestions[0].id : null
+      });
+    } catch (err) {
+      console.error(err);
+      alert("문항 삭제에 실패했습니다.");
+    }
+  },
+
+  toggleActiveQuestionCompletion: async () => {
+    const state = get();
+    const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
+    if (!activeQ) return;
+
+    const newStatus = !activeQ.isCompleted;
+    state.updateActiveQuestion({ isCompleted: newStatus });
+  },
+
+  fetchRAGContext: async (questionId, query) => {
+    try {
+      const url = query 
+        ? `/api/applications/questions/${questionId}/rag?query=${encodeURIComponent(query)}`
+        : `/api/applications/questions/${questionId}/rag`;
+        
+      const response = await fetch(url);
       if (!response.ok) throw new Error("Failed to fetch RAG context");
       const data = await response.json();
       set({ extractedContext: data.extractedContext || [] });
@@ -324,6 +408,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const updatedMistranslations = data.mistranslations.map((m: any, idx: number) => ({
       ...m,
       id: `mis-${idx}`,
+      suggestion: m.translated, // Pre-fill with translation for manual editing
     }));
 
     // Update frontend state
@@ -364,4 +449,45 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       isProcessing: false,
       progressMessage: `오류: ${error}`,
     }),
+
+  refineDraft: async (directive: string) => {
+    const state = get();
+    const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
+    if (!activeQ || !activeQ.dbId) return;
+
+    state.startProcessing();
+    state.updateActiveQuestion({ userDirective: directive });
+
+    const eventSource = new EventSource(
+      `/api/workspace/refine-stream/${activeQ.dbId}?directive=${encodeURIComponent(directive)}`
+    );
+
+    eventSource.addEventListener("progress", (event) => {
+      state.updateProgress(event.data);
+    });
+
+    eventSource.addEventListener("draft_intermediate", (event) => {
+      state.updateDraftIntermediate(event.data);
+    });
+
+    eventSource.addEventListener("washed_intermediate", (event) => {
+      state.updateWashedIntermediate(event.data);
+    });
+
+    eventSource.addEventListener("complete", (event) => {
+      const data = JSON.parse(event.data);
+      state.completeProcessing(data);
+      eventSource.close();
+    });
+
+    eventSource.addEventListener("error", (event: any) => {
+      state.setError(event.data || "수정 중 오류가 발생했습니다.");
+      eventSource.close();
+    });
+
+    eventSource.onerror = () => {
+      state.setError("서버와의 연결이 끊어졌습니다.");
+      eventSource.close();
+    };
+  }
 }));
