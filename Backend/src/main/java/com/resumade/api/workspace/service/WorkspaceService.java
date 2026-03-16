@@ -86,14 +86,21 @@ public class WorkspaceService {
                     .collect(Collectors.joining("\n---\n"));
             paceProcessing();
 
+            // Collect other questions' info for non-overlap
+            String others = initialQuestion.getApplication().getQuestions().stream()
+                    .filter(q -> !q.getId().equals(questionId))
+                    .map(q -> String.format("[문항: %s | 내용: %s]", q.getTitle(), q.getContent() != null ? q.getContent() : "아직 작성 전"))
+                    .collect(Collectors.joining("\n"));
+
             // Step 2: Refine Draft with new Directive
-            sendSse(emitter, "progress", "DRAFT: 지시사항을 반영하여 초안을 정교하게 수정 중입니다...");
+            sendSse(emitter, "progress", "✍️ [DRAFT] 지시사항을 반영하여 초안을 정교하게 수정 중입니다...");
             WorkspaceAiService.DraftResponse refineResponse = workspaceAiService.refineDraft(
                     company,
                     position,
                     currentInput,
                     initialQuestion.getMaxLength(),
                     context,
+                    others,
                     directive
             );
             String refinedDraft = refineResponse.text;
