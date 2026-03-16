@@ -463,8 +463,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     );
 
     eventSource.onopen = () => {
-      console.log("SSE Connection Opened");
-      get().updateProgress("파이프라인 연결됨...");
+      console.log("🟢 SSE Connection Opened");
+      get().updateProgress("📡 파이프라인 연결됨...");
     };
 
     eventSource.addEventListener("progress", (event) => {

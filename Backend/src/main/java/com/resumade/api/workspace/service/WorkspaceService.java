@@ -78,8 +78,8 @@ public class WorkspaceService {
             String currentInput = initialQuestion.getWashedKr() != null ? initialQuestion.getWashedKr() : initialQuestion.getContent();
 
             // Step 1: Collect Context (Experiences)
-            sendSse(emitter, "progress", "START: 리터칭 작업을 시작합니다...");
-            sendSse(emitter, "progress", "RAG: 관련 경험 데이터를 재추출 중입니다...");
+            sendSse(emitter, "progress", "🚀 [REFINE] 리터칭 작업을 시작합니다...");
+            sendSse(emitter, "progress", "📚 [RAG] 관련 경험 데이터를 재추출 중입니다...");
             List<Experience> experiences = experienceRepository.findAll();
             String context = experiences.stream()
                     .map(Experience::getRawContent)
@@ -186,23 +186,26 @@ public class WorkspaceService {
             String company = initialQuestion.getApplication().getCompanyName();
             String position = initialQuestion.getApplication().getPosition();
             String questionTitle = initialQuestion.getTitle();
-            
+
             // Initial delay to ensure client listeners are ready
             Thread.sleep(100);
 
             // Start phase
-            sendSse(emitter, "progress", "START: 파이프라인 연결 성공. 작업을 시작합니다...");
+            // Send a hidden comment to flush any potential proxy buffers
+            emitter.send(SseEmitter.event().comment("flush buffer"));
+            
+            sendSse(emitter, "progress", "🚀 [START] 파이프라인 연결 성공! 작업을 시작합니다...");
             paceProcessing();
 
             // Collect other questions' info for non-overlap
-            sendSse(emitter, "progress", "PIPELINE: 문항 간의 중복도를 체크하고 있습니다...");
+            sendSse(emitter, "progress", "🔍 [PIPELINE] 문항 간의 중복도를 체크하고 있습니다...");
             String others = initialQuestion.getApplication().getQuestions().stream()
                     .filter(q -> !q.getId().equals(questionId))
                     .map(q -> String.format("[문항: %s | 내용: %s]", q.getTitle(), q.getContent() != null ? q.getContent() : "아직 작성 전"))
                     .collect(Collectors.joining("\n"));
 
             // Step 1: RAG Context Search
-            sendSse(emitter, "progress", "RAG: 관련 경험 데이터를 추출 중입니다...");
+            sendSse(emitter, "progress", "📚 [RAG] 관련 경험 데이터를 추출 중입니다...");
             List<Experience> experiences = experienceRepository.findAll();
             String context = experiences.stream()
                     .map(Experience::getRawContent)
@@ -210,7 +213,7 @@ public class WorkspaceService {
             paceProcessing();
 
             // Step 2: Generate Draft
-            sendSse(emitter, "progress", "DRAFT: AI가 전체 자소서와의 조화를 고려하여 초안을 작성 중입니다...");
+            sendSse(emitter, "progress", "✍️ [DRAFT] AI가 자소서 초안을 정성스럽게 작성 중입니다...");
             
             WorkspaceAiService.DraftResponse draftResponse = workspaceAiService.generateDraft(
                     company, 
@@ -238,12 +241,12 @@ public class WorkspaceService {
 
             // Step 3: Translate to English (DeepL)
             paceProcessing();
-            sendSse(emitter, "progress", "TRANSLATE_EN: 영어로 번역하여 AI 탐지기를 세탁 중입니다...");
+            sendSse(emitter, "progress", "🧼 [WASH_EN] 영어로 번역하여 AI 탐지기를 세탁 중입니다...");
             String translatedEn = translationService.translateToEnglish(draft);
 
             // Step 4: Translate back to Korean (Papago/DeepL)
             paceProcessing();
-            sendSse(emitter, "progress", "TRANSLATE_KR: 다시 한국어로 번역하여 자연스럽게 다듬는 중입니다...");
+            sendSse(emitter, "progress", "🇰🇷 [WASH_KR] 다시 한국어로 번역하여 자연스럽게 다듬는 중입니다...");
             String washedKr = translationService.translateToKorean(translatedEn);
             
             // Post-process washed text similarly
@@ -260,7 +263,7 @@ public class WorkspaceService {
 
             // Step 5: Human Patch & Analysis
             paceProcessing();
-            sendSse(emitter, "progress", "PATCH: 최종 휴먼 패치 및 오역 검토를 진행 중입니다...");
+            sendSse(emitter, "progress", "✨ [PATCH] 최종 휴먼 패치 및 오역 검토를 진행 중입니다...");
             DraftAnalysisResult analysis = workspaceAiService.analyzePatch(draft, washedKr, initialQuestion.getMaxLength());
             
             paceProcessing(); // Final breath before completion
