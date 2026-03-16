@@ -629,8 +629,11 @@ export function ContextPanel() {
                   size="sm"
                   disabled={isProcessing || !activeQuestion.userDirective}
                   onClick={() => {
-                    scrollToTop()
-                    refineDraft(activeQuestion.userDirective)
+                    setLeftPanelTab("context") // Switch tab first
+                    setTimeout(() => {
+                      scrollToTop()
+                      refineDraft(activeQuestion.userDirective)
+                    }, 0) // Delay scroll to next tick to ensure tab is rendered if needed
                   }}
                   className="h-8 gap-2 px-4 rounded-xl font-black text-[11px] shadow-lg shadow-primary/20 hover:scale-105 transition-all"
                 >
