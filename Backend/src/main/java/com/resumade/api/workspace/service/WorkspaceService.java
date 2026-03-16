@@ -161,7 +161,7 @@ public class WorkspaceService {
 
             // Step 4: Translate back to Korean (Papago/DeepL)
             paceProcessing();
-            sendSse(emitter, "progress", "TRANSLATE_KR: 자연스러운 한국어로 새롭게 다듬는 중입니다...");
+            sendSse(emitter, "progress", "🔁 [TRANSLATE_KR] 자연스러운 한국어로 새롭게 다듬는 중입니다...");
             String washedKr = translationService.translateToKorean(translatedEn);
 
             // Post-process washed text
@@ -327,7 +327,7 @@ public class WorkspaceService {
 
             // Step 4: Translate back to Korean (Papago/DeepL)
             paceProcessing();
-            sendSse(emitter, "progress", "🇰🇷 [WASH_KR] 다시 한국어로 번역하여 자연스럽게 다듬는 중입니다...");
+            sendSse(emitter, "progress", "🔁 [WASH_KR] 다시 한국어로 번역하여 자연스럽게 다듬는 중입니다...");
             String washedKr = translationService.translateToKorean(translatedEn);
             
             // Post-process washed text similarly
