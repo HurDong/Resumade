@@ -318,9 +318,10 @@ public class WorkspaceService {
             if (!(data instanceof String)) {
                 sseData = objectMapper.writeValueAsString(data);
             }
+            log.info("📡 [SSE Send] Name: {}, Data: {}", name, sseData);
             emitter.send(SseEmitter.event().name(name).data(sseData));
         } catch (IOException e) {
-            log.warn("Failed to send SSE event: {}", name);
+            log.warn("❌ Failed to send SSE event: {}", name);
         }
     }
 }
