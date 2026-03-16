@@ -95,12 +95,13 @@ public class JdAnalysisService {
             BufferedImage originalImage = ImageIO.read(new ByteArrayInputStream(imageBytes));
             if (originalImage == null) return imageBytes;
 
-            int maxWidth = 1600;
-            int maxHeight = 1600;
+            int maxWidth = 2048;
+            int maxHeight = 2048;
             int width = originalImage.getWidth();
             int height = originalImage.getHeight();
 
             if (width <= maxWidth && height <= maxHeight) {
+                log.info("Image is within limits ({}x{}). Skipping resize.", width, height);
                 return imageBytes; // No need to resize
             }
 
