@@ -95,8 +95,8 @@ public class JdAnalysisService {
             BufferedImage originalImage = ImageIO.read(new ByteArrayInputStream(imageBytes));
             if (originalImage == null) return imageBytes;
 
-            int maxWidth = 768;
-            int maxHeight = 768;
+            int maxWidth = 1600;
+            int maxHeight = 1600;
             int width = originalImage.getWidth();
             int height = originalImage.getHeight();
 
@@ -110,16 +110,22 @@ public class JdAnalysisService {
             int targetWidth = (int) (width * ratio);
             int targetHeight = (int) (height * ratio);
 
-            java.awt.Image resultingImage = originalImage.getScaledInstance(targetWidth, targetHeight, java.awt.Image.SCALE_SMOOTH);
-            BufferedImage outputImage = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
-            
+            BufferedImage outputImage = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_ARGB);
             Graphics2D g2d = outputImage.createGraphics();
-            g2d.drawImage(resultingImage, 0, 0, null);
+            
+            // Set high quality rendering hints
+            g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            
+            g2d.drawImage(originalImage, 0, 0, targetWidth, targetHeight, null);
             g2d.dispose();
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             ImageIO.write(outputImage, "png", baos);
-            return baos.toByteArray();
+            byte[] result = baos.toByteArray();
+            log.info("Image resized successfully. Final size: {} bytes", result.length);
+            return result;
         } catch (IOException e) {
             log.error("Failed to resize image, using original", e);
             return imageBytes;
