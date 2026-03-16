@@ -123,7 +123,7 @@ export function TranslationPanel() {
     finalMatches.forEach((match) => {
       result += normalizedText.substring(lastIndex, match.start);
       const mis = match.mis;
-      const severityClass = mis.severity === "high" ? "bg-[var(--highlight-error)] text-foreground" : "bg-[var(--highlight-warning)] text-foreground";
+      const severityClass = mis.severity === "high" ? "bg-highlight-error text-foreground" : "bg-highlight-warning text-foreground";
       const isHovered = hoveredMistranslationId === mis.id;
       const hoverEffect = isHovered ? "ring-2 ring-primary scale-110 shadow-2xl z-[50] opacity-100" : hasAnyHover ? "opacity-20 grayscale scale-95 blur-[0.5px]" : "opacity-100";
       result += `<mark data-mis-id="${mis.id}" class="${severityClass} ${hoverEffect} px-0.5 rounded cursor-help transition-all duration-300 inline-block origin-center">${normalizedText.substring(match.start, match.end)}</mark>`;

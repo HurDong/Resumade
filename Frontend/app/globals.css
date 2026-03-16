@@ -131,3 +131,12 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Explicit highlight classes for mistranslation markers */
+.bg-highlight-error {
+  background-color: var(--highlight-error);
+}
+
+.bg-highlight-warning {
+  background-color: var(--highlight-warning);
+}

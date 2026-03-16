@@ -157,7 +157,8 @@ public class WorkspaceService {
                     : washedKr;
 
             Map<String, Object> result = new HashMap<>();
-            result.put("draft", responseDraft);
+            result.put("draft", washedKr); // Send original washed for highlighting matching
+            result.put("humanPatched", responseDraft); // For display/final use
             result.put("mistranslations", analysis.getMistranslations());
             result.put("aiReviewReport", analysis.getAiReviewReport());
 
@@ -272,7 +273,8 @@ public class WorkspaceService {
                     : washedKr;
 
             Map<String, Object> result = new HashMap<>();
-            result.put("draft", responseDraft);
+            result.put("draft", washedKr); // Send original washed for highlighting matching
+            result.put("humanPatched", responseDraft); // For display/final use
             result.put("mistranslations", analysis.getMistranslations());
             result.put("aiReviewReport", analysis.getAiReviewReport());
 
