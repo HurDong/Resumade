@@ -6,6 +6,7 @@ export interface Mistranslation {
   translated: string;
   suggestion: string;
   severity: "low" | "high";
+  reason?: string;
 }
 
 export interface AiReviewReport {
@@ -216,7 +217,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           }
         })
         .catch(err => console.error("Auto-save failed", err));
-      }, 800); // 800ms debounce for title/RAG sync
+      }, 300); // 300ms debounce for title/RAG sync
 
       set({ saveTimeout: timeout });
     }

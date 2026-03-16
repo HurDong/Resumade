@@ -80,25 +80,60 @@ public class WorkspaceService {
             // Step 1: Collect Context (Experiences)
             sendSse(emitter, "progress", "🚀 [REFINE] 리터칭 작업을 시작합니다...");
             sendSse(emitter, "progress", "📚 [RAG] 관련 경험 데이터를 재추출 중입니다...");
-            List<Experience> experiences = experienceRepository.findAll();
-            String context = experiences.stream()
+            List<Experience> allExperiences = experienceRepository.findAll();
+
+            // Smart labeling for others
+            String others = initialQuestion.getApplication().getQuestions().stream()
+                    .filter(q -> !q.getId().equals(questionId))
+                    .map(q -> {
+                        String content = q.getContent() != null ? q.getContent() : "";
+                        String usedProject = allExperiences.stream()
+                                .filter(exp -> content.contains(exp.getTitle()))
+                                .map(Experience::getTitle)
+                                .findFirst()
+                                .orElse("알 수 없음");
+                        return String.format("[문항: %s | 주내용: %s | 사용된 소재: %s]", q.getTitle(), content, usedProject);
+                    })
+                    .collect(Collectors.joining("\n"));
+
+            // Filter context to avoid redundancy
+            String usedThemes = initialQuestion.getApplication().getQuestions().stream()
+                    .filter(q -> !q.getId().equals(questionId) && q.getContent() != null)
+                    .map(q -> {
+                        String content = q.getContent();
+                        return allExperiences.stream()
+                                .filter(exp -> content.contains(exp.getTitle()))
+                                .map(Experience::getTitle)
+                                .findFirst()
+                                .orElse("");
+                    })
+                    .filter(name -> !name.isEmpty())
+                    .collect(Collectors.joining(","));
+
+            List<Experience> filteredExperiences = allExperiences.stream()
+                    .filter(exp -> !usedThemes.contains(exp.getTitle()))
+                    .collect(Collectors.toList());
+
+            if (filteredExperiences.isEmpty()) filteredExperiences = allExperiences;
+
+            String context = filteredExperiences.stream()
                     .map(Experience::getRawContent)
                     .collect(Collectors.joining("\n---\n"));
             paceProcessing();
 
-            // Collect other questions' info for non-overlap
-            String others = initialQuestion.getApplication().getQuestions().stream()
-                    .filter(q -> !q.getId().equals(questionId))
-                    .map(q -> String.format("[문항: %s | 내용: %s]", q.getTitle(), q.getContent() != null ? q.getContent() : "아직 작성 전"))
-                    .collect(Collectors.joining("\n"));
-
             // Step 2: Refine Draft with new Directive
             sendSse(emitter, "progress", "✍️ [DRAFT] 지시사항을 반영하여 초안을 정교하게 수정 중입니다...");
+            int maxLength = initialQuestion.getMaxLength();
+            int minTargetChars = (int) (maxLength * 0.9);
+            int maxTargetChars = (int) (maxLength * 0.98);
+
             WorkspaceAiService.DraftResponse refineResponse = workspaceAiService.refineDraft(
                     company,
                     position,
                     currentInput,
-                    initialQuestion.getMaxLength(),
+                    maxLength,
+                    minTargetChars,
+                    maxTargetChars,
                     context,
                     others,
                     directive
@@ -144,7 +179,14 @@ public class WorkspaceService {
             // Step 5: Human Patch & Analysis
             paceProcessing();
             sendSse(emitter, "progress", "PATCH: 최종 휴먼 패치 및 오역 검토를 진행 중입니다...");
-            DraftAnalysisResult analysis = workspaceAiService.analyzePatch(refinedDraft, washedKr, initialQuestion.getMaxLength());
+            int maxLengthPatch = initialQuestion.getMaxLength();
+            DraftAnalysisResult analysis = workspaceAiService.analyzePatch(
+                    refinedDraft, 
+                    washedKr, 
+                    maxLengthPatch,
+                    (int)(maxLengthPatch * 0.92), // Even more aggressive for final patch
+                    context
+            );
             
             paceProcessing();
 
@@ -206,15 +248,44 @@ public class WorkspaceService {
 
             // Collect other questions' info for non-overlap
             sendSse(emitter, "progress", "🔍 [PIPELINE] 문항 간의 중복도를 체크하고 있습니다...");
+            List<Experience> allExperiences = experienceRepository.findAll();
+            
             String others = initialQuestion.getApplication().getQuestions().stream()
                     .filter(q -> !q.getId().equals(questionId))
-                    .map(q -> String.format("[문항: %s | 내용: %s]", q.getTitle(), q.getContent() != null ? q.getContent() : "아직 작성 전"))
+                    .map(q -> {
+                        String content = q.getContent() != null ? q.getContent() : "";
+                        String usedProject = allExperiences.stream()
+                                .filter(exp -> content.contains(exp.getTitle()))
+                                .map(Experience::getTitle)
+                                .findFirst()
+                                .orElse("알 수 없음");
+                        return String.format("[문항: %s | 주내용: %s | 사용된 소재: %s]", q.getTitle(), content, usedProject);
+                    })
                     .collect(Collectors.joining("\n"));
 
-            // Step 1: RAG Context Search
-            sendSse(emitter, "progress", "📚 [RAG] 관련 경험 데이터를 추출 중입니다...");
-            List<Experience> experiences = experienceRepository.findAll();
-            String context = experiences.stream()
+            // Step 1: Smart RAG Context Search (Filter out already used projects)
+            sendSse(emitter, "progress", "📚 [RAG] 최적의 경험 데이터를 선별하고 있습니다...");
+            String usedThemes = initialQuestion.getApplication().getQuestions().stream()
+                    .filter(q -> !q.getId().equals(questionId) && q.getContent() != null)
+                    .map(q -> {
+                        String content = q.getContent();
+                        return allExperiences.stream()
+                                .filter(exp -> content.contains(exp.getTitle()))
+                                .map(Experience::getTitle)
+                                .findFirst()
+                                .orElse("");
+                    })
+                    .filter(name -> !name.isEmpty())
+                    .collect(Collectors.joining(","));
+
+            List<Experience> filteredExperiences = allExperiences.stream()
+                    .filter(exp -> !usedThemes.contains(exp.getTitle()))
+                    .collect(Collectors.toList());
+            
+            // If we filtered out too many, provide a few relevant ones anyway but label them
+            if (filteredExperiences.isEmpty()) filteredExperiences = allExperiences;
+
+            String context = filteredExperiences.stream()
                     .map(Experience::getRawContent)
                     .collect(Collectors.joining("\n---\n"));
             paceProcessing();
@@ -222,11 +293,14 @@ public class WorkspaceService {
             // Step 2: Generate Draft
             sendSse(emitter, "progress", "✍️ [DRAFT] AI가 자소서 초안을 정성스럽게 작성 중입니다...");
             
+            int maxLengthGen = initialQuestion.getMaxLength();
             WorkspaceAiService.DraftResponse draftResponse = workspaceAiService.generateDraft(
                     company, 
                     position, 
                     questionTitle, 
-                    initialQuestion.getMaxLength(), 
+                    maxLengthGen,
+                    (int)(maxLengthGen * 0.88), // Initial draft target
+                    (int)(maxLengthGen * 0.95),
                     context, 
                     others,
                     initialQuestion.getUserDirective() != null ? initialQuestion.getUserDirective() : "없음"
@@ -271,7 +345,14 @@ public class WorkspaceService {
             // Step 5: Human Patch & Analysis
             paceProcessing();
             sendSse(emitter, "progress", "✨ [PATCH] 최종 휴먼 패치 및 오역 검토를 진행 중입니다...");
-            DraftAnalysisResult analysis = workspaceAiService.analyzePatch(draft, washedKr, initialQuestion.getMaxLength());
+            int maxLengthFinal = initialQuestion.getMaxLength();
+            DraftAnalysisResult analysis = workspaceAiService.analyzePatch(
+                    draft, 
+                    washedKr, 
+                    maxLengthFinal,
+                    (int)(maxLengthFinal * 0.92),
+                    context
+            );
             
             paceProcessing(); // Final breath before completion
             

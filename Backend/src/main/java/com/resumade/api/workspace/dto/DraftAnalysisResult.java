@@ -20,6 +20,7 @@ public class DraftAnalysisResult {
         private String translated;
         private String suggestion;
         private String severity;
+        private String reason;
     }
 
     @Getter

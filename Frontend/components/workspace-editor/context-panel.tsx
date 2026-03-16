@@ -256,15 +256,30 @@ export function ContextPanel() {
                   <TrendingUp className={`size-3.5 transition-colors ${currentCount > activeQuestion.maxLength ? 'text-destructive animate-pulse' : 'text-primary'}`} />
                   <span className="font-bold text-muted-foreground/80 lowercase tracking-tight">글자수 진행도 (공백 포함)</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-[10px] uppercase opacity-40">Limit</span>
-                  <Input 
-                    type="number" 
-                    value={activeQuestion.maxLength} 
-                    onChange={(e) => updateActiveQuestion({ maxLength: parseInt(e.target.value) || 0 })}
-                    className="w-16 h-6 px-1.5 py-0 text-center text-[11px] font-black bg-background border-primary/20 focus-visible:ring-primary/30 rounded-md"
-                  />
-                  <span className="font-black text-[10px] text-muted-foreground/40">자</span>
+                <div className="flex flex-col gap-2 min-w-[140px]">
+                  <div className="relative">
+                    <Input 
+                      type="number" 
+                      value={activeQuestion.maxLength} 
+                      onChange={(e) => updateActiveQuestion({ maxLength: parseInt(e.target.value) || 0 })}
+                      className="w-full h-8 pl-3 pr-8 text-[11px] font-black bg-background border-primary/10 focus-visible:ring-primary/20 rounded-lg"
+                    />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 font-black text-[10px] text-muted-foreground/40">자</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[-100, -50, 50, 100].map((val) => (
+                      <button
+                        key={val}
+                        onClick={() => {
+                          const newLimit = Math.max(0, activeQuestion.maxLength + val);
+                          updateActiveQuestion({ maxLength: newLimit });
+                        }}
+                        className="py-1.5 text-[10px] font-black bg-background border border-primary/10 rounded-md hover:bg-primary/20 hover:border-primary/20 transition-all shadow-sm"
+                      >
+                        {val > 0 ? `+${val}` : val}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
               
@@ -511,14 +526,27 @@ export function ContextPanel() {
                     )}
                     
                     <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
                         {isHovered ? (
-                          <Badge variant={mis.severity === "high" ? "destructive" : "default"} className="text-[9px] font-black uppercase px-2 py-0.5 animate-in zoom-in-95">
-                            {mis.severity === "high" ? "Critical Error" : "Style Warning"}
-                          </Badge>
+                          <div className="flex items-center gap-2 animate-in zoom-in-95">
+                            <Badge variant={mis.severity === "high" ? "destructive" : "default"} className="text-[9px] font-black uppercase px-2 py-0.5">
+                              {mis.severity === "high" ? "Critical Error" : "Style Warning"}
+                            </Badge>
+                            {mis.reason && (
+                              <div className="flex items-center gap-1.5 px-2 py-0.5 bg-background/50 rounded-md border border-primary/20 shadow-sm">
+                                <span className="text-[9px] font-black text-primary uppercase tracking-tighter">Judgement Basis:</span>
+                                <span className="text-[10px] font-bold text-foreground/80">{mis.reason}</span>
+                              </div>
+                            )}
+                          </div>
                         ) : (
-                          <div className={`p-1.5 rounded-full ${mis.severity === "high" ? 'bg-destructive/10 text-destructive' : 'bg-muted-foreground/10 text-muted-foreground'}`}>
-                            <AlertTriangle className="size-3" />
+                          <div className="flex items-center gap-2">
+                            <div className={`p-1.5 rounded-full ${mis.severity === "high" ? 'bg-destructive/10 text-destructive' : 'bg-muted-foreground/10 text-muted-foreground'}`}>
+                              <AlertTriangle className="size-3" />
+                            </div>
+                            {mis.reason && (
+                              <span className="text-[10px] font-bold text-muted-foreground/60 italic truncate max-w-[150px]">{mis.reason}</span>
+                            )}
                           </div>
                         )}
                       </div>
