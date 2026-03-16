@@ -95,8 +95,8 @@ public class JdAnalysisService {
             BufferedImage originalImage = ImageIO.read(new ByteArrayInputStream(imageBytes));
             if (originalImage == null) return imageBytes;
 
-            int maxWidth = 1024;
-            int maxHeight = 1024;
+            int maxWidth = 768;
+            int maxHeight = 768;
             int width = originalImage.getWidth();
             int height = originalImage.getHeight();
 
