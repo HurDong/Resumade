@@ -16,17 +16,23 @@ public class TesseractService {
 
     public String extractText(byte[] imageBytes) {
         Tesseract tesseract = new Tesseract();
-        // You might need to set the datapath if not in default location
-        // tesseract.setDatapath("/usr/share/tesseract-ocr/4.00/tessdata"); 
-        tesseract.setLanguage("kor+eng"); // Support both Korean and English
+        
+        // Use project-local tessdata directory
+        String tessDataPath = "tessdata"; 
+        tesseract.setDatapath(tessDataPath);
+        tesseract.setLanguage("kor+eng");
 
         try {
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
+            if (image == null) return "";
+            
+            // Perform OCR
             String result = tesseract.doOCR(image);
-            log.info("Tesseract OCR completed. Extracted length: {}", result.length());
+            log.info("Tesseract OCR completed successfully.");
             return result;
-        } catch (TesseractException | IOException e) {
-            log.error("Tesseract OCR failed: {}", e.getMessage());
+        } catch (Throwable e) {
+            // Use Throwable to catch Error (like Invalid memory access) as well as Exception
+            log.warn("Tesseract OCR failed (possibly missing native libs or data): {}", e.getMessage());
             return "";
         }
     }

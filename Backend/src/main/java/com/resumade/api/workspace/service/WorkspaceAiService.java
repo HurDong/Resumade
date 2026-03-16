@@ -110,7 +110,7 @@ public interface WorkspaceAiService {
         "결과는 반드시 아래의 json 구조를 가진 객체여야 합니다: {\"companyName\": \"기업명\", \"position\": \"지원직무\", \"rawJd\": \"전체 텍스트 내용\", \"aiInsight\": \"...\", \"extractedQuestions\": []}"
     })
     @UserMessage("OCR 추출 텍스트: {{ocrText}}\n\n이미지를 함께 참고하여 위 정보를 정제해줘.")
-    JdAnalysisResponse analyzeJdWithOcr(@V("ocrText") String ocrText, dev.langchain4j.data.message.ImageContent image);
+    JdAnalysisResponse analyzeJdWithOcr(@V("ocrText") String ocrText, @V("image") dev.langchain4j.data.message.ImageContent image);
 
     @SystemMessage({
         "당신은 채용 공고(JD) 분석 전문가입니다.",
