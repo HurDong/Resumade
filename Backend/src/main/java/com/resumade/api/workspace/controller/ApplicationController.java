@@ -60,10 +60,23 @@ public class ApplicationController {
         return Map.of("uuid", uuid);
     }
 
+    @PostMapping("/analyze/upload")
+    public Map<String, String> uploadAnalyze(@RequestParam("image") org.springframework.web.multipart.MultipartFile file) throws java.io.IOException {
+        String uuid = jdAnalysisService.initImageAnalysis(file.getBytes());
+        return Map.of("uuid", uuid);
+    }
+
     @GetMapping("/analyze/stream/{uuid}")
     public SseEmitter streamAnalyze(@PathVariable String uuid) {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
         executorService.execute(() -> jdAnalysisService.processAnalysis(uuid, emitter));
+        return emitter;
+    }
+
+    @GetMapping("/analyze/image/stream/{uuid}")
+    public SseEmitter streamImageAnalyze(@PathVariable String uuid) {
+        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
+        executorService.execute(() -> jdAnalysisService.processImageAnalysis(uuid, emitter));
         return emitter;
     }
 

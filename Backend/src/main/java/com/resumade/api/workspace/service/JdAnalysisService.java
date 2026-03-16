@@ -19,11 +19,19 @@ public class JdAnalysisService {
 
     private final WorkspaceAiService aiService;
     private final Map<String, String> jdCache = new ConcurrentHashMap<>();
+    private final Map<String, byte[]> imageCache = new ConcurrentHashMap<>();
 
     public String initAnalysis(String rawJd) {
         String uuid = UUID.randomUUID().toString();
         jdCache.put(uuid, rawJd);
         log.info("Initialized JD analysis for UUID: {}", uuid);
+        return uuid;
+    }
+
+    public String initImageAnalysis(byte[] imageBytes) {
+        String uuid = UUID.randomUUID().toString();
+        imageCache.put(uuid, imageBytes);
+        log.info("Initialized JD Image analysis for UUID: {}", uuid);
         return uuid;
     }
 
@@ -36,8 +44,6 @@ public class JdAnalysisService {
 
         try {
             sendEvent(emitter, "START", "분석을 시작합니다...");
-            
-            // Artificial delay to show progress UI if it's too fast (though GPT is usually slow)
             sendEvent(emitter, "ANALYZING", "공고 내용을 추출 중입니다...");
             
             JdAnalysisResponse response = aiService.analyzeJd(rawJd);
@@ -48,6 +54,31 @@ public class JdAnalysisService {
         } catch (Exception e) {
             log.error("JD Analysis failed for UUID: {}: {}", uuid, e.getMessage(), e);
             sendError(emitter, "AI 분석 중 오류가 발생했습니다: " + e.getMessage());
+        }
+    }
+
+    public void processImageAnalysis(String uuid, SseEmitter emitter) {
+        byte[] imageBytes = imageCache.remove(uuid);
+        if (imageBytes == null) {
+            sendError(emitter, "Invalid or expired session");
+            return;
+        }
+
+        try {
+            sendEvent(emitter, "START", "이미지 분석을 시작합니다...");
+            sendEvent(emitter, "ANALYZING", "AI가 이미지에서 핵심 정보를 추출 중입니다...");
+
+            String base64Image = java.util.Base64.getEncoder().encodeToString(imageBytes);
+            dev.langchain4j.data.message.ImageContent imageContent = dev.langchain4j.data.message.ImageContent.from(base64Image, "image/png");
+            
+            JdAnalysisResponse response = aiService.analyzeJdImage(imageContent);
+            
+            sendEvent(emitter, "COMPLETE", response);
+            emitter.complete();
+            log.info("Completed JD Image analysis for UUID: {}", uuid);
+        } catch (Exception e) {
+            log.error("JD Image Analysis failed for UUID: {}: {}", uuid, e.getMessage(), e);
+            sendError(emitter, "AI 이미지 분석 중 오류가 발생했습니다: " + e.getMessage());
         }
     }
 

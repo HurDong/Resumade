@@ -2,6 +2,7 @@ package com.resumade.api.workspace.service;
 
 import com.resumade.api.workspace.dto.DraftAnalysisResult;
 import com.resumade.api.workspace.dto.JdAnalysisResponse;
+import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
@@ -100,6 +101,15 @@ public interface WorkspaceAiService {
     })
     @UserMessage("원문: {{original}}\n\n세탁본: {{washed}}\n\n두 버전을 비교하여 **기술 용어나 어색한 짧은 문구 위주로** 오역을 리포트하고, {{maxLength}}자 제한을 완벽히 지키면서도 한도에 가깝게 다듬은 최적의 휴먼 패치 자소서를 완성해줘. json 형식으로 보고해.")
     DraftAnalysisResult analyzePatch(@V("original") String original, @V("washed") String washed, @V("maxLength") int maxLength);
+
+    @SystemMessage({
+        "당신은 채용 공고(JD) 분석 전문가입니다.",
+        "제공된 채용 공고 이미지(ImageContent)에서 기업명, 지원 직무, 그리고 자소서 문항이 있다면 이를 추출하세요.",
+        "이미지 텍스트가 명확하지 않더라도 문맥을 통해 최대한 보정하여 추출하세요.",
+        "또한 해당 공고의 핵심 키워드나 기술 스택을 바탕으로 짧은 인사이트를 제공하세요.",
+        "결과는 반드시 아래의 json 구조를 가진 객체여야 합니다: {\"companyName\": \"...\", \"position\": \"...\", \"rawJd\": \"이미지에서 추출한 전체 텍스트\", \"aiInsight\": \"...\", \"extractedQuestions\": [\"문항 1\", \"문항 2\"]}"
+    })
+    JdAnalysisResponse analyzeJdImage(dev.langchain4j.data.message.ImageContent image);
 
     @SystemMessage({
         "당신은 채용 공고(JD) 분석 전문가입니다.",

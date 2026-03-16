@@ -43,16 +43,7 @@ export function AddApplicationDialog({ isOpen, onClose, onAdd }: AddApplicationD
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const processFile = (file: File) => {
-    setIsUploading(true)
-    setExtractionError(null)
-    // Mock image-to-text (OCR) for now, then call real AI analysis
-    setTimeout(() => {
-      setIsUploading(false)
-      // For images, we typically would send to an OCR endpoint first
-      // Here we'll simulate getting some raw text from image and then analyzing it
-      const simulatedOcrText = "이미지에서 추출된 공고 내용 샘플..."
-      performRealAiExtraction(simulatedOcrText)
-    }, 1500)
+    performExtraction(null, file)
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -76,27 +67,44 @@ export function AddApplicationDialog({ isOpen, onClose, onAdd }: AddApplicationD
     }
   }
 
-  const performRealAiExtraction = async (textToAnalyze: string) => {
+  const performExtraction = async (textToAnalyze: string | null, fileToUpload: File | null) => {
     setStep("extracting")
     setExtractionError(null)
+    setIsUploading(false)
     
     try {
-      // 1. Initialize analysis and get UUID
-      const initResponse = await fetch("/api/applications/analyze/init", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawJd: textToAnalyze })
-      })
+      let uuid = ""
+      let streamUrl = ""
 
-      if (!initResponse.ok) {
-        const errorData = await initResponse.json().catch(() => ({}))
-        throw new Error(errorData.message || `초기화 실패 (${initResponse.status})`)
+      if (fileToUpload) {
+        // Image Mode
+        const formData = new FormData()
+        formData.append("image", fileToUpload)
+        const initResponse = await fetch("/api/applications/analyze/upload", {
+          method: "POST",
+          body: formData
+        })
+        if (!initResponse.ok) throw new Error("이미지 분석 초기화 실패")
+        const data = await initResponse.json()
+        uuid = data.uuid
+        streamUrl = `/api/applications/analyze/image/stream/${uuid}`
+      } else if (textToAnalyze) {
+        // Text Mode
+        const initResponse = await fetch("/api/applications/analyze/init", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rawJd: textToAnalyze })
+        })
+        if (!initResponse.ok) throw new Error("분석 초기화 실패")
+        const data = await initResponse.json()
+        uuid = data.uuid
+        streamUrl = `/api/applications/analyze/stream/${uuid}`
+      } else {
+        return
       }
 
-      const { uuid } = await initResponse.json()
-
       // 2. Connect to SSE stream
-      const eventSource = new EventSource(`/api/applications/analyze/stream/${uuid}`)
+      const eventSource = new EventSource(streamUrl)
 
       eventSource.addEventListener("START", (e) => {
         console.log("Extraction started:", e.data)
@@ -110,7 +118,7 @@ export function AddApplicationDialog({ isOpen, onClose, onAdd }: AddApplicationD
         const data = JSON.parse(e.data)
         setCompany(data.companyName || "")
         setPosition(data.position || "")
-        setRawJd(data.rawJd || textToAnalyze)
+        setRawJd(data.rawJd || textToAnalyze || "")
         setExtractedQuestions(data.extractedQuestions || [])
         setAiInsight(data.aiInsight || "")
         setStep("review")
@@ -139,7 +147,7 @@ export function AddApplicationDialog({ isOpen, onClose, onAdd }: AddApplicationD
   }
 
   const handleStartAiExtraction = () => {
-    performRealAiExtraction(rawJd)
+    performExtraction(rawJd, null)
   }
 
   const handleReset = () => {
