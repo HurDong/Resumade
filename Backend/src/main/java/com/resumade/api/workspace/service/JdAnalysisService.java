@@ -7,6 +7,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
@@ -68,7 +73,10 @@ public class JdAnalysisService {
             sendEvent(emitter, "START", "이미지 분석을 시작합니다...");
             sendEvent(emitter, "ANALYZING", "AI가 이미지에서 핵심 정보를 추출 중입니다...");
 
-            String base64Image = java.util.Base64.getEncoder().encodeToString(imageBytes);
+            // Resize image to reduce token usage and avoid rate limits
+            byte[] processedImage = resizeImageIfNeeded(imageBytes);
+
+            String base64Image = java.util.Base64.getEncoder().encodeToString(processedImage);
             dev.langchain4j.data.message.ImageContent imageContent = dev.langchain4j.data.message.ImageContent.from(base64Image, "image/png");
             
             JdAnalysisResponse response = aiService.analyzeJdImage(imageContent);
@@ -79,6 +87,42 @@ public class JdAnalysisService {
         } catch (Exception e) {
             log.error("JD Image Analysis failed for UUID: {}: {}", uuid, e.getMessage(), e);
             sendError(emitter, "AI 이미지 분석 중 오류가 발생했습니다: " + e.getMessage());
+        }
+    }
+
+    private byte[] resizeImageIfNeeded(byte[] imageBytes) {
+        try {
+            BufferedImage originalImage = ImageIO.read(new ByteArrayInputStream(imageBytes));
+            if (originalImage == null) return imageBytes;
+
+            int maxWidth = 1024;
+            int maxHeight = 1024;
+            int width = originalImage.getWidth();
+            int height = originalImage.getHeight();
+
+            if (width <= maxWidth && height <= maxHeight) {
+                return imageBytes; // No need to resize
+            }
+
+            log.info("Resizing image from {}x{} to fit {}x{}", width, height, maxWidth, maxHeight);
+
+            double ratio = Math.min((double) maxWidth / width, (double) maxHeight / height);
+            int targetWidth = (int) (width * ratio);
+            int targetHeight = (int) (height * ratio);
+
+            java.awt.Image resultingImage = originalImage.getScaledInstance(targetWidth, targetHeight, java.awt.Image.SCALE_SMOOTH);
+            BufferedImage outputImage = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
+            
+            Graphics2D g2d = outputImage.createGraphics();
+            g2d.drawImage(resultingImage, 0, 0, null);
+            g2d.dispose();
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(outputImage, "png", baos);
+            return baos.toByteArray();
+        } catch (IOException e) {
+            log.error("Failed to resize image, using original", e);
+            return imageBytes;
         }
     }
 
