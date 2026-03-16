@@ -70,6 +70,11 @@ export function ContextPanel() {
   const [virtualProgress, setVirtualProgress] = useState(0)
   const [isFinishing, setIsFinishing] = useState(false)
   const completionDataRef = useRef<any>(null)
+  const topRef = useRef<HTMLDivElement>(null)
+
+  const scrollToTop = () => {
+    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
 
   // Manage virtual progress increment
   useEffect(() => {
@@ -135,6 +140,7 @@ export function ContextPanel() {
   const currentCount = getLength(washedKr || activeQuestion.content)
 
   const handleStartProcess = () => {
+    scrollToTop()
     startProcessing()
 
     const questionId = activeQuestion.dbId || activeQuestion.id
@@ -341,6 +347,7 @@ export function ContextPanel() {
       </div>
 
       <ScrollArea className="flex-1 h-full min-h-0 px-6 py-4">
+        <div ref={topRef} />
         <div className="space-y-8 pb-10">
           {leftPanelTab === "context" ? (
             <>
@@ -608,14 +615,28 @@ export function ContextPanel() {
             {/* Premium AI Refinement Section */}
             <Separator className="my-8 opacity-50" />
             <div className="p-6 rounded-[32px] bg-gradient-to-br from-primary/10 via-background to-secondary/5 border-2 border-primary/20 shadow-xl space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
-                  <Wand2 className="size-5" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+                    <Wand2 className="size-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-primary uppercase tracking-tighter">추가 피드백 기반 리터칭</h4>
+                    <p className="text-[10px] text-muted-foreground font-bold">원하는 방향으로 한 번 더 세탁합니다.</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm font-black text-primary uppercase tracking-tighter">추가 피드백 기반 리터칭</h4>
-                  <p className="text-[10px] text-muted-foreground font-bold">원하는 방향으로 한 번 더 세탁합니다.</p>
-                </div>
+                <Button 
+                  size="sm"
+                  disabled={isProcessing || !activeQuestion.userDirective}
+                  onClick={() => {
+                    scrollToTop()
+                    refineDraft(activeQuestion.userDirective)
+                  }}
+                  className="h-8 gap-2 px-4 rounded-xl font-black text-[11px] shadow-lg shadow-primary/20 hover:scale-105 transition-all"
+                >
+                  <Sparkles className="size-3.5" />
+                  다시 세탁하기
+                </Button>
               </div>
 
               <div className="relative group">
@@ -625,17 +646,6 @@ export function ContextPanel() {
                   placeholder="예: '조금 더 열정적인 톤으로 바꿔줘', '협업 능력을 더 강조해줘' 등..."
                   className="min-h-[100px] bg-background/50 border-2 border-muted-foreground/10 rounded-2xl p-4 text-sm font-medium focus:border-primary/40 focus:ring-0 focus:bg-background transition-all"
                 />
-                <div className="absolute right-4 bottom-4">
-                   <Button 
-                    size="sm"
-                    disabled={isProcessing || !activeQuestion.userDirective}
-                    onClick={() => refineDraft(activeQuestion.userDirective)}
-                    className="h-8 gap-2 px-4 rounded-xl font-black text-[11px] shadow-lg shadow-primary/20 hover:scale-105 transition-all"
-                   >
-                     <Sparkles className="size-3.5" />
-                     다시 세탁하기
-                   </Button>
-                </div>
               </div>
               <p className="text-[10px] text-center text-muted-foreground/60 font-medium">※ 이전의 번역본은 새롭게 생성된 결과로 대체됩니다.</p>
             </div>
