@@ -151,15 +151,13 @@ public class WorkspaceService {
             question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
             question.setAiReview(objectMapper.writeValueAsString(analysis.getAiReviewReport()));
             
-            // AI가 글자수를 수동으로 맞춘 humanPatchedText를 최종 결과로 사용
-            String finalResult = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
+            // AI가 글자수를 수동으로 맞춘 humanPatchedText를 데이터로는 내려주되, DB의 washedKr은 원본 세탁본(하이라이팅용)을 유지합니다.
+            String responseDraft = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
                     ? analysis.getHumanPatchedText()
                     : washedKr;
-            question.setWashedKr(finalResult);
-            questionRepository.save(question);
 
             Map<String, Object> result = new HashMap<>();
-            result.put("draft", finalResult);
+            result.put("draft", responseDraft);
             result.put("mistranslations", analysis.getMistranslations());
             result.put("aiReviewReport", analysis.getAiReviewReport());
 
@@ -268,15 +266,13 @@ public class WorkspaceService {
             question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
             question.setAiReview(objectMapper.writeValueAsString(analysis.getAiReviewReport()));
             
-            // AI가 글자수를 수동으로 맞춘 humanPatchedText를 최종 결과로 사용
-            String finalResult = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
+            // AI가 글자수를 수동으로 맞춘 humanPatchedText를 데이터로는 내려주되, DB의 washedKr은 원본 세탁본(하이라이팅용)을 유지합니다.
+            String responseDraft = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
                     ? analysis.getHumanPatchedText()
                     : washedKr;
-            question.setWashedKr(finalResult);
-            questionRepository.save(question);
 
             Map<String, Object> result = new HashMap<>();
-            result.put("draft", finalResult);
+            result.put("draft", responseDraft);
             result.put("mistranslations", analysis.getMistranslations());
             result.put("aiReviewReport", analysis.getAiReviewReport());
 
