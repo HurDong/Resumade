@@ -384,7 +384,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   startProcessing: () =>
     set({
       isProcessing: true,
-      progressMessage: "준비 중...",
+      progressMessage: "서버 연결 대기 중...",
     }),
     
   updateProgress: (progressMessage) => set({ progressMessage }),
@@ -462,22 +462,32 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       `/api/workspace/stream/${activeQ.dbId}`
     );
 
+    eventSource.onopen = () => {
+      console.log("SSE Connection Opened");
+      get().updateProgress("파이프라인 연결됨...");
+    };
+
     eventSource.addEventListener("progress", (event) => {
-      const msg = event.data.replace(/^"(.*)"$/, '$1');
-      state.updateProgress(msg);
+      console.log("SSE Progress:", event.data);
+      let msg = event.data;
+      if (msg.startsWith('"') && msg.endsWith('"')) {
+        msg = msg.substring(1, msg.length - 1);
+      }
+      msg = msg.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      get().updateProgress(msg);
     });
 
     eventSource.addEventListener("draft_intermediate", (event) => {
-      state.updateDraftIntermediate(event.data);
+      get().updateDraftIntermediate(event.data);
     });
 
     eventSource.addEventListener("washed_intermediate", (event) => {
-      state.updateWashedIntermediate(event.data);
+      get().updateWashedIntermediate(event.data);
     });
 
     eventSource.addEventListener("complete", (event) => {
       const data = JSON.parse(event.data);
-      state.completeProcessing(data);
+      get().completeProcessing(data);
       eventSource.close();
     });
 
@@ -504,22 +514,32 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       `/api/workspace/refine-stream/${activeQ.dbId}?directive=${encodeURIComponent(directive)}`
     );
 
+    eventSource.onopen = () => {
+      console.log("SSE Refine Connection Opened");
+      get().updateProgress("리터칭 파이프라인 연결됨...");
+    };
+
     eventSource.addEventListener("progress", (event) => {
-      const msg = event.data.replace(/^"(.*)"$/, '$1');
-      state.updateProgress(msg);
+      console.log("SSE Refine Progress:", event.data);
+      let msg = event.data;
+      if (msg.startsWith('"') && msg.endsWith('"')) {
+        msg = msg.substring(1, msg.length - 1);
+      }
+      msg = msg.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      get().updateProgress(msg);
     });
 
     eventSource.addEventListener("draft_intermediate", (event) => {
-      state.updateDraftIntermediate(event.data);
+      get().updateDraftIntermediate(event.data);
     });
 
     eventSource.addEventListener("washed_intermediate", (event) => {
-      state.updateWashedIntermediate(event.data);
+      get().updateWashedIntermediate(event.data);
     });
 
     eventSource.addEventListener("complete", (event) => {
       const data = JSON.parse(event.data);
-      state.completeProcessing(data);
+      get().completeProcessing(data);
       eventSource.close();
     });
 

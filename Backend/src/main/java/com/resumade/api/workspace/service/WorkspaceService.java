@@ -78,6 +78,7 @@ public class WorkspaceService {
             String currentInput = initialQuestion.getWashedKr() != null ? initialQuestion.getWashedKr() : initialQuestion.getContent();
 
             // Step 1: Collect Context (Experiences)
+            sendSse(emitter, "progress", "START: 리터칭 작업을 시작합니다...");
             sendSse(emitter, "progress", "RAG: 관련 경험 데이터를 재추출 중입니다...");
             List<Experience> experiences = experienceRepository.findAll();
             String context = experiences.stream()
@@ -186,6 +187,9 @@ public class WorkspaceService {
             String position = initialQuestion.getApplication().getPosition();
             String questionTitle = initialQuestion.getTitle();
             
+            // Initial delay to ensure client listeners are ready
+            Thread.sleep(100);
+
             // Start phase
             sendSse(emitter, "progress", "START: 파이프라인 연결 성공. 작업을 시작합니다...");
             paceProcessing();
