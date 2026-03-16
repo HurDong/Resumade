@@ -161,7 +161,7 @@ export function KanbanBoard() {
     }
   }
 
-  const handleAddApplication = async (newApp: { company: string; position: string; rawJd: string; aiInsight: string; questions: string[] }) => {
+  const handleAddApplication = async (newApp: { company: string; position: string; rawJd: string; aiInsight: string; questions: { title: string; maxLength: number }[] }) => {
     try {
       const response = await fetch("/api/applications/full", {
         method: "POST",

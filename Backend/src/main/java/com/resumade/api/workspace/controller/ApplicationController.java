@@ -93,8 +93,8 @@ public class ApplicationController {
         
         List<WorkspaceQuestion> questions = request.getQuestions().stream()
                 .map(q -> WorkspaceQuestion.builder()
-                        .title(q)
-                        .maxLength(1000) // Default
+                        .title(q.getTitle())
+                        .maxLength(q.getMaxLength() != null ? q.getMaxLength() : 1000)
                         .build())
                 .collect(Collectors.toList());
         
@@ -115,7 +115,13 @@ public class ApplicationController {
         private String rawJd;
         private String aiInsight;
         private String logoUrl;
-        private List<String> questions;
+        private List<QuestionEntry> questions;
+    }
+
+    @Data
+    public static class QuestionEntry {
+        private String title;
+        private Integer maxLength;
     }
 
     @GetMapping

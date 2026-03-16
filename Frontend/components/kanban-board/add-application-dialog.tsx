@@ -27,7 +27,7 @@ import {
 interface AddApplicationDialogProps {
   isOpen: boolean
   onClose: () => void
-  onAdd: (app: { company: string; position: string; rawJd: string; aiInsight: string; questions: string[] }) => void
+  onAdd: (app: { company: string; position: string; rawJd: string; aiInsight: string; questions: { title: string; maxLength: number }[] }) => void
 }
 
 export function AddApplicationDialog({ isOpen, onClose, onAdd }: AddApplicationDialogProps) {
@@ -35,7 +35,7 @@ export function AddApplicationDialog({ isOpen, onClose, onAdd }: AddApplicationD
   const [company, setCompany] = useState("")
   const [position, setPosition] = useState("")
   const [rawJd, setRawJd] = useState("")
-  const [extractedQuestions, setExtractedQuestions] = useState<string[]>([])
+  const [extractedQuestions, setExtractedQuestions] = useState<{ title: string; maxLength: number }[]>([])
   const [aiInsight, setAiInsight] = useState("")
   const [isUploading, setIsUploading] = useState(false)
   const [extractionError, setExtractionError] = useState<string | null>(null)
@@ -119,7 +119,11 @@ export function AddApplicationDialog({ isOpen, onClose, onAdd }: AddApplicationD
         setCompany(data.companyName || "")
         setPosition(data.position || "")
         setRawJd(data.rawJd || textToAnalyze || "")
-        setExtractedQuestions(data.extractedQuestions || [])
+        const questions = (data.extractedQuestions || []).map((q: string) => ({
+          title: q,
+          maxLength: 1000
+        }))
+        setExtractedQuestions(questions)
         setAiInsight(data.aiInsight || "")
         setStep("review")
         eventSource.close()
@@ -303,19 +307,86 @@ export function AddApplicationDialog({ isOpen, onClose, onAdd }: AddApplicationD
                 />
               </div>
 
-              {extractedQuestions.length > 0 && (
-                <div className="space-y-2">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
                   <Label className="text-xs font-bold text-muted-foreground uppercase tracking-tighter">추출된 자소서 문항</Label>
-                  <div className="space-y-2">
-                    {extractedQuestions.map((q, idx) => (
-                      <div key={idx} className="flex gap-3 p-3 rounded-xl bg-muted/30 border border-border/50 text-sm">
-                        <span className="text-primary font-bold shrink-0">{idx + 1}.</span>
-                        <p className="leading-relaxed">{q}</p>
-                      </div>
-                    ))}
-                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="h-7 text-[10px] gap-1 px-2 rounded-lg border-primary/20"
+                    onClick={() => setExtractedQuestions([...extractedQuestions, { title: "", maxLength: 1000 }])}
+                  >
+                    <Plus className="size-3" />
+                    문항 추가
+                  </Button>
                 </div>
-              )}
+                <div className="space-y-4">
+                  {extractedQuestions.map((q, idx) => (
+                    <div key={idx} className="p-4 rounded-xl bg-muted/30 border border-border/50 space-y-3 relative group">
+                      <div className="flex items-start gap-3">
+                        <span className="size-6 shrink-0 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-[10px] font-black mt-1">
+                          {idx + 1}
+                        </span>
+                        <Textarea 
+                          value={q.title}
+                          onChange={(e) => {
+                            const newQs = [...extractedQuestions]
+                            newQs[idx].title = e.target.value
+                            setExtractedQuestions(newQs)
+                          }}
+                          placeholder="문항 내용을 입력하세요..."
+                          className="flex-1 min-h-[80px] text-sm bg-transparent border-none focus-visible:ring-0 p-0 resize-none font-medium leading-relaxed"
+                        />
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="size-8 rounded-full text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => setExtractedQuestions(extractedQuestions.filter((_, i) => i !== idx))}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                      
+                      <div className="pt-3 border-t border-border/10 space-y-2.5">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground mb-1 px-1">
+                          <span>글자수 제한 (공백 포함)</span>
+                          <span className="font-black text-primary/60">{q.maxLength.toLocaleString()}자</span>
+                        </div>
+                        <div className="relative">
+                          <Input 
+                            type="number" 
+                            value={q.maxLength}
+                            onChange={(e) => {
+                              const newQs = [...extractedQuestions]
+                              newQs[idx].maxLength = parseInt(e.target.value) || 0
+                              setExtractedQuestions(newQs)
+                            }}
+                            className="w-full h-10 pl-4 pr-10 text-[13px] font-black bg-muted/30 border-primary/10 focus-visible:ring-primary/20 rounded-xl"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground/40">자</span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-2">
+                          {[-100, -50, 50, 100].map((val) => (
+                            <Button
+                              key={val}
+                              variant="outline"
+                              size="sm"
+                              className="h-9 text-[11px] font-black w-full border-primary/10 hover:bg-primary/20 transition-all shadow-sm rounded-lg"
+                              onClick={() => {
+                                const newQs = [...extractedQuestions]
+                                newQs[idx].maxLength = Math.max(0, newQs[idx].maxLength + val)
+                                setExtractedQuestions(newQs)
+                              }}
+                            >
+                              {val > 0 ? `+${val}` : val}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
               
               {aiInsight && (
                 <Card className="p-4 bg-primary/5 border border-primary/10 shadow-none rounded-xl">

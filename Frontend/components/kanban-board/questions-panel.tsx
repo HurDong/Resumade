@@ -67,7 +67,24 @@ export function QuestionsPanel({
         body: JSON.stringify(newQuestion)
       })
       if (!response.ok) throw new Error("문항 추가 실패")
-      onRefresh()
+      if (!response.ok) throw new Error("문항 추가 실패")
+      const saved = await response.json()
+      
+      // Update local state if onUpdateApplication is available to skip global fetch feel
+      if (onUpdateApplication) {
+        onUpdateApplication({
+          questions: [...application.questions, {
+            id: saved.id.toString(),
+            title: saved.title,
+            maxLength: saved.maxLength,
+            currentLength: 0,
+            content: "",
+            isCompleted: false
+          }]
+        })
+      } else {
+        onRefresh()
+      }
       setIsAddOpen(false)
       setNewQuestion({ title: "", maxLength: 1000 })
     } catch (err) {
@@ -110,7 +127,16 @@ export function QuestionsPanel({
         method: "DELETE"
       })
       if (!response.ok) throw new Error("문항 삭제 실패")
-      onRefresh()
+      if (!response.ok) throw new Error("문항 삭제 실패")
+      
+      // Update local state for instant feedback
+      if (onUpdateApplication) {
+        onUpdateApplication({
+          questions: application.questions.filter(q => q.id !== questionId)
+        })
+      } else {
+        onRefresh()
+      }
     } catch (err) {
       console.error(err)
       alert("문항 삭제에 실패했습니다.")
@@ -276,7 +302,21 @@ export function QuestionsPanel({
                   value={newQuestion.maxLength}
                   onChange={(e) => setNewQuestion({...newQuestion, maxLength: parseInt(e.target.value) || 0})}
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">자</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">자</span>
+              </div>
+              <div className="grid grid-cols-4 gap-2 mt-2">
+                {[-100, -50, 50, 100].map(val => (
+                  <Button
+                    key={val}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 text-[11px] font-black w-full border-primary/10 hover:bg-primary/20 transition-all shadow-sm"
+                    onClick={() => setNewQuestion(prev => ({ ...prev, maxLength: Math.max(0, prev.maxLength + val) }))}
+                  >
+                    {val > 0 ? `+${val}` : val}
+                  </Button>
+                ))}
               </div>
             </div>
           </div>
@@ -320,7 +360,21 @@ export function QuestionsPanel({
                   value={editingQuestion?.maxLength || 0}
                   onChange={(e) => setEditingQuestion(prev => prev ? {...prev, maxLength: parseInt(e.target.value) || 0} : null)}
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">자</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">자</span>
+              </div>
+              <div className="grid grid-cols-4 gap-2 mt-2">
+                {[-100, -50, 50, 100].map(val => (
+                  <Button
+                    key={val}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 text-[11px] font-black w-full border-primary/10 hover:bg-primary/20 transition-all shadow-sm"
+                    onClick={() => setEditingQuestion(prev => prev ? { ...prev, maxLength: Math.max(0, prev.maxLength + val) } : null)}
+                  >
+                    {val > 0 ? `+${val}` : val}
+                  </Button>
+                ))}
               </div>
             </div>
           </div>
