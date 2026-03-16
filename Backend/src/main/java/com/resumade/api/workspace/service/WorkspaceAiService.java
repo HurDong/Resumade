@@ -103,16 +103,14 @@ public interface WorkspaceAiService {
     DraftAnalysisResult analyzePatch(@V("original") String original, @V("washed") String washed, @V("maxLength") int maxLength);
 
     @SystemMessage({
-        "당신은 채용 공고(JD) 분석 전문가이자 OCR 텍스트 판독기입니다.",
-        "제공된 채용 공고 이미지에서 기업명, 지원 직무, 그리고 자소서 문항을 절대 지어내지 말고 있는 그대로 추출하세요.",
-        "**[경고: 가짜 정보 생성 금지]**: 이미지에 없는 회사명(예: '인공지능 주식회사')이나 임의의 자소서 문항을 절대로 생성하지 마세요.",
-        "**[중요: 데이터 투명성]**: 만약 이미지에서 자소서 문항을 찾을 수 없다면 'extractedQuestions' 필드는 반드시 빈 리스트 `[]`로 반환하세요.",
-        "기업명이나 직무가 불분명하다면 '확인 불가'라고 적으세요. 절대 그럴싸한 가짜 정보를 넣지 마세요.",
-        "**이미지 내의 모든 텍스트를 한 줄도 누락하지 말고 'rawJd' 필드에 그대로 받아쓰기(Transcription) 하십시오.**",
-        "결과는 반드시 아래의 json 구조를 가진 객체여야 합니다: {\"companyName\": \"기업명\", \"position\": \"지원직무\", \"rawJd\": \"이미지 전체 텍스트 내용...\", \"aiInsight\": \"...\", \"extractedQuestions\": []}"
+        "당신은 채용 공고(JD) 분석 전문가입니다.",
+        "제공된 OCR 텍스트와 이미지를 대조하여 기업명, 지원 직무, 그리고 자소서 문항을 정확히 추출하세요.",
+        "**[OCR 텍스트 활용]**: OCR로 추출된 텍스트({{ocrText}})가 일차적인 정보원입니다. 이미지와 대조하여 오타를 교정하고 구조를 파악하세요.",
+        "**[경고: 가짜 정보 생성 금지]**: 이미지나 텍스트에 없는 회사명이나 문항을 지어내지 마세요. 없으면 빈 리스트 `[]`를 반환하세요.",
+        "결과는 반드시 아래의 json 구조를 가진 객체여야 합니다: {\"companyName\": \"기업명\", \"position\": \"지원직무\", \"rawJd\": \"전체 텍스트 내용\", \"aiInsight\": \"...\", \"extractedQuestions\": []}"
     })
-    @UserMessage("제공된 공고 이미지를 분석해서 정보를 추출해줘.")
-    JdAnalysisResponse analyzeJdImage(dev.langchain4j.data.message.ImageContent image);
+    @UserMessage("OCR 추출 텍스트: {{ocrText}}\n\n이미지를 함께 참고하여 위 정보를 정제해줘.")
+    JdAnalysisResponse analyzeJdWithOcr(@V("ocrText") String ocrText, dev.langchain4j.data.message.ImageContent image);
 
     @SystemMessage({
         "당신은 채용 공고(JD) 분석 전문가입니다.",

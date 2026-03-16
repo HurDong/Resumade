@@ -36,6 +36,9 @@ dependencies {
 	implementation 'dev.langchain4j:langchain4j-open-ai:0.31.0'
 	implementation 'dev.langchain4j:langchain4j-elasticsearch:0.31.0'
 	
+	// Tesseract OCR for Image Text Extraction
+	implementation 'net.sourceforge.tess4j:tess4j:5.11.0'
+	
 	// JSON Processing
 	implementation 'com.fasterxml.jackson.core:jackson-databind'
 	compileOnly 'org.projectlombok:lombok'

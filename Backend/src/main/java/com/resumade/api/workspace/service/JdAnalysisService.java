@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class JdAnalysisService {
 
     private final WorkspaceAiService aiService;
+    private final TesseractService tesseractService;
     private final Map<String, String> jdCache = new ConcurrentHashMap<>();
     private final Map<String, byte[]> imageCache = new ConcurrentHashMap<>();
 
@@ -71,22 +72,28 @@ public class JdAnalysisService {
 
         try {
             sendEvent(emitter, "START", "이미지 분석을 시작합니다...");
-            sendEvent(emitter, "ANALYZING", "AI가 이미지에서 핵심 정보를 추출 중입니다...");
+            sendEvent(emitter, "ANALYZING", "전용 OCR 엔진으로 텍스트를 추출 중입니다...");
 
-            // Resize image to reduce token usage and avoid rate limits
+            // 1. Specialized OCR first (Hybrid Strategy)
+            String ocrText = tesseractService.extractText(imageBytes);
+            log.info("Specialized OCR extracted {} characters", ocrText.length());
+
+            sendEvent(emitter, "ANALYZING", "AI가 추출된 텍스트와 이미지를 교차 검증 중입니다...");
+
+            // 2. High-quality resize for Vision backup
             byte[] processedImage = resizeImageIfNeeded(imageBytes);
-
             String base64Image = java.util.Base64.getEncoder().encodeToString(processedImage);
             dev.langchain4j.data.message.ImageContent imageContent = dev.langchain4j.data.message.ImageContent.from(base64Image, "image/png");
             
-            JdAnalysisResponse response = aiService.analyzeJdImage(imageContent);
+            // 3. AI structuring with OCR text hint
+            JdAnalysisResponse response = aiService.analyzeJdWithOcr(ocrText, imageContent);
             
             sendEvent(emitter, "COMPLETE", response);
             emitter.complete();
-            log.info("Completed JD Image analysis for UUID: {}", uuid);
+            log.info("Completed Hybrid JD Image analysis for UUID: {}", uuid);
         } catch (Exception e) {
             log.error("JD Image Analysis failed for UUID: {}: {}", uuid, e.getMessage(), e);
-            sendError(emitter, "AI 이미지 분석 중 오류가 발생했습니다: " + e.getMessage());
+            sendError(emitter, "이미지 분석 중 오류가 발생했습니다: " + e.getMessage());
         }
     }
 
