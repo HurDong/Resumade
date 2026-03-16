@@ -46,15 +46,10 @@ export function ContextPanel() {
     addQuestion,
     updateActiveQuestion,
     isProcessing,
-    progressMessage, 
-    startProcessing,
-    updateProgress,
-    updateDraftIntermediate,
-    updateWashedIntermediate,
-    completeProcessing,
+    progressMessage,
+    processingError,
     refineDraft,
     generateDraft,
-    setError,
     extractedContext,
     leftPanelTab,
     setLeftPanelTab,
@@ -62,15 +57,10 @@ export function ContextPanel() {
     hoveredMistranslationId,
     deleteActiveQuestion,
     toggleActiveQuestionCompletion,
-    applySuggestion,
-    updateMistranslationSuggestion,
-    dismissMistranslation
   } = useWorkspaceStore()
 
   // Virtual Progress Management for Premium UX
   const [virtualProgress, setVirtualProgress] = useState(0)
-  const [isFinishing, setIsFinishing] = useState(false)
-  const completionDataRef = useRef<any>(null)
   const topRef = useRef<HTMLDivElement>(null)
 
   const scrollToTop = () => {
@@ -80,7 +70,7 @@ export function ContextPanel() {
   // Manage virtual progress increment
   useEffect(() => {
     let interval: NodeJS.Timeout
-    if (isProcessing && !isFinishing) {
+    if (isProcessing) {
       // Pace to ~15 seconds for 90% (90 / (15 / 0.3) = 1.8 avg increment)
       interval = setInterval(() => {
         setVirtualProgress((prev) => {
@@ -88,37 +78,11 @@ export function ContextPanel() {
           return prev
         })
       }, 300)
-    } else if (isFinishing) {
-      // Fast forward to 100% when backend is done
-      interval = setInterval(() => {
-        setVirtualProgress((prev) => {
-          if (prev >= 100) {
-            clearInterval(interval)
-            return 100
-          }
-          return prev + 5
-        })
-      }, 50)
     } else {
       setVirtualProgress(0)
-      setIsFinishing(false)
-      completionDataRef.current = null
     }
     return () => clearInterval(interval)
-  }, [isProcessing, isFinishing])
-
-  // EFFECTIVE COMPLETION: Trigger store update only when animation reaches 100%
-  useEffect(() => {
-    if (isFinishing && virtualProgress >= 100 && completionDataRef.current) {
-      // Use a tiny timeout to ensure it's outside of any rendering loop
-      const timer = setTimeout(() => {
-        completeProcessing(completionDataRef.current)
-        setIsFinishing(false)
-        completionDataRef.current = null
-      }, 100)
-      return () => clearTimeout(timer)
-    }
-  }, [isFinishing, virtualProgress, completeProcessing])
+  }, [isProcessing])
 
   // Sync with real progress messages to "nudge" the virtual progress if server is ahead
   useEffect(() => {
@@ -391,10 +355,22 @@ export function ContextPanel() {
                 </div>
 
                 <div className="mt-6 pt-4 border-t border-primary/10">
-                  <p className="text-[10px] font-mono text-muted-foreground/60 truncate">
-                    <span className="text-primary/40 font-black mr-2">LOG</span>
+                  <p className="text-[11px] font-mono text-muted-foreground/70 break-words">
+                    <span className="text-[10px] font-black text-primary/40 mr-2">LOG</span>
                     {progressMessage}
                   </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {processingError && !isProcessing && (
+            <Card className="border-destructive/30 bg-destructive/5">
+              <CardContent className="p-4 flex items-start gap-3">
+                <AlertTriangle className="size-4 text-destructive mt-0.5 shrink-0" />
+                <div className="space-y-1">
+                  <p className="text-xs font-black uppercase tracking-wider text-destructive">Pipeline Error</p>
+                  <p className="text-sm text-foreground/80 break-words">{processingError}</p>
                 </div>
               </CardContent>
             </Card>

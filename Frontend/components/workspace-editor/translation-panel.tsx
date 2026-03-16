@@ -25,6 +25,7 @@ export function TranslationPanel() {
     activeQuestionId, 
     isProcessing, 
     progressMessage,
+    processingError,
     hoveredMistranslationId,
     setHoveredMistranslationId
   } = useWorkspaceStore()
@@ -238,6 +239,12 @@ export function TranslationPanel() {
               <Badge variant="secondary" className="animate-in fade-in zoom-in-95 gap-2 py-1.5 px-3">
                 <div className="size-2 rounded-full bg-primary animate-pulse" />
                 <span className="text-[11px] font-bold">{progressMessage}</span>
+              </Badge>
+            )}
+            {!isProcessing && processingError && (
+              <Badge variant="destructive" className="gap-2 py-1.5 px-3 max-w-full">
+                <AlertTriangle className="size-3.5 shrink-0" />
+                <span className="text-[11px] font-bold break-all">{processingError}</span>
               </Badge>
             )}
           </div>
