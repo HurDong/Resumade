@@ -186,7 +186,12 @@ public class WorkspaceService {
             String position = initialQuestion.getApplication().getPosition();
             String questionTitle = initialQuestion.getTitle();
             
+            // Start phase
+            sendSse(emitter, "progress", "START: 파이프라인 연결 성공. 작업을 시작합니다...");
+            paceProcessing();
+
             // Collect other questions' info for non-overlap
+            sendSse(emitter, "progress", "PIPELINE: 문항 간의 중복도를 체크하고 있습니다...");
             String others = initialQuestion.getApplication().getQuestions().stream()
                     .filter(q -> !q.getId().equals(questionId))
                     .map(q -> String.format("[문항: %s | 내용: %s]", q.getTitle(), q.getContent() != null ? q.getContent() : "아직 작성 전"))

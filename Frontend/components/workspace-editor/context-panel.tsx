@@ -53,6 +53,7 @@ export function ContextPanel() {
     updateWashedIntermediate,
     completeProcessing,
     refineDraft,
+    generateDraft,
     setError,
     extractedContext,
     leftPanelTab,
@@ -141,44 +142,7 @@ export function ContextPanel() {
 
   const handleStartProcess = () => {
     scrollToTop()
-    startProcessing()
-
-    const questionId = activeQuestion.dbId || activeQuestion.id
-    
-    // We send the process to the backend with the question ID
-    const eventSource = new EventSource(
-      `/api/workspace/stream/${questionId}`
-    )
-
-    eventSource.addEventListener("progress", (event) => {
-      updateProgress(event.data)
-    })
-
-    eventSource.addEventListener("draft_intermediate", (event) => {
-      updateDraftIntermediate(event.data)
-    })
-
-    eventSource.addEventListener("washed_intermediate", (event) => {
-      updateWashedIntermediate(event.data)
-    })
-
-    eventSource.addEventListener("complete", (event) => {
-      const data = JSON.parse(event.data)
-      // Store data in Ref to avoid closure issues and trigger finishing state
-      completionDataRef.current = data
-      setIsFinishing(true)
-      eventSource.close()
-    })
-
-    eventSource.addEventListener("error", (event) => {
-      setError(event.data)
-      eventSource.close()
-    })
-
-    eventSource.onerror = () => {
-      setError("서버와의 연결이 끊어졌습니다.")
-      eventSource.close()
-    }
+    generateDraft()
   }
 
   return (

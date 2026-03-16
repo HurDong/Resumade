@@ -81,6 +81,7 @@ interface WorkspaceState {
   updateWashedIntermediate: (washed: string) => void;
   completeProcessing: (data: any) => void;
   setError: (error: string) => void;
+  generateDraft: () => Promise<void>;
   refineDraft: (directive: string) => Promise<void>;
 }
 
@@ -450,6 +451,47 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       progressMessage: `오류: ${error}`,
     }),
 
+  generateDraft: async () => {
+    const state = get();
+    const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
+    if (!activeQ || !activeQ.dbId) return;
+
+    state.startProcessing();
+
+    const eventSource = new EventSource(
+      `/api/workspace/stream/${activeQ.dbId}`
+    );
+
+    eventSource.addEventListener("progress", (event) => {
+      const msg = event.data.replace(/^"(.*)"$/, '$1');
+      state.updateProgress(msg);
+    });
+
+    eventSource.addEventListener("draft_intermediate", (event) => {
+      state.updateDraftIntermediate(event.data);
+    });
+
+    eventSource.addEventListener("washed_intermediate", (event) => {
+      state.updateWashedIntermediate(event.data);
+    });
+
+    eventSource.addEventListener("complete", (event) => {
+      const data = JSON.parse(event.data);
+      state.completeProcessing(data);
+      eventSource.close();
+    });
+
+    eventSource.addEventListener("error", (event: any) => {
+      state.setError(event.data || "초안 생성 중 오류가 발생했습니다.");
+      eventSource.close();
+    });
+
+    eventSource.onerror = () => {
+      state.setError("서버와의 연결이 끊어졌습니다.");
+      eventSource.close();
+    };
+  },
+
   refineDraft: async (directive: string) => {
     const state = get();
     const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
@@ -463,7 +505,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     );
 
     eventSource.addEventListener("progress", (event) => {
-      state.updateProgress(event.data);
+      const msg = event.data.replace(/^"(.*)"$/, '$1');
+      state.updateProgress(msg);
     });
 
     eventSource.addEventListener("draft_intermediate", (event) => {
