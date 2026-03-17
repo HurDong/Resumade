@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Sparkles } from "lucide-react"
+import { parseJdInsight } from "@/lib/application-intelligence"
 import { type Application } from "@/lib/mock-data"
 
 // Mock JD Analysis Data
@@ -18,14 +19,7 @@ export function JDAnalysisPanel({ application }: { application: Application }) {
   const [jdText, setJdText] = useState(application.rawJd || "")
   
   // Try to parse aiInsight if it's JSON
-  let aiData: any = null
-  try {
-    if (application.aiInsight) {
-      aiData = JSON.parse(application.aiInsight)
-    }
-  } catch (e) {
-    console.warn("Failed to parse aiInsight JSON:", e)
-  }
+  const aiData = parseJdInsight(application.aiInsight)
 
   const isAnalyzed = !!application.aiInsight
 

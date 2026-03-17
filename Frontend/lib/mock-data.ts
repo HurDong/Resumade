@@ -21,6 +21,7 @@ export interface Application {
   logoUrl?: string
   rawJd?: string
   aiInsight?: string
+  companyResearch?: string
   result: ApplicationResult
 }
 

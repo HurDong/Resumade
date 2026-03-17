@@ -65,6 +65,7 @@ export function KanbanBoard() {
         techStack: [],
         rawJd: app.rawJd || "",
         aiInsight: app.aiInsight || "",
+        companyResearch: app.companyResearch || "",
         questions: (app.questions || []).map((q: any) => ({
           id: q.id.toString(),
           title: q.title,
@@ -131,6 +132,7 @@ export function KanbanBoard() {
   const handleCloseSheet = () => {
     setIsSheetOpen(false)
     setSelectedApplication(null)
+    void fetchApplications()
   }
 
   // 데이터 변경 시 선택된 공고 정보 동기화 (실시간 반영)
@@ -189,6 +191,7 @@ export function KanbanBoard() {
         techStack: [],
         rawJd: savedApp.rawJd || "",
         aiInsight: savedApp.aiInsight || "",
+        companyResearch: savedApp.companyResearch || "",
         questions: (savedApp.questions || []).map((q: any) => ({
           id: q.id.toString(),
           title: q.title,
