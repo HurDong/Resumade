@@ -24,14 +24,27 @@ spring:
 
   elasticsearch:
     uris: http://localhost:9200
-  
+
 openai:
   api:
     key: ${OPENAI_API_KEY:demo}
-  
+  models:
+    experience: ${OPENAI_EXPERIENCE_MODEL:gpt-5-mini}
+    workspace-draft: ${OPENAI_WORKSPACE_DRAFT_MODEL:gpt-4o}
+    workspace-patch: ${OPENAI_WORKSPACE_PATCH_MODEL:gpt-5.2}
+    jd-text: ${OPENAI_JD_TEXT_MODEL:gpt-5-mini}
+    jd-vision: ${OPENAI_JD_VISION_MODEL:gpt-4o}
+
+gemini:
+  api:
+    key: ${GEMINI_API_KEY:}
+    url: ${GEMINI_API_URL:https://generativelanguage.googleapis.com/v1beta}
+  models:
+    company-research: ${GEMINI_COMPANY_RESEARCH_MODEL:gemini-3.1-pro}
+
 deepl:
   api:
     key: ${DEEPL_API_KEY:demo}
-  
+
 server:
   port: 8080

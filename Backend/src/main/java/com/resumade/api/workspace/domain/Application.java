@@ -48,6 +48,9 @@ public class Application {
     @Column(columnDefinition = "TEXT")
     private String aiInsight;
 
+    @Column(columnDefinition = "TEXT")
+    private String companyResearch;
+
     private String logoUrl;
 
     @OneToMany(mappedBy = "application", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -61,11 +64,12 @@ public class Application {
     private LocalDateTime updatedAt;
 
     @Builder
-    public Application(String companyName, String position, String rawJd, String aiInsight, ApplicationStatus status, LocalDateTime deadline, ApplicationResult result, String logoUrl) {
+    public Application(String companyName, String position, String rawJd, String aiInsight, String companyResearch, ApplicationStatus status, LocalDateTime deadline, ApplicationResult result, String logoUrl) {
         this.companyName = companyName;
         this.position = position;
         this.rawJd = rawJd;
         this.aiInsight = aiInsight;
+        this.companyResearch = companyResearch;
         this.status = status != null ? status : ApplicationStatus.DOCUMENT;
         this.deadline = deadline;
         this.result = result != null ? result : ApplicationResult.PENDING;

@@ -6,9 +6,10 @@ import com.resumade.api.workspace.domain.ApplicationResult;
 import com.resumade.api.workspace.domain.ApplicationStatus;
 import com.resumade.api.workspace.domain.WorkspaceQuestion;
 import com.resumade.api.workspace.domain.WorkspaceQuestionRepository;
+import com.resumade.api.workspace.dto.CompanyResearchRequest;
 import com.resumade.api.workspace.dto.JdAnalysisResponse;
+import com.resumade.api.workspace.service.CompanyResearchService;
 import com.resumade.api.workspace.service.JdAnalysisService;
-import com.resumade.api.workspace.service.WorkspaceAiService;
 import com.resumade.api.workspace.service.WorkspaceService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -34,9 +35,9 @@ public class ApplicationController {
 
     private final ApplicationRepository applicationRepository;
     private final WorkspaceQuestionRepository questionRepository;
-    private final WorkspaceAiService aiService;
     private final ObjectMapper objectMapper;
     private final JdAnalysisService jdAnalysisService;
+    private final CompanyResearchService companyResearchService;
     private final WorkspaceService workspaceService;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
@@ -80,6 +81,20 @@ public class ApplicationController {
         return emitter;
     }
 
+    @PostMapping("/{id}/company-research/init")
+    public Map<String, String> initCompanyResearch(@PathVariable Long id,
+                                                   @RequestBody(required = false) CompanyResearchRequest request) {
+        String uuid = companyResearchService.initResearch(id, request);
+        return Map.of("uuid", uuid);
+    }
+
+    @GetMapping("/company-research/stream/{uuid}")
+    public SseEmitter streamCompanyResearch(@PathVariable String uuid) {
+        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
+        executorService.execute(() -> companyResearchService.processResearch(uuid, emitter));
+        return emitter;
+    }
+
     @Transactional
     @PostMapping("/full")
     public Application createFullApplication(@RequestBody FullApplicationRequest request) {
@@ -88,6 +103,7 @@ public class ApplicationController {
                 .position(request.getPosition())
                 .rawJd(request.getRawJd())
                 .aiInsight(request.getAiInsight())
+                .companyResearch(request.getCompanyResearch())
                 .logoUrl(request.getLogoUrl())
                 .build();
         
@@ -114,6 +130,7 @@ public class ApplicationController {
         private String position;
         private String rawJd;
         private String aiInsight;
+        private String companyResearch;
         private String logoUrl;
         private List<QuestionEntry> questions;
     }
@@ -150,6 +167,7 @@ public class ApplicationController {
         if (updates.containsKey("status")) application.setStatus(ApplicationStatus.fromId((String) updates.get("status")));
         if (updates.containsKey("result")) application.setResult(ApplicationResult.fromId((String) updates.get("result")));
         if (updates.containsKey("logoUrl")) application.setLogoUrl((String) updates.get("logoUrl"));
+        if (updates.containsKey("companyResearch")) application.setCompanyResearch((String) updates.get("companyResearch"));
         if (updates.containsKey("deadline")) {
             String deadlineStr = (String) updates.get("deadline");
             if (deadlineStr != null && !deadlineStr.isBlank()) {
