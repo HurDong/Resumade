@@ -79,4 +79,14 @@ public class Experience {
         this.period = period;
         this.role = role;
     }
+
+    public void updateFromMarkdown(String title, String description, String techStack, String metrics, String period, String role, String rawContent) {
+        this.title = title;
+        this.description = description;
+        this.techStack = techStack;
+        this.metrics = metrics;
+        this.period = period;
+        this.role = role;
+        this.rawContent = rawContent;
+    }
 }

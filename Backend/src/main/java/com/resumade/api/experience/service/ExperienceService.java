@@ -24,8 +24,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -184,6 +186,43 @@ public class ExperienceService {
     }
 
     @Transactional
+    public ExperienceResponse updateRawContent(Long id, String rawContent) {
+        Experience experience = experienceRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Experience not found: " + id));
+
+        String normalizedRawContent = rawContent == null ? "" : rawContent.trim();
+        if (normalizedRawContent.isBlank()) {
+            throw new IllegalArgumentException("Markdown content must not be blank.");
+        }
+
+        MarkdownSnapshot snapshot = parseMarkdownSnapshot(normalizedRawContent);
+        List<String> techStack = snapshot.techStack().isEmpty()
+                ? readJsonArray(experience.getTechStack())
+                : snapshot.techStack();
+        List<String> metrics = snapshot.metrics().isEmpty()
+                ? readJsonArray(experience.getMetrics())
+                : snapshot.metrics();
+        String techStackJson = writeJsonArray(techStack);
+        String metricsJson = writeJsonArray(metrics);
+
+        experience.updateFromMarkdown(
+                snapshot.title().isBlank() ? experience.getTitle() : snapshot.title(),
+                snapshot.description().isBlank() ? experience.getDescription() : snapshot.description(),
+                techStackJson,
+                metricsJson,
+                snapshot.period().isBlank() ? experience.getPeriod() : snapshot.period(),
+                snapshot.role().isBlank() ? experience.getRole() : snapshot.role(),
+                normalizedRawContent
+        );
+
+        experienceDocumentRepository.deleteByExperienceId(id);
+        indexToElasticsearch(id, normalizedRawContent);
+
+        Experience saved = experienceRepository.save(experience);
+        return ExperienceResponse.from(saved, techStack, metrics);
+    }
+
+    @Transactional
     public void deleteExperience(Long id) {
         if (!experienceRepository.existsById(id)) {
             throw new IllegalArgumentException("Experience not found: " + id);
@@ -197,5 +236,127 @@ public class ExperienceService {
 
         experienceRepository.deleteById(id);
         log.info("Deleted experience id: {}", id);
+    }
+
+    private String writeJsonArray(List<String> values) {
+        try {
+            return objectMapper.writeValueAsString(values);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize markdown-derived list fields.", e);
+        }
+    }
+
+    private List<String> readJsonArray(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+
+        try {
+            return objectMapper.readValue(value, new TypeReference<>() {});
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to parse JSON array from stored experience field", e);
+            return List.of();
+        }
+    }
+
+    private MarkdownSnapshot parseMarkdownSnapshot(String rawContent) {
+        String[] lines = rawContent.replace("\r\n", "\n").split("\n", -1);
+        String title = "";
+        Map<String, StringBuilder> sections = new LinkedHashMap<>();
+        String currentSection = null;
+
+        for (String rawLine : lines) {
+            String line = rawLine == null ? "" : rawLine;
+            String trimmed = line.trim();
+
+            if (trimmed.startsWith("# ") && title.isBlank()) {
+                title = trimmed.substring(2).trim();
+                continue;
+            }
+
+            if (trimmed.startsWith("## ")) {
+                currentSection = normalizeHeading(trimmed.substring(3));
+                sections.putIfAbsent(currentSection, new StringBuilder());
+                continue;
+            }
+
+            if (currentSection != null) {
+                StringBuilder builder = sections.get(currentSection);
+                if (builder.length() > 0) {
+                    builder.append('\n');
+                }
+                builder.append(line);
+            }
+        }
+
+        String description = extractParagraph(sections, "프로젝트개요", "개요", "summary");
+        List<String> techStack = extractList(sections, "기술스택", "스택", "techstack");
+        List<String> metrics = extractList(sections, "주요성과", "성과", "metrics");
+        String period = extractSingleLine(sections, "프로젝트기간", "기간", "period");
+        String role = extractSingleLine(sections, "담당역할", "역할", "role");
+
+        return new MarkdownSnapshot(title, description, techStack, metrics, period, role);
+    }
+
+    private String normalizeHeading(String heading) {
+        if (heading == null) {
+            return "";
+        }
+
+        return heading
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^0-9a-zA-Z가-힣]", "");
+    }
+
+    private String extractParagraph(Map<String, StringBuilder> sections, String... keys) {
+        for (String key : keys) {
+            String value = getSectionText(sections, key);
+            if (!value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private String extractSingleLine(Map<String, StringBuilder> sections, String... keys) {
+        String paragraph = extractParagraph(sections, keys);
+        if (paragraph.isBlank()) {
+            return "";
+        }
+
+        return paragraph.lines()
+                .map(String::trim)
+                .filter(line -> !line.isBlank())
+                .findFirst()
+                .orElse("");
+    }
+
+    private List<String> extractList(Map<String, StringBuilder> sections, String... keys) {
+        String text = extractParagraph(sections, keys);
+        if (text.isBlank()) {
+            return List.of();
+        }
+
+        return text.lines()
+                .map(String::trim)
+                .filter(line -> !line.isBlank())
+                .map(line -> line.replaceFirst("^[-*]\\s*", "").trim())
+                .filter(line -> !line.isBlank())
+                .collect(Collectors.toList());
+    }
+
+    private String getSectionText(Map<String, StringBuilder> sections, String key) {
+        StringBuilder builder = sections.get(key);
+        return builder == null ? "" : builder.toString().trim();
+    }
+
+    private record MarkdownSnapshot(
+            String title,
+            String description,
+            List<String> techStack,
+            List<String> metrics,
+            String period,
+            String role
+    ) {
     }
 }

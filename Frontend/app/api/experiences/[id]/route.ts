@@ -15,3 +15,28 @@ export async function DELETE(
     status: response.status,
   })
 }
+
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const body = await request.text()
+
+  const response = await fetch(`${BACKEND_API_BASE_URL}/api/experiences/${id}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": request.headers.get("content-type") ?? "application/json",
+    },
+    body,
+  })
+
+  const responseBody = await response.text()
+
+  return new Response(responseBody, {
+    status: response.status,
+    headers: {
+      "Content-Type": response.headers.get("content-type") ?? "application/json",
+    },
+  })
+}

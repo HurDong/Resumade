@@ -27,7 +27,12 @@ export function ExperienceVault() {
       }
 
       const data = (await response.json()) as Experience[]
-      setExperiences(data)
+      setExperiences(
+        data.map((experience) => ({
+          ...experience,
+          id: String(experience.id),
+        }))
+      )
     } catch (error) {
       console.error("Failed to fetch experiences:", error)
     }
@@ -70,6 +75,17 @@ export function ExperienceVault() {
   const handleCloseModal = () => {
     setIsModalOpen(false)
     setSelectedExperience(null)
+  }
+
+  const handleExperienceUpdated = (updatedExperience: Experience) => {
+    setExperiences((prev) =>
+      prev.map((experience) =>
+        experience.id === updatedExperience.id ? updatedExperience : experience
+      )
+    )
+    setSelectedExperience((prev) =>
+      prev?.id === updatedExperience.id ? updatedExperience : prev
+    )
   }
 
   return (
@@ -121,6 +137,7 @@ export function ExperienceVault() {
           experience={selectedExperience}
           isOpen={isModalOpen}
           onClose={handleCloseModal}
+          onExperienceUpdated={handleExperienceUpdated}
         />
       </div>
     </TooltipProvider>

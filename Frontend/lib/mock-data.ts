@@ -34,6 +34,7 @@ export interface Experience {
   metrics: string[]
   period: string
   role: string
+  rawContent?: string
 }
 
 // Mock Applications Data

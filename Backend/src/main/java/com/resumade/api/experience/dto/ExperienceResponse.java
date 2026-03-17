@@ -17,6 +17,7 @@ public class ExperienceResponse {
     private List<String> metrics;
     private String period;
     private String role;
+    private String rawContent;
     
     public static ExperienceResponse from(Experience experience, List<String> techStack, List<String> metrics) {
         return ExperienceResponse.builder()
@@ -28,6 +29,7 @@ public class ExperienceResponse {
                 .metrics(metrics)
                 .period(experience.getPeriod())
                 .role(experience.getRole())
+                .rawContent(experience.getRawContent())
                 .build();
     }
 }
