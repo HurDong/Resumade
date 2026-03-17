@@ -70,9 +70,9 @@ export function ApplicationDetailSheet({
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="flex h-full w-full min-w-0 flex-col overflow-hidden p-0 sm:max-w-[720px]">
-        <SheetHeader className="shrink-0 border-b border-border bg-muted/5 px-6 py-5">
-          <div className="mb-4 flex items-center gap-3">
+      <SheetContent className="flex h-full !w-[min(100vw-12px,980px)] min-w-0 flex-col overflow-hidden rounded-l-3xl p-0 !max-w-none">
+        <SheetHeader className="shrink-0 border-b border-border bg-muted/5 px-4 py-4 sm:px-6 sm:py-5 lg:px-8">
+          <div className="mb-4 flex min-w-0 flex-wrap items-start gap-3 sm:items-center">
             <div
               className={`flex size-12 items-center justify-center rounded-xl ${application.logoColor} shadow-sm`}
             >
@@ -88,7 +88,7 @@ export function ApplicationDetailSheet({
                 {application.position}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               <Button
                 onClick={() => router.push(`/workspace/${application.id}`)}
                 className="hidden gap-2 rounded-full bg-primary shadow-sm hover:bg-primary/90 sm:flex"
@@ -115,7 +115,7 @@ export function ApplicationDetailSheet({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             <div className="space-y-1.5">
               <label className="ml-1 text-[10px] font-bold uppercase text-muted-foreground">
                 {"\ud604\uc7ac\u0020\uc804\ud615\u0020\uc0c1\ud0dc"}
@@ -216,7 +216,7 @@ export function ApplicationDetailSheet({
             <label className="ml-1 text-[10px] font-bold uppercase text-muted-foreground">
               {"\uc804\ud615\u0020\uacb0\uacfc"}
             </label>
-            <div className="flex gap-2 rounded-2xl border border-muted-foreground/10 bg-muted/30 p-1">
+            <div className="flex flex-col gap-2 rounded-2xl border border-muted-foreground/10 bg-muted/30 p-1 sm:flex-row">
               <Button
                 variant="ghost"
                 size="sm"
@@ -278,21 +278,21 @@ export function ApplicationDetailSheet({
           <TabsList className="grid h-auto w-full shrink-0 grid-cols-3 rounded-none border-b border-border bg-background p-0">
             <TabsTrigger
               value="jd"
-              className="gap-1.5 rounded-none border-b-2 border-transparent px-2 py-3 text-[11px] data-[state=active]:border-primary data-[state=active]:bg-transparent sm:gap-2 sm:px-4 sm:text-sm"
+              className="gap-1.5 whitespace-normal break-words rounded-none border-b-2 border-transparent px-2 py-3 text-[11px] leading-tight data-[state=active]:border-primary data-[state=active]:bg-transparent sm:gap-2 sm:px-4 sm:text-sm"
             >
               <FileText className="size-4" />
               JD
             </TabsTrigger>
             <TabsTrigger
               value="research"
-              className="gap-1.5 rounded-none border-b-2 border-transparent px-2 py-3 text-[11px] data-[state=active]:border-primary data-[state=active]:bg-transparent sm:gap-2 sm:px-4 sm:text-sm"
+              className="gap-1.5 whitespace-normal break-words rounded-none border-b-2 border-transparent px-2 py-3 text-[11px] leading-tight data-[state=active]:border-primary data-[state=active]:bg-transparent sm:gap-2 sm:px-4 sm:text-sm"
             >
               <Wand2 className="size-4" />
               {"\uae30\uc5c5\u0020\ubd84\uc11d"}
             </TabsTrigger>
             <TabsTrigger
               value="questions"
-              className="gap-1.5 rounded-none border-b-2 border-transparent px-2 py-3 text-[11px] data-[state=active]:border-primary data-[state=active]:bg-transparent sm:gap-2 sm:px-4 sm:text-sm"
+              className="gap-1.5 whitespace-normal break-words rounded-none border-b-2 border-transparent px-2 py-3 text-[11px] leading-tight data-[state=active]:border-primary data-[state=active]:bg-transparent sm:gap-2 sm:px-4 sm:text-sm"
             >
               <ClipboardList className="size-4" />
               {"\ubb38\ud56d\u0020\uad00\ub9ac"}
@@ -300,16 +300,16 @@ export function ApplicationDetailSheet({
           </TabsList>
 
           <ScrollArea className="h-full min-h-0 flex-1">
-            <TabsContent value="jd" className="m-0 min-w-0 overflow-x-hidden p-6">
+            <TabsContent value="jd" className="m-0 min-w-0 overflow-x-auto p-4 sm:p-6 lg:p-7">
               <JDAnalysisPanel application={application} />
             </TabsContent>
-            <TabsContent value="research" className="m-0 min-w-0 overflow-x-hidden p-6">
+            <TabsContent value="research" className="m-0 min-w-0 overflow-x-auto p-4 sm:p-6 lg:p-7">
               <CompanyResearchPanel
                 application={application}
                 onUpdateApplication={onUpdateApplication}
               />
             </TabsContent>
-            <TabsContent value="questions" className="m-0 min-w-0 overflow-x-hidden p-6 outline-none">
+            <TabsContent value="questions" className="m-0 min-w-0 overflow-x-auto p-4 sm:p-6 lg:p-7 outline-none">
               <QuestionsPanel
                 application={application}
                 onRefresh={onRefresh}

@@ -15,6 +15,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -33,7 +34,7 @@ public class GeminiCompanyResearchClient {
     @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta}")
     private String apiUrl;
 
-    @Value("${gemini.models.company-research:gemini-3.1-pro}")
+    @Value("${gemini.models.company-research:gemini-2.5-flash-lite}")
     private String modelName;
 
     public CompanyResearchResponse compose(
@@ -111,8 +112,7 @@ public class GeminiCompanyResearchClient {
                             Map.of("google_search", Map.of())
                     ),
                     "generationConfig", Map.of(
-                            "temperature", 0.2,
-                            "responseMimeType", "application/json"
+                            "temperature", 0.2
                     )
             ));
 
@@ -132,18 +132,55 @@ public class GeminiCompanyResearchClient {
             }
 
             JsonNode root = objectMapper.readTree(response.body());
-            String text = root.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText("");
+            String text = extractResponseText(root);
             if (text.isBlank()) {
                 throw new IllegalStateException("Gemini returned an empty company research response.");
             }
 
-            return objectMapper.readValue(text, CompanyResearchResponse.class);
+            return parseResearchResponse(text);
         } catch (IOException e) {
             throw new IllegalStateException("Gemini company research request failed: " + e.getMessage(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Gemini company research request was interrupted.", e);
         }
+    }
+
+    private String extractResponseText(JsonNode root) {
+        JsonNode parts = root.path("candidates").path(0).path("content").path("parts");
+        if (!parts.isArray()) {
+            return "";
+        }
+
+        StringBuilder text = new StringBuilder();
+        Iterator<JsonNode> iterator = parts.elements();
+        while (iterator.hasNext()) {
+            JsonNode part = iterator.next();
+            String value = part.path("text").asText("");
+            if (!value.isBlank()) {
+                if (text.length() > 0) {
+                    text.append('\n');
+                }
+                text.append(value);
+            }
+        }
+        return text.toString().trim();
+    }
+
+    private CompanyResearchResponse parseResearchResponse(String text) throws IOException {
+        String normalized = text.trim();
+        if (normalized.startsWith("```")) {
+            normalized = normalized.replaceFirst("^```(?:json)?\\s*", "");
+            normalized = normalized.replaceFirst("\\s*```$", "");
+        }
+
+        int objectStart = normalized.indexOf('{');
+        int objectEnd = normalized.lastIndexOf('}');
+        if (objectStart >= 0 && objectEnd > objectStart) {
+            normalized = normalized.substring(objectStart, objectEnd + 1);
+        }
+
+        return objectMapper.readValue(normalized, CompanyResearchResponse.class);
     }
 
     private String mapGeminiError(int statusCode, String responseBody) {
@@ -159,6 +196,14 @@ public class GeminiCompanyResearchClient {
 
         if (lowerBody.contains("billing")) {
             return "Gemini API \ube4c\ub9c1 \uc124\uc815\uc774 \ud544\uc694\ud569\ub2c8\ub2e4. Google AI Studio \ub610\ub294 Google Cloud\uc5d0\uc11c \ube4c\ub9c1 \uc0c1\ud0dc\ub97c \ud655\uc778\ud574\uc8fc\uc138\uc694.";
+        }
+
+        if (lowerBody.contains("not found for api version") || lowerBody.contains("not supported for generatecontent")) {
+            return "Gemini \ubaa8\ub378 \uc124\uc815\uac12\uc774 \uc720\ud6a8\ud558\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4. GEMINI_COMPANY_RESEARCH_MODEL\uc744 \ud655\uc778\ud574\uc8fc\uc138\uc694. \ud604\uc7ac \uae30\ubcf8\uac12\uc740 gemini-2.5-flash-lite\uc785\ub2c8\ub2e4.";
+        }
+
+        if (lowerBody.contains("response mime type") && lowerBody.contains("unsupported")) {
+            return "Gemini \uc694\uccad \uc635\uc158\uc774 \ud604\uc7ac \ubaa8\ub378/\ud234 \uc870\ud569\uacfc \ucda9\ub3cc\ud588\uc2b5\ub2c8\ub2e4. \uac80\uc0c9 \ud234 \uc0ac\uc6a9 \uc2dc\uc5d0\ub294 JSON MIME \uac15\uc81c \uc635\uc158\uc744 \uc81c\uac70\ud574\uc57c \ud569\ub2c8\ub2e4.";
         }
 
         return "Gemini request failed with status " + statusCode + ": " + responseBody;

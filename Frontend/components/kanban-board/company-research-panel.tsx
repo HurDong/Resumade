@@ -29,7 +29,7 @@ interface CompanyResearchPanelProps {
 }
 
 const DEFAULT_GOAL =
-  "\uc9c0\uc6d0\ub3d9\uae30\u002c\u0020\uc11c\ube44\uc2a4\u0020\ud638\uac10\ub3c4\u002c\u0020\uc9c1\ubb34\u0020\uc801\ud569\ub3c4\ub97c\u0020\uc790\uc18c\uc11c\uc5d0\u0020\uad6c\uccb4\uc801\uc73c\ub85c\u0020\ub179\uc77c\u0020\uc218\u0020\uc788\uc744\u0020\uc815\ub3c4\ub85c\u0020\ubd84\uc11d\ud569\ub2c8\ub2e4\u002e"
+  "지원동기, 서비스 호감도, 직무 적합도를 자소서에 구체적으로 녹일 수 있을 정도로 분석합니다."
 
 export function CompanyResearchPanel({
   application,
@@ -61,7 +61,7 @@ export function CompanyResearchPanel({
   const handleResearch = async () => {
     setIsResearching(true)
     setError(null)
-    setProgressMessage("\uae30\uc5c5\u0020\ubd84\uc11d\u0020\uc900\ube44\u0020\uc911\uc785\ub2c8\ub2e4\u002e")
+    setProgressMessage("기업 분석 준비 중입니다.")
 
     let completed = false
     let streamFailed = false
@@ -83,7 +83,7 @@ export function CompanyResearchPanel({
       )
 
       if (!initResponse.ok) {
-        throw new Error("\uae30\uc5c5\u0020\ubd84\uc11d\u0020\ucd08\uae30\ud654\uc5d0\u0020\uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4\u002e")
+        throw new Error("기업 분석 초기화에 실패했습니다.")
       }
 
       const { uuid } = await initResponse.json()
@@ -102,13 +102,13 @@ export function CompanyResearchPanel({
             const parsed = parseCompanyResearch(data)
             if (!parsed) {
               streamFailed = true
-              setError("\uae30\uc5c5\u0020\ubd84\uc11d\u0020\uacb0\uacfc\ub97c\u0020\ud574\uc11d\ud558\uc9c0\u0020\ubabb\ud588\uc2b5\ub2c8\ub2e4\u002e")
+              setError("기업 분석 결과를 해석하지 못했습니다.")
               return
             }
 
             completed = true
             setResearchData(parsed)
-            setProgressMessage("\uae30\uc5c5\u0020\ubd84\uc11d\uc774\u0020\uc644\ub8cc\ub418\uc5c8\uc2b5\ub2c8\ub2e4\u002e")
+            setProgressMessage("기업 분석이 완료되었습니다.")
             onUpdateApplication({ companyResearch: JSON.stringify(parsed) })
             return
           }
@@ -117,22 +117,22 @@ export function CompanyResearchPanel({
             streamFailed = true
             try {
               const parsedError = JSON.parse(data)
-              setError(parsedError.message || "\uae30\uc5c5\u0020\ubd84\uc11d\u0020\uc911\u0020\uc624\ub958\uac00\u0020\ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4\u002e")
+              setError(parsedError.message || "기업 분석 중 오류가 발생했습니다.")
             } catch {
-              setError(data || "\uae30\uc5c5\u0020\ubd84\uc11d\u0020\uc911\u0020\uc624\ub958\uac00\u0020\ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4\u002e")
+              setError(data || "기업 분석 중 오류가 발생했습니다.")
             }
           }
         },
       })
 
       if (!completed && !streamFailed) {
-        setError("\uae30\uc5c5\u0020\ubd84\uc11d\u0020\uc2a4\ud2b8\ub9bc\uc774\u0020\uc608\uc0c1\ubcf4\ub2e4\u0020\uc77c\ucc0d\u0020\uc885\ub8cc\ub418\uc5c8\uc2b5\ub2c8\ub2e4\u002e")
+        setError("기업 분석 스트림이 예상보다 일찍 종료되었습니다.")
       }
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "\uae30\uc5c5\u0020\ubd84\uc11d\u0020\uc694\uccad\uc5d0\u0020\uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4\u002e"
+          : "기업 분석 요청에 실패했습니다."
       )
     } finally {
       setIsResearching(false)
@@ -140,73 +140,72 @@ export function CompanyResearchPanel({
   }
 
   return (
-    <div className="min-w-0 space-y-5 overflow-x-hidden">
-      <Card className="min-w-0 overflow-hidden border-primary/15 bg-gradient-to-br from-primary/5 via-background to-background shadow-none">
+    <div className="w-full min-w-0 max-w-full space-y-5 overflow-visible">
+      <Card className="w-full min-w-0 max-w-full overflow-hidden border-primary/15 bg-gradient-to-br from-primary/5 via-background to-background shadow-none">
         <CardContent className="space-y-5 p-4 sm:p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-2">
+          <div className="flex min-w-0 flex-col gap-4">
+            <div className="min-w-0 flex-1 space-y-2">
               <div className="flex items-center gap-2 text-primary">
                 <FileSearch className="size-4 shrink-0" />
                 <span className="text-sm font-black uppercase tracking-[0.18em]">
-                  {"\uae30\uc5c5\u0020\ubd84\uc11d"}
+                  기업 분석
                 </span>
               </div>
-              <p className="text-sm leading-6 text-muted-foreground">
-                {
-                  "\u0047\u0065\u006d\u0069\u006e\u0069\uac00\u0020\uacf5\uace0\uc640\u0020\uc785\ub825\ud55c\u0020\ud3ec\ucee4\uc2a4\ub97c\u0020\ubc14\ud0d5\uc73c\ub85c\u0020\ud68c\uc0ac\uc640\u0020\uc9c1\ubb34\u0020\ub9e5\ub77d\uc744\u0020\uc790\uc18c\uc11c\uc6a9\uc73c\ub85c\u0020\uae4a\uac8c\u0020\uc7ac\uad6c\uc131\ud569\ub2c8\ub2e4\u002e\u0020\ud544\uc694\ud558\uba74\u0020\uacf5\uac1c\ub41c\u0020\ucd5c\uc2e0\u0020\uc815\ubcf4\ub97c\u0020\ubc14\ud0d5\uc73c\ub85c\u0020\ubd84\uc11d\ud558\ub3c4\ub85d\u0020\uc124\uacc4\ub41c\u0020\uc790\uc18c\uc11c\u0020\uc791\uc131\uc6a9\u0020\uc2ec\uce35\u0020\ubd84\uc11d\uc785\ub2c8\ub2e4\u002e"
-                }
+              <p className="break-words text-sm leading-6 text-muted-foreground">
+                Gemini가 공고와 입력한 포커스를 바탕으로 회사와 직무 맥락을 자소서용으로 깊게 재구성합니다.
+                필요하면 공개된 최신 정보를 바탕으로 다시 분석할 수 있습니다.
               </p>
             </div>
             <Button
               onClick={handleResearch}
               disabled={isResearching}
-              className="w-full gap-2 rounded-full px-4 shadow-sm shadow-primary/20 sm:w-auto"
+              className="w-full shrink-0 gap-2 self-start rounded-full px-4 shadow-sm shadow-primary/20 sm:w-auto"
             >
               {isResearching ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <Sparkles className="size-4" />
               )}
-              {researchData ? "\ub2e4\uc2dc\u0020\ubd84\uc11d" : "\ubd84\uc11d\u0020\uc2dc\uc791"}
+              {researchData ? "다시 분석" : "분석 시작"}
             </Button>
           </div>
 
-          <div className="grid gap-3">
+          <div className="grid min-w-0 gap-3 lg:grid-cols-2">
             <FieldBlock
-              label="\uc0ac\uc5c5\ubd80\u0020\u002f\u0020\ud300"
+              label="사업부 / 팀"
               value={businessUnit}
               onChange={setBusinessUnit}
-              placeholder="\uc608\u003a\u0020\u004d\u0058\uc0ac\uc5c5\ubd80\u002c\u0020\ubcd1\uc6d0\u0020\uc804\uc0b0\ud300\u002c\u0020\u0041\u0049\u0020\ud50c\ub7ab\ud3fc\u0020\uc870\uc9c1"
+              placeholder="예: MX사업부, 병원 전산팀, AI 플랫폼 조직"
             />
             <FieldBlock
-              label="\uc11c\ube44\uc2a4\u0020\u002f\u0020\uc81c\ud488"
+              label="서비스 / 제품"
               value={targetService}
               onChange={setTargetService}
-              placeholder="\uc608\u003a\u0020\ubaa8\ubc14\uc77c\u0020\ud50c\ub7ab\ud3fc\u002c\u0020\ubcd1\uc6d0\u0020\uc815\ubcf4\uc2dc\uc2a4\ud15c\u002c\u0020\u0041\u0049\u0020\uc9c0\uc6d0\u0020\uc11c\ube44\uc2a4"
+              placeholder="예: 모바일 플랫폼, 병원 정보시스템, AI 지원 서비스"
             />
             <FieldBlock
-              label="\uc9c1\ubb34\u0020\ud3ec\ucee4\uc2a4"
+              label="직무 포커스"
               value={focusRole}
               onChange={setFocusRole}
-              placeholder="\uc608\u003a\u0020\u004a\u0061\u0076\u0061\u0020\ubc31\uc5d4\ub4dc\u002c\u0020\uc758\ub8cc\u0020\u0041\u0049\u0020\uc6b4\uc601\u002c\u0020\ud50c\ub7ab\ud3fc\u0020\uc790\ub3d9\ud654"
+              placeholder="예: Java 백엔드, 의료 AI 운영, 플랫폼 자동화"
             />
             <FieldBlock
-              label="\uae30\uc220\u0020\ud3ec\ucee4\uc2a4"
+              label="기술 포커스"
               value={techFocus}
               onChange={setTechFocus}
-              placeholder="\uc608\u003a\u0020\u004a\u0061\u0076\u0061\u002c\u0020\u0053\u0070\u0072\u0069\u006e\u0067\u002c\u0020\ubcf4\uc548\u002c\u0020\uc778\ud504\ub77c\u002c\u0020\ub370\uc774\ud130\u0020\ud30c\uc774\ud504\ub77c\uc778\u002c\u0020\u004d\u004c\u004f\u0070\u0073"
+              placeholder="예: Java, Spring, 보안, 인프라, 데이터 파이프라인, MLOps"
             />
           </div>
 
-          <div className="space-y-1.5">
+          <div className="min-w-0 space-y-1.5">
             <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-              {"\ubd84\uc11d\u0020\ubaa9\ud45c"}
+              분석 목표
             </p>
             <Textarea
               value={questionGoal}
               onChange={(event) => setQuestionGoal(event.target.value)}
-              placeholder="\uc774\u0020\ubd84\uc11d\uc5d0\uc11c\u0020\uc5b4\ub5a4\u0020\ub2f5\uc744\u0020\uc5bb\uace0\u0020\uc2f6\uc740\uc9c0\u0020\uc801\uc5b4\uc8fc\uc138\uc694\u002e"
-              className="min-h-[110px] resize-none bg-background/80 text-sm leading-6"
+              placeholder="이 분석에서 어떤 답을 얻고 싶은지 적어주세요."
+              className="min-h-[110px] max-w-full resize-none overflow-hidden whitespace-pre-wrap break-all bg-background/80 text-sm leading-6 [overflow-wrap:anywhere]"
             />
           </div>
 
@@ -225,16 +224,16 @@ export function CompanyResearchPanel({
       </Card>
 
       {researchData && (
-        <div className="min-w-0 space-y-4">
-          <Card className="min-w-0 overflow-hidden border-none bg-muted/30 shadow-none">
+        <div className="w-full min-w-0 max-w-full space-y-4 overflow-visible">
+          <Card className="w-full min-w-0 max-w-full overflow-hidden border-none bg-muted/30 shadow-none">
             <CardContent className="space-y-4 p-4 sm:p-5">
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <Building2 className="size-4 shrink-0 text-primary" />
                 <span className="text-sm font-black uppercase tracking-[0.16em] text-primary">
-                  {"\ud575\uc2ec\u0020\uc694\uc57d"}
+                  핵심 요약
                 </span>
               </div>
-              <p className="break-words text-sm leading-7 text-foreground/90">
+              <p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground/90">
                 {researchData.executiveSummary}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -261,40 +260,40 @@ export function CompanyResearchPanel({
           <div className="grid min-w-0 gap-4">
             <InsightListCard
               icon={<Target className="size-4 text-primary" />}
-              title="\uacbd\uc601\u002f\uc0ac\uc5c5\u0020\ub9e5\ub77d"
+              title="경영/사업 맥락"
               items={researchData.businessContext}
             />
             <InsightListCard
               icon={<Sparkles className="size-4 text-primary" />}
-              title="\uc11c\ube44\uc2a4\u002f\uc81c\ud488\u0020\ub9e5\ub77d"
+              title="서비스/제품 맥락"
               items={researchData.serviceLandscape}
             />
             <InsightListCard
               icon={<Building2 className="size-4 text-primary" />}
-              title="\uc9c1\ubb34\u0020\ubc94\uc704"
+              title="직무 범위"
               items={researchData.roleScope}
             />
             <InsightListCard
               icon={<FileSearch className="size-4 text-primary" />}
-              title="\uae30\uc220\u0020\uc2dc\uadf8\ub110"
+              title="기술 시그널"
               items={researchData.techSignals}
             />
           </div>
 
-          <Card className="min-w-0 overflow-hidden border-primary/10 bg-primary/[0.03] shadow-none">
+          <Card className="w-full min-w-0 max-w-full overflow-hidden border-primary/10 bg-primary/[0.03] shadow-none">
             <CardContent className="space-y-5 p-4 sm:p-5">
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <MessageSquareQuote className="size-4 shrink-0 text-primary" />
                 <span className="text-sm font-black uppercase tracking-[0.16em] text-primary">
-                  {"\uc790\uc18c\uc11c\u0020\uc5f0\uacb0\u0020\ud3ec\uc778\ud2b8"}
+                  자소서 연결 포인트
                 </span>
               </div>
 
               <div className="grid gap-4">
-                <MiniList title="\uc9c0\uc6d0\ub3d9\uae30\u0020\ud3ec\uc778\ud2b8" items={researchData.motivationHooks} />
-                <MiniList title="\uc11c\ube44\uc2a4\u0020\uad00\uc2ec\u0020\ud3ec\uc778\ud2b8" items={researchData.serviceHooks} />
-                <MiniList title="\uc790\uc18c\uc11c\u0020\uc5f0\uacb0\u0020\uac01\ub3c4" items={researchData.resumeAngles} />
-                <MiniList title="\uba74\uc811\u0020\uc608\uc0c1\u0020\ud3ec\uc778\ud2b8" items={researchData.interviewSignals} />
+                <MiniList title="지원동기 포인트" items={researchData.motivationHooks} />
+                <MiniList title="서비스 관심 포인트" items={researchData.serviceHooks} />
+                <MiniList title="자소서 연결 각도" items={researchData.resumeAngles} />
+                <MiniList title="면접 예상 포인트" items={researchData.interviewSignals} />
               </div>
 
               {researchData.recommendedNarrative && (
@@ -302,9 +301,9 @@ export function CompanyResearchPanel({
                   <Separator className="bg-primary/10" />
                   <div className="space-y-2">
                     <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-                      {"\ucd94\ucc9c\u0020\uc11c\uc220\u0020\ubc29\ud5a5"}
+                      추천 서술 방향
                     </p>
-                    <p className="break-words rounded-2xl bg-background p-4 text-sm leading-7 text-foreground/90 shadow-sm">
+                    <p className="whitespace-pre-wrap break-words rounded-2xl bg-background p-4 text-sm leading-7 text-foreground/90 shadow-sm">
                       {researchData.recommendedNarrative}
                     </p>
                   </div>
@@ -316,12 +315,12 @@ export function CompanyResearchPanel({
           <div className="grid min-w-0 gap-4">
             <InsightListCard
               icon={<Lightbulb className="size-4 text-primary" />}
-              title="\ud6c4\uc18d\u0020\uc9c8\ubb38"
+              title="후속 질문"
               items={researchData.followUpQuestions}
             />
             <InsightListCard
               icon={<FileSearch className="size-4 text-primary" />}
-              title="\uc2e0\ub8b0\ub3c4\u0020\uba54\ubaa8"
+              title="신뢰도 메모"
               items={researchData.confidenceNotes}
             />
           </div>
@@ -343,15 +342,15 @@ function FieldBlock({
   placeholder: string
 }) {
   return (
-    <div className="space-y-1.5">
-      <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+    <div className="min-w-0 space-y-1.5">
+      <p className="break-words text-[11px] font-black uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
       <Textarea
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="min-h-[72px] resize-none bg-background/80 text-sm leading-6"
+        className="min-h-[84px] max-w-full resize-none overflow-hidden whitespace-pre-wrap break-all bg-background/80 text-sm leading-6 [overflow-wrap:anywhere]"
       />
     </div>
   )
@@ -369,11 +368,11 @@ function InsightListCard({
   if (items.length === 0) return null
 
   return (
-    <Card className="min-w-0 overflow-hidden border-none bg-muted/30 shadow-none">
+    <Card className="w-full min-w-0 max-w-full overflow-hidden border-none bg-muted/30 shadow-none">
       <CardContent className="space-y-3 p-4 sm:p-5">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           {icon}
-          <span className="text-sm font-black uppercase tracking-[0.16em] text-primary">
+          <span className="break-words text-sm font-black uppercase tracking-[0.16em] text-primary">
             {title}
           </span>
         </div>
@@ -387,9 +386,9 @@ function MiniList({ title, items }: { title?: string; items: string[] }) {
   if (items.length === 0) return null
 
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       {title && (
-        <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+        <p className="break-words text-[11px] font-black uppercase tracking-wider text-muted-foreground">
           {title}
         </p>
       )}
