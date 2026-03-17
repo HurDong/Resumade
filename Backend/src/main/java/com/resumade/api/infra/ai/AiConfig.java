@@ -19,6 +19,9 @@ public class AiConfig {
     @Value("${openai.api.key:demo}")
     private String openAiApiKey;
 
+    @Value("${openai.api.timeout:PT5M}")
+    private Duration openAiTimeout;
+
     @Value("${openai.models.experience:gpt-5-mini}")
     private String experienceModelName;
 
@@ -74,7 +77,7 @@ public class AiConfig {
                 .apiKey(openAiApiKey)
                 .modelName(modelName)
                 .temperature(1.0)
-                .timeout(Duration.ofSeconds(180))
+                .timeout(openAiTimeout)
                 .responseFormat("json_object")
                 .logRequests(true)
                 .logResponses(true)

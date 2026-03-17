@@ -17,6 +17,7 @@ import {
   Check,
   Trash2,
   CheckCircle2,
+  ChevronDown,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -152,6 +153,70 @@ const normalizeDirectiveText = (raw?: string) => {
     .join("\n")
 }
 
+const PIPELINE_STEPS = [
+  { id: "RAG", label: "경험 데이터 매칭" },
+  { id: "DRAFT", label: "AI 초안 작성" },
+  { id: "WASH", label: "세탁본 생성" },
+  { id: "PATCH", label: "휴먼 패치 분석" },
+] as const
+
+const getPipelineState = (message: string) => {
+  const normalized = (message || "").toLowerCase()
+
+  if (
+    normalized.includes("다른 문항") ||
+    normalized.includes("가장 잘 맞는 경험") ||
+    normalized.includes("경험 데이터")
+  ) {
+    return {
+      activeStepId: "RAG",
+      description: "관련 경험과 문항 맥락을 연결하고 있습니다.",
+    }
+  }
+
+  if (
+    normalized.includes("초안을 작성") ||
+    normalized.includes("문장을 더 정교하게") ||
+    normalized.includes("문장을 더 다듬") ||
+    normalized.includes("초안")
+  ) {
+    return {
+      activeStepId: "DRAFT",
+      description: "초안 원문을 생성하고 있습니다.",
+    }
+  }
+
+  if (
+    normalized.includes("사람답게") ||
+    normalized.includes("한국어 문장을 자연스럽게") ||
+    normalized.includes("읽었을 때") ||
+    normalized.includes("번역") ||
+    normalized.includes("세탁")
+  ) {
+    return {
+      activeStepId: "WASH",
+      description: "번역과 역번역을 거쳐 세탁본을 만들고 있습니다.",
+    }
+  }
+
+  if (
+    normalized.includes("표현이 어색한 곳") ||
+    normalized.includes("의미가 흐려진") ||
+    normalized.includes("꼼꼼히 확인") ||
+    normalized.includes("검토")
+  ) {
+    return {
+      activeStepId: "PATCH",
+      description: "세탁본의 의미 손실과 어색한 표현을 점검하고 있습니다.",
+    }
+  }
+
+  return {
+    activeStepId: "RAG",
+    description: "작업 흐름을 준비하고 있습니다.",
+  }
+}
+
 export function ContextPanel() {
   const { 
     company,
@@ -183,8 +248,8 @@ export function ContextPanel() {
 
   const activeQuestion = questions.find(q => q.id === activeQuestionId) || questions[0]
   const [directiveDraft, setDirectiveDraft] = useState(normalizeDirectiveText(activeQuestion.userDirective))
-  // Virtual Progress Management for Premium UX
-  const [virtualProgress, setVirtualProgress] = useState(0)
+  const [isCompanyInsightOpen, setIsCompanyInsightOpen] = useState(true)
+  const [isRagContextOpen, setIsRagContextOpen] = useState(true)
   const topRef = useRef<HTMLDivElement>(null)
   const isDirectiveComposingRef = useRef(false)
 
@@ -192,47 +257,17 @@ export function ContextPanel() {
     topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
-  // Manage virtual progress increment
-  useEffect(() => {
-    let interval: NodeJS.Timeout
-    if (isProcessing) {
-      // Pace to ~15 seconds for 90% (90 / (15 / 0.3) = 1.8 avg increment)
-      interval = setInterval(() => {
-        setVirtualProgress((prev) => {
-          if (prev < 90) return prev + (Math.random() * 1.6 + 1.0) // 1.0~2.6 range, avg 1.8
-          return prev
-        })
-      }, 300)
-    } else {
-      setVirtualProgress(0)
-    }
-    return () => clearInterval(interval)
-  }, [isProcessing])
-
-  // Sync with real progress messages to "nudge" the virtual progress if server is ahead
-  useEffect(() => {
-    if (progressMessage.includes('DRAFT')) setVirtualProgress(p => Math.max(25, p))
-    if (progressMessage.includes('TRANSLATE')) setVirtualProgress(p => Math.max(50, p))
-    if (progressMessage.includes('PATCH')) setVirtualProgress(p => Math.max(75, p))
-  }, [progressMessage])
-
   useEffect(() => {
     setDirectiveDraft(normalizeDirectiveText(activeQuestion.userDirective))
   }, [activeQuestion.id])
 
-  // Mapping virtual progress to UI steps
-  const getStepStatus = (stepIdx: number) => {
-    const threshold = stepIdx * 25
-    const isCompleted = virtualProgress >= threshold + 25
-    const isActive = virtualProgress >= threshold && virtualProgress < threshold + 25
-    return { isCompleted, isActive }
-  }
-
   const { mistranslations, aiReviewReport, washedKr } = activeQuestion
   const companyResearchData = parseCompanyResearch(companyResearch)
+  const pipelineState = getPipelineState(progressMessage)
+  const activeStepIndex = PIPELINE_STEPS.findIndex((step) => step.id === pipelineState.activeStepId)
 
   const currentCount = getLength(washedKr || activeQuestion.content)
-  const canRefine = !!activeQuestion.content && !!directiveDraft.trim()
+  const hasDraft = !!activeQuestion.content
 
   const handleDirectiveChange = (value: string) => {
     setDirectiveDraft(value)
@@ -261,10 +296,16 @@ export function ContextPanel() {
     })
   }
 
-  const handleStartProcess = () => {
+  const handleInitialGenerate = () => {
     commitDirectiveDraft()
     scrollToTop()
-    generateDraft()
+    generateDraft({ useDirective: directiveDraft.trim().length > 0 })
+  }
+
+  const handleRegenerate = () => {
+    commitDirectiveDraft()
+    scrollToTop()
+    refineDraft(directiveDraft)
   }
 
   return (
@@ -460,7 +501,7 @@ export function ContextPanel() {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              onClick={handleStartProcess}
+              onClick={hasDraft ? handleRegenerate : handleInitialGenerate}
               disabled={isProcessing}
               className="gap-2 rounded-full px-4 font-bold shadow-sm"
             >
@@ -469,21 +510,7 @@ export function ContextPanel() {
               ) : (
                 <Sparkles className="size-3.5" />
               )}
-              {"\ucd08\uc548 \uc0dd\uc131"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={isProcessing || !canRefine}
-              onClick={() => {
-                commitDirectiveDraft()
-                scrollToTop()
-                refineDraft(directiveDraft)
-              }}
-              className="gap-2 rounded-full border-primary/20 px-4 font-bold"
-            >
-              <Wand2 className="size-3.5" />
-              {"\uc138\ud0c1\ud558\uae30"}
+              {hasDraft ? "\ub2e4\uc2dc \uc0dd\uc131" : "\ucd08\uc548 \uc0dd\uc131"}
             </Button>
           </div>
         </div>
@@ -507,18 +534,14 @@ export function ContextPanel() {
                   </div>
                   <div>
                     <h4 className="text-sm font-black text-primary uppercase tracking-tighter">Human Patch Pipeline</h4>
-                    <p className="text-[11px] font-bold text-primary/60 italic">AI가 문장 하나하나 고심하여 세탁하고 있습니다...</p>
+                    <p className="text-xs font-semibold text-foreground/80 italic">{pipelineState.description}</p>
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  {[
-                    { id: 'RAG', label: '경험 데이터 매칭' },
-                    { id: 'DRAFT', label: 'AI 초안 작성' },
-                    { id: 'WASH', label: '역번역 (영어→한글) 세탁' },
-                    { id: 'PATCH', label: '휴먼 패치 분석 및 검토' },
-                  ].map((step, idx, arr) => {
-                    const { isCompleted, isActive } = getStepStatus(idx)
+                  {PIPELINE_STEPS.map((step, idx, arr) => {
+                    const isCompleted = idx < activeStepIndex
+                    const isActive = idx === activeStepIndex
                     
                     return (
                       <div key={idx} className="flex items-center gap-3 relative">
@@ -531,9 +554,9 @@ export function ContextPanel() {
                         </div>
                         <div className="flex-1">
                           <p className={`text-xs font-bold transition-colors ${
-                            isCompleted ? 'text-primary/60' : 
+                            isCompleted ? 'text-primary/80' : 
                             isActive ? 'text-primary' : 
-                            'text-muted-foreground/30'
+                            'text-foreground/55'
                           }`}>
                             {step.label}
                           </p>
@@ -555,8 +578,8 @@ export function ContextPanel() {
                 </div>
 
                 <div className="mt-6 pt-4 border-t border-primary/10">
-                  <p className="text-[11px] font-mono text-muted-foreground/70 break-words">
-                    <span className="text-[10px] font-black text-primary/40 mr-2">LOG</span>
+                  <p className="text-[13px] font-medium text-foreground/80 break-words leading-relaxed">
+                    <span className="text-[10px] font-black text-primary/70 mr-2">LOG</span>
                     {progressMessage}
                   </p>
                 </div>
@@ -578,74 +601,116 @@ export function ContextPanel() {
 
           {companyResearchData && (
             <section className="min-w-0 overflow-hidden">
-              <div className="flex items-center gap-2 mb-4">
-                <Building2 className="size-4 text-primary" />
-                <h3 className="text-sm font-black uppercase tracking-wider text-primary">Company Intelligence</h3>
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsCompanyInsightOpen((prev) => !prev)}
+                className="mb-4 flex w-full items-center justify-between rounded-2xl border border-primary/15 bg-gradient-to-r from-primary/[0.08] via-background to-background px-4 py-3 text-left shadow-sm transition-all hover:border-primary/30 hover:bg-primary/[0.06]"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <Building2 className="size-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-black uppercase tracking-[0.24em] text-primary/70">Company Lens</p>
+                    <h3 className="truncate text-sm font-black tracking-tight text-foreground">기업 분석 인사이트</h3>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 pl-4">
+                  <span className="hidden text-[11px] font-bold text-muted-foreground sm:inline">
+                    {isCompanyInsightOpen ? "접기" : "펼치기"}
+                  </span>
+                  <div className="flex size-8 items-center justify-center rounded-full border border-primary/15 bg-background/80">
+                    <ChevronDown className={`size-4 text-primary transition-transform duration-200 ${isCompanyInsightOpen ? "rotate-180" : ""}`} />
+                  </div>
+                </div>
+              </button>
 
-              <Card className="min-w-0 overflow-hidden border-primary/10 bg-primary/[0.03] shadow-none">
-                <CardContent className="space-y-4 p-4">
-                  <p className="break-words text-sm leading-7 text-foreground/90">
-                    {companyResearchData.executiveSummary}
-                  </p>
+              {isCompanyInsightOpen && (
+                <Card className="min-w-0 overflow-hidden border-primary/10 bg-primary/[0.03] shadow-none animate-in fade-in-50 slide-in-from-top-1">
+                  <CardContent className="space-y-4 p-4">
+                    <p className="break-words text-sm leading-7 text-foreground/90">
+                      {companyResearchData.executiveSummary}
+                    </p>
 
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      companyResearchData.focus.businessUnit,
-                      companyResearchData.focus.targetService,
-                      companyResearchData.focus.focusRole,
-                      companyResearchData.focus.techFocus,
-                    ]
-                      .filter(Boolean)
-                      .map((item) => (
-                        <Badge key={item} variant="outline" className="max-w-full whitespace-normal break-words border-primary/20 bg-background text-primary font-bold">
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        companyResearchData.focus.businessUnit,
+                        companyResearchData.focus.targetService,
+                        companyResearchData.focus.focusRole,
+                        companyResearchData.focus.techFocus,
+                      ]
+                        .filter(Boolean)
+                        .map((item) => (
+                          <Badge key={item} variant="outline" className="max-w-full whitespace-normal break-words border-primary/20 bg-background text-primary font-bold">
+                            {item}
+                          </Badge>
+                        ))}
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {companyResearchData.motivationHooks.slice(0, 2).map((item, index) => (
+                        <div key={`motivation-${index}`} className="min-w-0 overflow-hidden break-words rounded-2xl bg-background p-3 text-xs leading-6 text-foreground/90 shadow-sm">
                           {item}
-                        </Badge>
+                        </div>
                       ))}
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {companyResearchData.motivationHooks.slice(0, 2).map((item, index) => (
-                      <div key={`motivation-${index}`} className="min-w-0 overflow-hidden break-words rounded-2xl bg-background p-3 text-xs leading-6 text-foreground/90 shadow-sm">
-                        {item}
-                      </div>
-                    ))}
-                    {companyResearchData.resumeAngles.slice(0, 2).map((item, index) => (
-                      <div key={`resume-${index}`} className="min-w-0 overflow-hidden break-words rounded-2xl bg-background p-3 text-xs leading-6 text-foreground/90 shadow-sm">
-                        {item}
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+                      {companyResearchData.resumeAngles.slice(0, 2).map((item, index) => (
+                        <div key={`resume-${index}`} className="min-w-0 overflow-hidden break-words rounded-2xl bg-background p-3 text-xs leading-6 text-foreground/90 shadow-sm">
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </section>
           )}
 
           <section className="min-w-0 overflow-hidden">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="size-4 text-primary" />
-              <h3 className="text-sm font-black uppercase tracking-wider text-primary">관련 경험 콘텍스트 (RAG)</h3>
-            </div>
-            <div className="space-y-3">
-              {extractedContext.map((ctx, index) => (
-                <Card
-                  key={`${ctx.id ?? "ctx"}-${ctx.experienceTitle}-${index}`}
-                  className="min-w-0 overflow-hidden bg-muted/40 border-none shadow-none group hover:bg-primary/5 transition-colors"
-                >
-                  <CardContent className="p-4">
-                    <div className="flex min-w-0 items-center justify-between gap-2 mb-2">
-                      <span className="min-w-0 break-words text-sm font-black group-hover:text-primary transition-colors text-foreground">{ctx.experienceTitle}</span>
-                      <Badge variant="outline" className="text-[10px] bg-background border-primary/20 text-primary font-bold">
-                        {ctx.relevanceScore}% 매칭
-                      </Badge>
-                    </div>
-                    <p className="break-words text-xs text-foreground/90 leading-relaxed font-medium">
-                      {ctx.relevantPart}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsRagContextOpen((prev) => !prev)}
+              className="mb-4 flex w-full items-center justify-between rounded-2xl border border-primary/15 bg-gradient-to-r from-background via-primary/[0.03] to-background px-4 py-3 text-left shadow-sm transition-all hover:border-primary/30 hover:bg-primary/[0.04]"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <TrendingUp className="size-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-black uppercase tracking-[0.24em] text-primary/70">RAG Context</p>
+                  <h3 className="truncate text-sm font-black tracking-tight text-foreground">연결된 경험 컨텍스트</h3>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pl-4">
+                <span className="hidden text-[11px] font-bold text-muted-foreground sm:inline">
+                  {isRagContextOpen ? "접기" : "펼치기"}
+                </span>
+                <div className="flex size-8 items-center justify-center rounded-full border border-primary/15 bg-background/80">
+                  <ChevronDown className={`size-4 text-primary transition-transform duration-200 ${isRagContextOpen ? "rotate-180" : ""}`} />
+                </div>
+              </div>
+            </button>
+            {isRagContextOpen && (
+              <div className="space-y-3 animate-in fade-in-50 slide-in-from-top-1">
+                {extractedContext.map((ctx, index) => (
+                  <Card
+                    key={`${ctx.id ?? "ctx"}-${ctx.experienceTitle}-${index}`}
+                    className="min-w-0 overflow-hidden bg-muted/40 border-none shadow-none group hover:bg-primary/5 transition-colors"
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex min-w-0 items-center justify-between gap-2 mb-2">
+                        <span className="min-w-0 break-words text-sm font-black group-hover:text-primary transition-colors text-foreground">{ctx.experienceTitle}</span>
+                        <Badge variant="outline" className="text-[10px] bg-background border-primary/20 text-primary font-bold">
+                          {ctx.relevanceScore}% 일치
+                        </Badge>
+                      </div>
+                      <p className="break-words text-xs text-foreground/90 leading-relaxed font-medium">
+                        {ctx.relevantPart}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </section>
 
           <section className="min-w-0 overflow-hidden">
@@ -657,7 +722,7 @@ export function ContextPanel() {
               <Button 
                 size="sm" 
                 variant="default" 
-                onClick={handleStartProcess}
+                onClick={hasDraft ? handleRegenerate : handleInitialGenerate}
                 disabled={isProcessing}
                 className="gap-2 shadow-sm rounded-full px-4 font-bold"
               >
@@ -666,7 +731,7 @@ export function ContextPanel() {
                 ) : (
                   <Sparkles className="size-3" />
                 )}
-                {activeQuestion.content ? "다시 생성" : "초안 생성 및 세탁"}
+                {activeQuestion.content ? "다시 생성" : "초안 생성"}
               </Button>
             </div>
 
@@ -782,8 +847,8 @@ export function ContextPanel() {
                       <div className="flex items-center gap-3">
                         {isHovered ? (
                           <div className="flex items-center gap-2 animate-in zoom-in-95">
-                            <Badge variant={mis.severity === "high" ? "destructive" : "default"} className="text-[9px] font-black uppercase px-2 py-0.5">
-                              {mis.severity === "high" ? "Critical Error" : "Style Warning"}
+                            <Badge variant="default" className="text-[9px] font-black uppercase px-2 py-0.5">
+                              Review Point
                             </Badge>
                             {mis.reason && (
                               <div className="flex items-center gap-1.5 px-2 py-0.5 bg-background/50 rounded-md border border-primary/20 shadow-sm">
@@ -794,7 +859,7 @@ export function ContextPanel() {
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">
-                            <div className={`p-1.5 rounded-full ${mis.severity === "high" ? 'bg-destructive/10 text-destructive' : 'bg-muted-foreground/10 text-muted-foreground'}`}>
+                            <div className="p-1.5 rounded-full bg-muted-foreground/10 text-muted-foreground">
                               <AlertTriangle className="size-3" />
                             </div>
                             {mis.reason && (

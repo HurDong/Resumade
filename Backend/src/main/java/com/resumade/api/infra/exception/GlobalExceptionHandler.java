@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -23,6 +24,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleAllExceptions(Exception e, HttpServletRequest request, HttpServletResponse response) {
         if (isClientDisconnectException(e)) {
             log.info("Client disconnected during async response: {}", e.getMessage());
+            return null;
+        }
+
+        if (e instanceof AsyncRequestTimeoutException) {
+            log.warn("Async request timed out for {} {}", request.getMethod(), request.getRequestURI());
             return null;
         }
 

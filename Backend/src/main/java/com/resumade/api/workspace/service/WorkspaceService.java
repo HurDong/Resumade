@@ -20,12 +20,21 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class WorkspaceService {
+    private static final long HEARTBEAT_INTERVAL_SECONDS = 8L;
+    private static final Pattern REQUESTED_LENGTH_PATTERN = Pattern.compile("(\\d{2,4})\\s*(?:글자|자)");
+
 
     private static class SseConnectionClosedException extends RuntimeException {
         private SseConnectionClosedException(Throwable cause) {
@@ -52,6 +61,7 @@ public class WorkspaceService {
 
     @Transactional(readOnly = true)
     public void processRefinement(Long questionId, String directive, SseEmitter emitter) {
+        HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
             WorkspaceQuestion initialQuestion = questionRepository.findById(questionId)
                     .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
@@ -74,8 +84,10 @@ public class WorkspaceService {
             sendSse(emitter, "progress", "✍️ 요청하신 방향을 반영해 문장을 더 정교하게 손보고 있어요.");
 
             int maxLength = initialQuestion.getMaxLength();
-            int minTargetChars = (int) (maxLength * 0.9);
-            int maxTargetChars = (int) (maxLength * 0.98);
+            int[] targetRange = resolveTargetRange(maxLength, directive, 0.9, 0.98);
+            int minTargetChars = targetRange[0];
+            int maxTargetChars = targetRange[1];
+            String directiveForPrompt = augmentDirectiveForPrompt(directive, maxLength);
 
             WorkspaceDraftAiService.DraftResponse refineResponse = workspaceDraftAiService.refineDraft(
                     company,
@@ -87,31 +99,20 @@ public class WorkspaceService {
                     maxTargetChars,
                     context,
                     others,
-                    directive
+                    directiveForPrompt
             );
 
-            String refinedDraft = enforceLengthLimit(
-                    enforceAcceptedTitleStyle(
-                            normalizeTitleSpacing(refineResponse.text),
-                            company,
-                            position,
-                            initialQuestion.getTitle(),
-                            companyContext,
-                            context
-                    ),
-                    maxLength,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others
-            );
+            String rawRefinedDraft = normalizeTitleSpacing(refineResponse.text).trim();
+            String refinedDraft = prepareDraftForTranslation(rawRefinedDraft, maxLength);
 
             WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
-            question.setContent(refinedDraft);
+            question.setContent(rawRefinedDraft);
             question.setUserDirective(directive);
             questionRepository.save(question);
-            sendSse(emitter, "draft_intermediate", refinedDraft);
+            sendSse(emitter, "draft_intermediate", rawRefinedDraft);
+            if (!refinedDraft.equals(rawRefinedDraft)) {
+                sendSse(emitter, "washed_intermediate", refinedDraft);
+            }
 
             paceProcessing();
             sendSse(emitter, "progress", "🧼 문장을 더 사람답게 다듬기 위해 표현을 한 번 더 정리하고 있어요.");
@@ -119,21 +120,9 @@ public class WorkspaceService {
 
             paceProcessing();
             sendSse(emitter, "progress", "🔁 어색한 느낌이 남지 않도록 한국어 문장을 자연스럽게 다시 다듬고 있어요.");
-            String washedKr = enforceLengthLimit(
-                    enforceAcceptedTitleStyle(
-                            normalizeTitleSpacing(translationService.translateToKorean(translatedEn)),
-                            company,
-                            position,
-                            initialQuestion.getTitle(),
-                            companyContext,
-                            context
-                    ),
-                    maxLength,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others
+            String washedKr = prepareDraftForTranslation(
+                    normalizeTitleSpacing(translationService.translateToKorean(translatedEn)),
+                    maxLength
             );
 
             question = questionRepository.findById(questionId).orElseThrow();
@@ -164,22 +153,7 @@ public class WorkspaceService {
             String responseDraft = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
                     ? analysis.getHumanPatchedText()
                     : washedKr;
-            responseDraft = enforceLengthLimit(
-                    enforceAcceptedTitleStyle(
-                            normalizeTitleSpacing(responseDraft),
-                            company,
-                            position,
-                            initialQuestion.getTitle(),
-                            companyContext,
-                            context
-                    ),
-                    maxLength,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others
-            );
+            responseDraft = prepareDraftForTranslation(normalizeTitleSpacing(responseDraft), maxLength);
 
             Map<String, Object> result = new HashMap<>();
             result.put("draft", washedKr);
@@ -199,11 +173,14 @@ public class WorkspaceService {
                 log.info("Refinement stream already closed while reporting error");
             }
             completeQuietly(emitter);
+        } finally {
+            heartbeat.stop();
         }
     }
 
     @Transactional(readOnly = true)
-    public void processHumanPatch(Long questionId, SseEmitter emitter) {
+    public void processHumanPatch(Long questionId, boolean useDirective, SseEmitter emitter) {
+        HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
             WorkspaceQuestion initialQuestion = questionRepository.findById(questionId)
                     .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
@@ -230,40 +207,33 @@ public class WorkspaceService {
             sendSse(emitter, "progress", "✍️ 경험과 기업 맥락을 바탕으로 초안을 작성하고 있어요.");
 
             int maxLengthGen = initialQuestion.getMaxLength();
+            String directiveForPrompt = useDirective
+                    ? augmentDirectiveForPrompt(initialQuestion.getUserDirective(), maxLengthGen)
+                    : "없음";
+            int[] targetRange = resolveTargetRange(maxLengthGen, directiveForPrompt, 0.88, 0.95);
             WorkspaceDraftAiService.DraftResponse draftResponse = workspaceDraftAiService.generateDraft(
                     company,
                     position,
                     questionTitle,
                     companyContext,
                     maxLengthGen,
-                    (int) (maxLengthGen * 0.88),
-                    (int) (maxLengthGen * 0.95),
+                    targetRange[0],
+                    targetRange[1],
                     context,
                     others,
-                    initialQuestion.getUserDirective() != null ? initialQuestion.getUserDirective() : "없음"
+                    directiveForPrompt
             );
 
-            String draft = enforceLengthLimit(
-                    enforceAcceptedTitleStyle(
-                            normalizeTitleSpacing(draftResponse.text),
-                            company,
-                            position,
-                            questionTitle,
-                            companyContext,
-                            context
-                    ),
-                    maxLengthGen,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others
-            );
+            String rawDraft = normalizeTitleSpacing(draftResponse.text).trim();
+            String draft = prepareDraftForTranslation(rawDraft, maxLengthGen);
 
             WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
-            question.setContent(draft);
+            question.setContent(rawDraft);
             questionRepository.save(question);
-            sendSse(emitter, "draft_intermediate", draft);
+            sendSse(emitter, "draft_intermediate", rawDraft);
+            if (!draft.equals(rawDraft)) {
+                sendSse(emitter, "washed_intermediate", draft);
+            }
 
             paceProcessing();
             sendSse(emitter, "progress", "🧼 더 자연스럽고 사람다운 문장이 되도록 표현을 한 번 더 정리하고 있어요.");
@@ -271,21 +241,9 @@ public class WorkspaceService {
 
             paceProcessing();
             sendSse(emitter, "progress", "🔁 읽었을 때 부드럽게 느껴지도록 한국어 문장을 다시 다듬고 있어요.");
-            String washedKr = enforceLengthLimit(
-                    enforceAcceptedTitleStyle(
-                            normalizeTitleSpacing(translationService.translateToKorean(translatedEn)),
-                            company,
-                            position,
-                            questionTitle,
-                            companyContext,
-                            context
-                    ),
-                    maxLengthGen,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others
+            String washedKr = prepareDraftForTranslation(
+                    normalizeTitleSpacing(translationService.translateToKorean(translatedEn)),
+                    maxLengthGen
             );
 
             question = questionRepository.findById(questionId).orElseThrow();
@@ -316,22 +274,7 @@ public class WorkspaceService {
             String responseDraft = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
                     ? analysis.getHumanPatchedText()
                     : washedKr;
-            responseDraft = enforceLengthLimit(
-                    enforceAcceptedTitleStyle(
-                            normalizeTitleSpacing(responseDraft),
-                            company,
-                            position,
-                            questionTitle,
-                            companyContext,
-                            context
-                    ),
-                    maxLengthFinal,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others
-            );
+            responseDraft = prepareDraftForTranslation(normalizeTitleSpacing(responseDraft), maxLengthFinal);
 
             Map<String, Object> result = new HashMap<>();
             result.put("draft", washedKr);
@@ -351,7 +294,27 @@ public class WorkspaceService {
                 log.info("Human patch stream already closed while reporting error");
             }
             completeQuietly(emitter);
+        } finally {
+            heartbeat.stop();
         }
+    }
+
+    private HeartbeatHandle startHeartbeat(SseEmitter emitter) {
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
+            try {
+                emitter.send(SseEmitter.event().comment("heartbeat"));
+            } catch (IOException | IllegalStateException e) {
+                log.debug("Stopping workspace heartbeat: {}", e.getMessage());
+                throw new SseConnectionClosedException(e);
+            }
+        }, HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_INTERVAL_SECONDS, TimeUnit.SECONDS);
+
+        emitter.onCompletion(() -> future.cancel(true));
+        emitter.onTimeout(() -> future.cancel(true));
+        emitter.onError(error -> future.cancel(true));
+
+        return new HeartbeatHandle(scheduler, future);
     }
 
     private String buildOthersContext(WorkspaceQuestion initialQuestion, Long questionId, List<Experience> allExperiences) {
@@ -367,6 +330,128 @@ public class WorkspaceService {
                     return String.format("[문항: %s | 주내용: %s | 사용된 소재: %s]", q.getTitle(), content, usedProject);
                 })
                 .collect(Collectors.joining("\n"));
+    }
+
+    private int[] resolveTargetRange(int maxLength, String directive, double defaultMinRatio, double defaultMaxRatio) {
+        int minTarget = (int) (maxLength * defaultMinRatio);
+        int maxTarget = (int) (maxLength * defaultMaxRatio);
+
+        Integer requestedLength = extractRequestedLength(directive);
+        if (requestedLength == null || maxLength <= 0) {
+            return new int[]{minTarget, maxTarget};
+        }
+
+        int cappedTarget = Math.min(requestedLength, maxLength);
+        int requestedMin = Math.max(1, Math.min(cappedTarget, cappedTarget - 25));
+        int requestedMax = Math.max(requestedMin, cappedTarget);
+        return new int[]{requestedMin, requestedMax};
+    }
+
+    private String augmentDirectiveForPrompt(String directive, int maxLength) {
+        String normalized = directive == null || directive.isBlank() ? "없음" : directive.trim();
+        Integer requestedLength = extractRequestedLength(directive);
+        if (requestedLength == null) {
+            return normalized;
+        }
+
+        int cappedTarget = Math.min(requestedLength, maxLength);
+        StringBuilder builder = new StringBuilder();
+        if (!"없음".equals(normalized)) {
+            builder.append(normalized).append("\n");
+        }
+
+        builder.append("Length guidance: ")
+                .append(cappedTarget)
+                .append("자 부근까지 충분히 채울 것. 글자수는 띄어쓰기를 포함해 계산하며, 보이는 모든 문자는 1글자로 센다. 공백, 문장부호, 괄호, 숫자, 영문, 줄바꿈까지 모두 1글자다.");
+
+        int minimumRequired = Math.max(1, Math.min(cappedTarget, cappedTarget - 50));
+        builder.append(" 최소 허용 분량은 ")
+                .append(minimumRequired)
+                .append("자이며, 그보다 짧으면 실패로 간주할 것.");
+
+        if (requestedLength > maxLength) {
+            builder.append(" 현재 하드 리밋은 ")
+                    .append(maxLength)
+                    .append("자이므로 그 한도 안에서 최대한 가깝게 작성할 것.");
+        }
+
+        builder.append(" 최종 답변을 내기 전에 스스로 글자수를 다시 세고, 최소 분량보다 짧으면 내용을 보강한 뒤 다시 셀 것.");
+
+        return builder.toString();
+    }
+
+    private Integer extractRequestedLength(String directive) {
+        if (directive == null || directive.isBlank()) {
+            return null;
+        }
+
+        Matcher matcher = REQUESTED_LENGTH_PATTERN.matcher(directive);
+        Integer requested = null;
+        while (matcher.find()) {
+            requested = Integer.parseInt(matcher.group(1));
+        }
+        return requested;
+    }
+
+    private String expandToMinimumLength(
+            String text,
+            int minTargetChars,
+            int maxLength,
+            String company,
+            String position,
+            String questionTitle,
+            String companyContext,
+            String context,
+            String others,
+            String directive
+    ) {
+        String normalized = normalizeTitleSpacing(text).trim();
+        if (normalized.isBlank() || minTargetChars <= 0 || normalized.length() >= minTargetChars) {
+            return normalized;
+        }
+
+        String expansionDirective = (directive == null || directive.isBlank() || "없음".equals(directive))
+                ? ""
+                : directive + "\n";
+        expansionDirective += "현재 초안이 너무 짧다. 최소 " + minTargetChars + "자 이상, 가능하면 " + maxLength
+                + "자에 가깝게 채워라. 분량을 억지로 늘리지 말고, 핵심 역량 1~2개를 더 구체적인 근거와 역할, 판단, 결과로 풀어 써라.";
+
+        try {
+            WorkspaceDraftAiService.DraftResponse expanded = workspaceDraftAiService.refineDraft(
+                    company,
+                    position,
+                    companyContext,
+                    normalized,
+                    maxLength,
+                    minTargetChars,
+                    maxLength,
+                    context,
+                    others,
+                    expansionDirective
+            );
+
+            String candidate = enforceLengthLimit(
+                    enforceAcceptedTitleStyle(
+                            normalizeTitleSpacing(expanded.text),
+                            company,
+                            position,
+                            questionTitle,
+                            companyContext,
+                            context
+                    ),
+                    maxLength,
+                    company,
+                    position,
+                    companyContext,
+                    context,
+                    others
+            );
+
+            return candidate.length() >= normalized.length() ? candidate : normalized;
+        } catch (Exception e) {
+            log.warn("Failed to expand under-length draft to minimum target. current={}, min={}", normalized.length(), minTargetChars, e);
+            return normalized;
+        }
     }
 
     private String buildApplicationResearchContext(WorkspaceQuestion question) {
@@ -507,6 +592,20 @@ public class WorkspaceService {
         }
 
         return trimmed;
+    }
+
+    private String prepareDraftForTranslation(String text, int maxLength) {
+        if (text == null) {
+            return null;
+        }
+
+        String normalized = normalizeTitleSpacing(text).trim();
+        if (maxLength > 0 && normalized.length() > maxLength) {
+            log.warn("Draft exceeded max length. current={}, limit={}", normalized.length(), maxLength);
+            return hardTrimToLimit(normalized, maxLength);
+        }
+
+        return normalized;
     }
 
     private DraftAnalysisResult analyzePatchSafely(
@@ -659,15 +758,11 @@ public class WorkspaceService {
             mistranslation.setSuggestion(normalizeTitleSpacing(safeTrim(mistranslation.getSuggestion())));
             mistranslation.setReason(safeTrim(mistranslation.getReason()));
 
-            String severity = mistranslation.getSeverity();
-            severity = severity != null && severity.equalsIgnoreCase("high") ? "high" : "low";
-            mistranslation.setSeverity(severity);
-
             if (washedKr != null) {
-                int startIndex = findTranslatedSpan(washedKr, translated);
-                if (startIndex >= 0) {
-                    mistranslation.setStartIndex(startIndex);
-                    mistranslation.setEndIndex(startIndex + translated.length());
+                HighlightSpan highlightSpan = resolveHighlightSpan(washedKr, mistranslation);
+                if (highlightSpan != null && isReasonableHighlightSpan(washedKr, highlightSpan.start(), highlightSpan.end())) {
+                    mistranslation.setStartIndex(highlightSpan.start());
+                    mistranslation.setEndIndex(highlightSpan.end());
                 } else {
                     mistranslation.setStartIndex(null);
                     mistranslation.setEndIndex(null);
@@ -705,38 +800,8 @@ public class WorkspaceService {
             analysis.setMistranslations(mistranslations);
         }
 
-        if (mistranslations.size() >= findingTarget) {
-            return;
-        }
-
-        List<String> originalSentences = splitSentences(originalDraft);
-        List<String> washedSentences = splitSentences(washedKr);
-        int pairCount = Math.min(originalSentences.size(), washedSentences.size());
-
-        for (int i = 0; i < pairCount && mistranslations.size() < findingTarget; i++) {
-            String originalSentence = safeTrim(originalSentences.get(i));
-            String washedSentence = safeTrim(washedSentences.get(i));
-
-            if (washedSentence.length() < 14 || containsTranslatedSpan(mistranslations, washedSentence)) {
-                continue;
-            }
-
-            double similarity = calculateSentenceSimilarity(originalSentence, washedSentence);
-            if (similarity >= 0.5 && Math.abs(originalSentence.length() - washedSentence.length()) < 40) {
-                continue;
-            }
-
-            int startIndex = findTranslatedSpan(washedKr, washedSentence);
-            mistranslations.add(DraftAnalysisResult.Mistranslation.builder()
-                    .original(originalSentence)
-                    .translated(washedSentence)
-                    .suggestion(normalizeTitleSpacing(originalSentence))
-                    .severity("low")
-                    .reason("문장 전체의 의미나 톤이 원문보다 다소 느슨해져 재검토가 필요합니다.")
-                    .startIndex(startIndex >= 0 ? startIndex : null)
-                    .endIndex(startIndex >= 0 ? startIndex + washedSentence.length() : null)
-                    .build());
-        }
+        // Do not auto-add sentence-level fallback findings.
+        // Broad sentence highlights look noisy in the UI and often obscure the real phrase-level issue.
     }
 
     private List<String> splitSentences(String text) {
@@ -786,6 +851,106 @@ public class WorkspaceService {
 
     private String safeTrim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private HighlightSpan resolveHighlightSpan(String source, DraftAnalysisResult.Mistranslation mistranslation) {
+        if (source == null || mistranslation == null) {
+            return null;
+        }
+
+        String translated = safeTrim(mistranslation.getTranslated());
+        if (translated.isEmpty()) {
+            return null;
+        }
+
+        Integer providedStart = mistranslation.getStartIndex();
+        Integer providedEnd = mistranslation.getEndIndex();
+        if (isExactSpan(source, providedStart, providedEnd, translated)) {
+            return new HighlightSpan(providedStart, providedEnd);
+        }
+
+        List<Integer> exactMatches = findExactMatchIndexes(source, translated);
+        if (exactMatches.size() == 1) {
+            int start = exactMatches.get(0);
+            return new HighlightSpan(start, start + translated.length());
+        }
+
+        if (!exactMatches.isEmpty()) {
+            return null;
+        }
+
+        int compactIndex = findTranslatedSpan(source, translated);
+        if (compactIndex < 0) {
+            return null;
+        }
+
+        return new HighlightSpan(compactIndex, compactIndex + translated.length());
+    }
+
+    private boolean isExactSpan(String source, Integer start, Integer end, String translated) {
+        if (source == null || translated == null || start == null || end == null) {
+            return false;
+        }
+
+        if (start < 0 || end <= start || end > source.length()) {
+            return false;
+        }
+
+        return source.substring(start, end).equals(translated);
+    }
+
+    private List<Integer> findExactMatchIndexes(String source, String target) {
+        if (source == null || target == null || target.isBlank()) {
+            return List.of();
+        }
+
+        List<Integer> matches = new ArrayList<>();
+        int fromIndex = 0;
+        while (fromIndex < source.length()) {
+            int matchIndex = source.indexOf(target, fromIndex);
+            if (matchIndex < 0) {
+                break;
+            }
+            matches.add(matchIndex);
+            fromIndex = matchIndex + 1;
+        }
+        return matches;
+    }
+
+    private boolean isReasonableHighlightSpan(String source, int start, int end) {
+        if (source == null || start < 0 || end <= start || end > source.length()) {
+            return false;
+        }
+
+        String span = source.substring(start, end).trim();
+        if (span.isBlank()) {
+            return false;
+        }
+
+        if (span.length() > 36) {
+            return false;
+        }
+
+        int sentenceStart = start;
+        while (sentenceStart > 0 && !isSentenceBoundary(source.charAt(sentenceStart - 1))) {
+            sentenceStart--;
+        }
+
+        int sentenceEnd = end;
+        while (sentenceEnd < source.length() && !isSentenceBoundary(source.charAt(sentenceEnd))) {
+            sentenceEnd++;
+        }
+
+        String sentence = source.substring(sentenceStart, sentenceEnd).trim();
+        if (sentence.isBlank()) {
+            return true;
+        }
+
+        return span.length() < Math.max(20, (int) Math.ceil(sentence.length() * 0.7));
+    }
+
+    private boolean isSentenceBoundary(char ch) {
+        return ch == '.' || ch == '!' || ch == '?' || ch == '\n';
     }
 
     private int findTranslatedSpan(String source, String target) {
@@ -855,6 +1020,16 @@ public class WorkspaceService {
             emitter.complete();
         } catch (Exception ignored) {
             // ignore
+        }
+    }
+
+    private record HighlightSpan(int start, int end) {
+    }
+
+    private record HeartbeatHandle(ScheduledExecutorService scheduler, ScheduledFuture<?> future) {
+        private void stop() {
+            future.cancel(true);
+            scheduler.shutdownNow();
         }
     }
 }

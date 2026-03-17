@@ -22,9 +22,11 @@ public class WorkspaceController {
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     @GetMapping("/stream/{questionId}")
-    public SseEmitter streamHumanPatch(@PathVariable Long questionId) {
-        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
-        executorService.execute(() -> workspaceService.processHumanPatch(questionId, emitter));
+    public SseEmitter streamHumanPatch(
+            @PathVariable Long questionId,
+            @RequestParam(defaultValue = "true") boolean useDirective) {
+        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
+        executorService.execute(() -> workspaceService.processHumanPatch(questionId, useDirective, emitter));
         return emitter;
     }
 
@@ -32,7 +34,7 @@ public class WorkspaceController {
     public SseEmitter streamRefinement(
             @PathVariable Long questionId,
             @RequestParam String directive) {
-        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
+        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
         executorService.execute(() -> workspaceService.processRefinement(questionId, directive, emitter));
         return emitter;
     }

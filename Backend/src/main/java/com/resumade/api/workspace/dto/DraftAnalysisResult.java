@@ -20,7 +20,6 @@ public class DraftAnalysisResult {
         private String original;
         private String translated;
         private String suggestion;
-        private String severity;
         private String reason;
         private Integer startIndex;
         private Integer endIndex;

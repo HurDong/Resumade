@@ -7,7 +7,6 @@ export interface Mistranslation {
   original: string;
   translated: string;
   suggestion: string;
-  severity: "low" | "high";
   reason?: string;
   startIndex?: number | null;
   endIndex?: number | null;
@@ -91,7 +90,7 @@ interface WorkspaceState {
   updateWashedIntermediate: (washed: string) => void;
   completeProcessing: (data: any) => void;
   setError: (error: string) => void;
-  generateDraft: () => Promise<void>;
+  generateDraft: (options?: { useDirective?: boolean }) => Promise<void>;
   refineDraft: (directive: string) => Promise<void>;
 }
 
@@ -502,7 +501,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       progressMessage: "오류가 발생했습니다.",
     })),
 
-  generateDraft: async () => {
+  generateDraft: async (options) => {
     const state = get();
     const activeQ = state.questions.find((q) => q.id === state.activeQuestionId);
     if (!activeQ?.dbId) {
@@ -511,9 +510,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
     state.startProcessing();
+    const useDirective = options?.useDirective ?? true;
 
     await runWorkspaceSse({
-      url: toApiUrl(`/api/workspace/stream/${activeQ.dbId}`),
+      url: toApiUrl(
+        `/api/workspace/stream/${activeQ.dbId}?useDirective=${useDirective}`
+      ),
       set,
       get,
       errorFallbackMessage: "초안 생성 중 오류가 발생했습니다.",
