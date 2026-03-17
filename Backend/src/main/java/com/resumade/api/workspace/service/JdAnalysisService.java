@@ -1,7 +1,6 @@
 package com.resumade.api.workspace.service;
 
 import com.resumade.api.workspace.dto.JdAnalysisResponse;
-import com.resumade.api.workspace.service.WorkspaceAiService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -16,13 +15,20 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class JdAnalysisService {
 
-    private final WorkspaceAiService aiService;
+    private static final long HEARTBEAT_INTERVAL_SECONDS = 8L;
+
+    private final JdTextAiService jdTextAiService;
+    private final JdVisionAiService jdVisionAiService;
     private final TesseractService tesseractService;
     private final Map<String, String> jdCache = new ConcurrentHashMap<>();
     private final Map<String, byte[]> imageCache = new ConcurrentHashMap<>();
@@ -48,18 +54,21 @@ public class JdAnalysisService {
             return;
         }
 
+        HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
-            sendEvent(emitter, "START", "분석을 시작합니다...");
-            sendEvent(emitter, "ANALYZING", "공고 내용을 추출 중입니다...");
-            
-            JdAnalysisResponse response = aiService.analyzeJd(rawJd);
-            
+            sendEvent(emitter, "START", "JD 분석을 시작합니다.");
+            sendEvent(emitter, "ANALYZING", "공고 내용을 구조화하고 있습니다.");
+
+            JdAnalysisResponse response = jdTextAiService.analyzeJd(rawJd);
+
             sendEvent(emitter, "COMPLETE", response);
             emitter.complete();
             log.info("Completed JD analysis for UUID: {}", uuid);
         } catch (Exception e) {
             log.error("JD Analysis failed for UUID: {}: {}", uuid, e.getMessage(), e);
             sendError(emitter, "AI 분석 중 오류가 발생했습니다: " + e.getMessage());
+        } finally {
+            heartbeat.stop();
         }
     }
 
@@ -70,31 +79,46 @@ public class JdAnalysisService {
             return;
         }
 
+        HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
-            sendEvent(emitter, "START", "이미지 분석을 시작합니다...");
-            sendEvent(emitter, "ANALYZING", "전용 OCR 엔진으로 텍스트를 추출 중입니다...");
+            sendEvent(emitter, "START", "이미지 JD 분석을 시작합니다.");
+            sendEvent(emitter, "ANALYZING", "OCR로 텍스트를 추출하고 있습니다.");
 
-            // 1. Specialized OCR first (Hybrid Strategy)
             String ocrText = tesseractService.extractText(imageBytes);
             log.info("Specialized OCR extracted {} characters", ocrText.length());
 
-            sendEvent(emitter, "ANALYZING", "AI가 추출된 텍스트와 이미지를 교차 검증 중입니다...");
+            sendEvent(emitter, "ANALYZING", "OCR 결과와 이미지를 함께 검증하고 있습니다.");
 
-            // 2. High-quality resize for Vision backup
             byte[] processedImage = resizeImageIfNeeded(imageBytes);
             String base64Image = java.util.Base64.getEncoder().encodeToString(processedImage);
-            dev.langchain4j.data.message.ImageContent imageContent = dev.langchain4j.data.message.ImageContent.from(base64Image, "image/png");
-            
-            // 3. AI structuring with OCR text hint
-            JdAnalysisResponse response = aiService.analyzeJdWithOcr(ocrText, imageContent);
-            
+            dev.langchain4j.data.message.ImageContent imageContent =
+                    dev.langchain4j.data.message.ImageContent.from(base64Image, "image/png");
+
+            JdAnalysisResponse response = jdVisionAiService.analyzeJdWithOcr(ocrText, imageContent);
+
             sendEvent(emitter, "COMPLETE", response);
             emitter.complete();
             log.info("Completed Hybrid JD Image analysis for UUID: {}", uuid);
         } catch (Exception e) {
             log.error("JD Image Analysis failed for UUID: {}: {}", uuid, e.getMessage(), e);
             sendError(emitter, "이미지 분석 중 오류가 발생했습니다: " + e.getMessage());
+        } finally {
+            heartbeat.stop();
         }
+    }
+
+    private HeartbeatHandle startHeartbeat(SseEmitter emitter) {
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
+            try {
+                emitter.send(SseEmitter.event().comment("heartbeat"));
+            } catch (IOException | IllegalStateException e) {
+                log.debug("Stopping JD analysis heartbeat: {}", e.getMessage());
+                throw new RuntimeException(e);
+            }
+        }, HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_INTERVAL_SECONDS, TimeUnit.SECONDS);
+
+        return new HeartbeatHandle(scheduler, future);
     }
 
     private byte[] resizeImageIfNeeded(byte[] imageBytes) {
@@ -109,7 +133,7 @@ public class JdAnalysisService {
 
             if (width <= maxWidth && height <= maxHeight) {
                 log.info("Image is within limits ({}x{}). Skipping resize.", width, height);
-                return imageBytes; // No need to resize
+                return imageBytes;
             }
 
             log.info("Resizing image from {}x{} to fit {}x{}", width, height, maxWidth, maxHeight);
@@ -120,12 +144,11 @@ public class JdAnalysisService {
 
             BufferedImage outputImage = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_ARGB);
             Graphics2D g2d = outputImage.createGraphics();
-            
-            // Set high quality rendering hints
+
             g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
             g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            
+
             g2d.drawImage(originalImage, 0, 0, targetWidth, targetHeight, null);
             g2d.dispose();
 
@@ -143,7 +166,7 @@ public class JdAnalysisService {
     private void sendEvent(SseEmitter emitter, String name, Object data) {
         try {
             emitter.send(SseEmitter.event().name(name).data(data));
-        } catch (IOException e) {
+        } catch (IOException | IllegalStateException e) {
             log.warn("Failed to send SSE event: {}", e.getMessage());
         }
     }
@@ -152,8 +175,15 @@ public class JdAnalysisService {
         try {
             emitter.send(SseEmitter.event().name("ERROR").data(Map.of("message", message)));
             emitter.complete();
-        } catch (IOException e) {
+        } catch (IOException | IllegalStateException e) {
             log.warn("Failed to send error event: {}", e.getMessage());
+        }
+    }
+
+    private record HeartbeatHandle(ScheduledExecutorService scheduler, ScheduledFuture<?> future) {
+        private void stop() {
+            future.cancel(true);
+            scheduler.shutdownNow();
         }
     }
 }

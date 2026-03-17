@@ -47,23 +47,7 @@ public class DeepLTranslationService implements TranslationService {
         }
 
         try {
-            // Split by newlines while preserving formatting
-            String[] lines = text.split("\n", -1);
-            StringBuilder result = new StringBuilder();
-
-            for (int i = 0; i < lines.length; i++) {
-                String line = lines[i];
-                if (!line.isBlank()) {
-                    result.append(requestDeepL(line, targetLang));
-                } else {
-                    result.append(line);
-                }
-
-                if (i < lines.length - 1) {
-                    result.append("\n");
-                }
-            }
-            return result.toString();
+            return requestDeepL(text, targetLang);
         } catch (Exception e) {
             log.error("DeepL translation wrapper failed", e);
             return text;
@@ -79,6 +63,7 @@ public class DeepLTranslationService implements TranslationService {
             org.springframework.util.MultiValueMap<String, String> map = new org.springframework.util.LinkedMultiValueMap<>();
             map.add("text", text);
             map.add("target_lang", targetLang.toUpperCase());
+            map.add("preserve_formatting", "1");
 
             HttpEntity<org.springframework.util.MultiValueMap<String, String>> entity = new HttpEntity<>(map, headers);
 

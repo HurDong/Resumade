@@ -6,6 +6,7 @@ import lombok.Setter;
 import java.util.List;
 
 @Getter
+@Setter
 @Builder
 public class DraftAnalysisResult {
     private List<Mistranslation> mistranslations;
@@ -21,6 +22,8 @@ public class DraftAnalysisResult {
         private String suggestion;
         private String severity;
         private String reason;
+        private Integer startIndex;
+        private Integer endIndex;
     }
 
     @Getter

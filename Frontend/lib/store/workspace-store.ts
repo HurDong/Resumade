@@ -9,6 +9,8 @@ export interface Mistranslation {
   suggestion: string;
   severity: "low" | "high";
   reason?: string;
+  startIndex?: number | null;
+  endIndex?: number | null;
 }
 
 export interface AiReviewReport {
@@ -43,6 +45,8 @@ interface WorkspaceState {
   applicationId: string | null;
   company: string;
   position: string;
+  aiInsight: string;
+  companyResearch: string;
   
   // Questions management
   questions: WorkspaceQuestion[];
@@ -107,6 +111,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   applicationId: null,
   company: "",
   position: "",
+  aiInsight: "",
+  companyResearch: "",
   questions: [defaultQuestion],
   activeQuestionId: "q-default",
   extractedContext: [],
@@ -329,6 +335,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         applicationId: id,
         company: data.companyName,
         position: data.position,
+        aiInsight: data.aiInsight || "",
+        companyResearch: data.companyResearch || "",
         questions: mappedQuestions.length > 0 ? mappedQuestions : [defaultQuestion],
         activeQuestionId: mappedQuestions.length > 0 ? mappedQuestions[0].id : "q-default",
         isProcessing: false,
@@ -483,15 +491,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setError: (error) =>
     set((state) => ({
       isProcessing: false,
-      progressMessage: `오류: ${error}`,
+      progressMessage: "오류가 발생했습니다.",
       progressHistory: appendProgressHistory(
         state.progressHistory,
-        `오류: ${error}`
+        "오류가 발생했습니다."
       ),
-      processingError: error,
+      processingError: "오류가 발생했습니다.",
       activeStreamController: null,
       leftPanelTab: "context",
-      progressMessage: `오류: ${error}`,
+      progressMessage: "오류가 발생했습니다.",
     })),
 
   generateDraft: async () => {
@@ -749,8 +757,8 @@ function normalizeSseError(error: unknown, fallbackMessage: string) {
   }
 
   if (error instanceof Error && error.message) {
-    return error.message;
+    return "오류가 발생했습니다.";
   }
 
-  return fallbackMessage;
+  return "오류가 발생했습니다.";
 }

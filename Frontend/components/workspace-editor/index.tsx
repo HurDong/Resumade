@@ -22,9 +22,13 @@ export function WorkspaceEditor({ applicationId }: WorkspaceEditorProps) {
   }
 
   return (
-    <div className="grid h-full grid-cols-2 overflow-hidden animate-in fade-in duration-500">
-      <ContextPanel />
-      <TranslationPanel />
+    <div className="grid h-full min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] overflow-hidden animate-in fade-in duration-500">
+      <div className="min-w-0 overflow-hidden">
+        <ContextPanel />
+      </div>
+      <div className="min-w-0 overflow-hidden">
+        <TranslationPanel />
+      </div>
     </div>
   )
 }

@@ -51,6 +51,21 @@ export function TranslationPanel() {
     const matches: { start: number; end: number; mis: any }[] = [];
     
     mistranslations.forEach((mis) => {
+      if (
+        Number.isInteger(mis.startIndex) &&
+        Number.isInteger(mis.endIndex) &&
+        (mis.startIndex ?? -1) >= 0 &&
+        (mis.endIndex ?? -1) > (mis.startIndex ?? -1) &&
+        (mis.endIndex ?? 0) <= normalizedText.length
+      ) {
+        matches.push({
+          start: mis.startIndex as number,
+          end: mis.endIndex as number,
+          mis,
+        });
+        return;
+      }
+
       if (!mis.translated) return;
       
       const target = mis.translated.normalize('NFC').trim();
@@ -270,15 +285,15 @@ export function TranslationPanel() {
               </CardContent>
             </Card>
  
-            {/* Washed Version (Human Patch) */}
+            {/* Washed Version */}
             <Card className="shadow-lg border-primary/20 bg-background ring-1 ring-primary/5">
               <CardHeader className="pb-4">
                 <CardTitle className="text-xs font-bold uppercase tracking-widest text-primary flex items-center gap-2">
                   <CheckCircle className="size-3.5" />
-                  번역본 (Human Patch)
+                  세탁본
                 </CardTitle>
                 <CardDescription className="text-[10px] text-muted-foreground/80 italic font-semibold">
-                  하이라이트된 용어는 IT 문맥에 맞춰 검수가 필요한 부분입니다.
+                  하이라이트된 표현은 의미가 약해졌거나 검토가 필요한 부분입니다.
                 </CardDescription>
               </CardHeader>
               <CardContent ref={containerRef}>

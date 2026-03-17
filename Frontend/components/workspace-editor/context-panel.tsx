@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import {
   Settings,
+  Building2,
   Plus,
   FileText,
   Sparkles,
@@ -27,6 +28,7 @@ import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useWorkspaceStore } from "@/lib/store/workspace-store"
+import { parseCompanyResearch } from "@/lib/application-intelligence"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 // Helper for standard character length (including spaces)
@@ -34,12 +36,129 @@ const getLength = (str: string) => {
   return str ? str.length : 0;
 };
 
+type DirectiveFieldKey = "tone" | "focus" | "keep" | "avoid" | "note";
+
+interface DirectiveFields {
+  tone: string;
+  focus: string;
+  keep: string;
+  avoid: string;
+  note: string;
+}
+
+const STRUCTURED_DIRECTIVE_CONFIG: { key: Exclude<DirectiveFieldKey, "note">; label: string; placeholder: string }[] = [
+  { key: "tone", label: "Tone / Voice", placeholder: "Confident, bold, measured" },
+  { key: "focus", label: "Focus / Angle", placeholder: "Highlight leadership, ownership, metrics" },
+  { key: "keep", label: "Must Keep", placeholder: "Preserve specific metric, term, or story" },
+  { key: "avoid", label: "Avoid", placeholder: "Avoid buzzwords like 'passion' or 'team player'" },
+];
+
+const DEFAULT_DIRECTIVE_FIELDS: DirectiveFields = {
+  tone: "",
+  focus: "",
+  keep: "",
+  avoid: "",
+  note: "",
+};
+
+const DIRECTIVE_PRESETS: Array<{ key: DirectiveFieldKey; label: string; value: string }> = [
+  { key: "tone", label: "담백하게", value: "More grounded and restrained" },
+  { key: "tone", label: "자신감 있게", value: "More confident without sounding exaggerated" },
+  { key: "focus", label: "성과 강조", value: "Emphasize measurable outcomes and impact" },
+  { key: "focus", label: "문제 해결", value: "Emphasize problem solving and decision making" },
+  { key: "keep", label: "수치 유지", value: "Preserve all metrics and concrete technical details" },
+  { key: "avoid", label: "추상어 줄이기", value: "Remove vague buzzwords and generic passion statements" },
+];
+
+const SECTION_MATCHERS: Record<DirectiveFieldKey, RegExp> = {
+  tone: /tone/i,
+  focus: /(focus|angle|goal)/i,
+  keep: /(keep|maintain|retain)/i,
+  avoid: /(avoid|skip|remove)/i,
+  note: /(note|additional|comment)/i,
+};
+
+const parseRefineDirective = (raw?: string): DirectiveFields => {
+  if (!raw) {
+    return { ...DEFAULT_DIRECTIVE_FIELDS };
+  }
+
+  const fields: DirectiveFields = { ...DEFAULT_DIRECTIVE_FIELDS };
+  const remainder: string[] = [];
+
+  raw.split(/\r?\n/).map((line) => line.trim()).filter((line) => line).forEach((line) => {
+    const colonIndex = line.indexOf(":");
+    if (colonIndex > 0) {
+      const key = line.slice(0, colonIndex).trim();
+      const value = line.slice(colonIndex + 1).trim();
+      if (!value) {
+        return;
+      }
+
+      const matchedKey = (Object.keys(SECTION_MATCHERS) as DirectiveFieldKey[]).find((fieldKey) =>
+        SECTION_MATCHERS[fieldKey].test(key)
+      );
+      if (matchedKey && matchedKey !== "note") {
+        fields[matchedKey] = value;
+        return;
+      }
+
+      if (SECTION_MATCHERS.note.test(key)) {
+        fields.note = fields.note ? `${fields.note}\n${value}` : value;
+        return;
+      }
+    }
+
+    remainder.push(line);
+  });
+
+  if (!fields.note && remainder.length) {
+    fields.note = remainder.join("\n");
+  }
+
+  return fields;
+};
+
+const buildRefineDirective = (fields: DirectiveFields): string => {
+  const entries: string[] = [];
+
+  if (fields.tone) entries.push(`Tone: ${fields.tone}`);
+  if (fields.focus) entries.push(`Focus: ${fields.focus}`);
+  if (fields.keep) entries.push(`Keep: ${fields.keep}`);
+  if (fields.avoid) entries.push(`Avoid: ${fields.avoid}`);
+  if (fields.note) entries.push(`Note: ${fields.note}`);
+
+  return entries.join("\n");
+};
+
+const NATURAL_DIRECTIVE_PRESETS = [
+  { label: "담백하게", value: "전체 톤을 과장 없이 담백하고 차분하게 다듬어줘." },
+  { label: "자신감 있게", value: "근거는 유지하되 더 자신감 있고 선명한 문장으로 다듬어줘." },
+  { label: "성과 강조", value: "수치, 개선폭, 결과, 기여도가 더 또렷하게 보이게 써줘." },
+  { label: "문제 해결", value: "내가 어떤 문제를 어떻게 판단하고 해결했는지가 더 잘 드러나게 써줘." },
+  { label: "수치 유지", value: "들어간 수치, 기술명, 산출물은 최대한 유지해줘." },
+  { label: "추상어 줄이기", value: "열정, 노력 같은 추상어는 줄이고 구체적인 행동과 근거 중심으로 써줘." },
+];
+
+const normalizeDirectiveText = (raw?: string) => {
+  if (!raw) {
+    return ""
+  }
+
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^(Tone|Focus|Keep|Avoid|Note)\s*:\s*/i, "").trim())
+    .filter(Boolean)
+    .join("\n")
+}
+
 export function ContextPanel() {
   const { 
     company,
     setCompany,
     position,
     setPosition,
+    companyResearch,
     questions,
     activeQuestionId,
     setActiveQuestionId,
@@ -50,6 +169,9 @@ export function ContextPanel() {
     processingError,
     refineDraft,
     generateDraft,
+    applySuggestion,
+    updateMistranslationSuggestion,
+    dismissMistranslation,
     extractedContext,
     leftPanelTab,
     setLeftPanelTab,
@@ -59,9 +181,12 @@ export function ContextPanel() {
     toggleActiveQuestionCompletion,
   } = useWorkspaceStore()
 
+  const activeQuestion = questions.find(q => q.id === activeQuestionId) || questions[0]
+  const [directiveDraft, setDirectiveDraft] = useState(normalizeDirectiveText(activeQuestion.userDirective))
   // Virtual Progress Management for Premium UX
   const [virtualProgress, setVirtualProgress] = useState(0)
   const topRef = useRef<HTMLDivElement>(null)
+  const isDirectiveComposingRef = useRef(false)
 
   const scrollToTop = () => {
     topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -91,6 +216,10 @@ export function ContextPanel() {
     if (progressMessage.includes('PATCH')) setVirtualProgress(p => Math.max(75, p))
   }, [progressMessage])
 
+  useEffect(() => {
+    setDirectiveDraft(normalizeDirectiveText(activeQuestion.userDirective))
+  }, [activeQuestion.id])
+
   // Mapping virtual progress to UI steps
   const getStepStatus = (stepIdx: number) => {
     const threshold = stepIdx * 25
@@ -99,18 +228,47 @@ export function ContextPanel() {
     return { isCompleted, isActive }
   }
 
-  const activeQuestion = questions.find(q => q.id === activeQuestionId) || questions[0]
   const { mistranslations, aiReviewReport, washedKr } = activeQuestion
+  const companyResearchData = parseCompanyResearch(companyResearch)
 
   const currentCount = getLength(washedKr || activeQuestion.content)
+  const canRefine = !!activeQuestion.content && !!directiveDraft.trim()
+
+  const handleDirectiveChange = (value: string) => {
+    setDirectiveDraft(value)
+  }
+
+  const commitDirectiveDraft = () => {
+    const normalizedDraft = directiveDraft.trim()
+    const normalizedStored = normalizeDirectiveText(activeQuestion.userDirective).trim()
+
+    if (normalizedDraft !== normalizedStored) {
+      updateActiveQuestion({ userDirective: directiveDraft })
+    }
+  }
+
+  const handleDirectivePreset = (value: string) => {
+    setDirectiveDraft((prev) => {
+      if (!prev.trim()) {
+        return value
+      }
+
+      if (prev.includes(value)) {
+        return prev
+      }
+
+      return `${prev.trim()}\n${value}`
+    })
+  }
 
   const handleStartProcess = () => {
+    commitDirectiveDraft()
     scrollToTop()
     generateDraft()
   }
 
   return (
-    <div className="flex h-full flex-col border-r border-border bg-background min-h-0 overflow-hidden">
+    <div className="flex h-full min-w-0 flex-col border-r border-border bg-background min-h-0 overflow-hidden">
       {/* Header Context */}
       <div className="shrink-0 border-b border-border bg-muted/20 p-6">
         <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
@@ -289,9 +447,51 @@ export function ContextPanel() {
         </Tabs>
       </div>
 
-      <ScrollArea className="flex-1 h-full min-h-0 px-6 py-4">
+      <div className="shrink-0 border-b border-border bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[11px] font-black uppercase tracking-wider text-primary">
+              {"\uc791\uc5c5 \uc561\uc158"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {"\uae30\uc5c5 \ubd84\uc11d\uacfc \uacbd\ud5d8 \ucee8\ud14d\uc2a4\ud2b8\ub97c \ubcf4\uba74\uc11c \ubc14\ub85c \ucd08\uc548 \uc0dd\uc131\uacfc \uc138\ud0c1\uc744 \uc2e4\ud589\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4."}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              onClick={handleStartProcess}
+              disabled={isProcessing}
+              className="gap-2 rounded-full px-4 font-bold shadow-sm"
+            >
+              {isProcessing ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="size-3.5" />
+              )}
+              {"\ucd08\uc548 \uc0dd\uc131"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isProcessing || !canRefine}
+              onClick={() => {
+                commitDirectiveDraft()
+                scrollToTop()
+                refineDraft(directiveDraft)
+              }}
+              className="gap-2 rounded-full border-primary/20 px-4 font-bold"
+            >
+              <Wand2 className="size-3.5" />
+              {"\uc138\ud0c1\ud558\uae30"}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <ScrollArea className="flex-1 h-full min-h-0 overflow-x-hidden px-6 py-4">
         <div ref={topRef} />
-        <div className="space-y-8 pb-10">
+        <div className="min-w-0 space-y-8 overflow-x-hidden pb-10">
           {leftPanelTab === "context" ? (
             <>
           {/* Progress Overlay during processing */}
@@ -376,22 +576,70 @@ export function ContextPanel() {
             </Card>
           )}
 
-          <section>
+          {companyResearchData && (
+            <section className="min-w-0 overflow-hidden">
+              <div className="flex items-center gap-2 mb-4">
+                <Building2 className="size-4 text-primary" />
+                <h3 className="text-sm font-black uppercase tracking-wider text-primary">Company Intelligence</h3>
+              </div>
+
+              <Card className="min-w-0 overflow-hidden border-primary/10 bg-primary/[0.03] shadow-none">
+                <CardContent className="space-y-4 p-4">
+                  <p className="break-words text-sm leading-7 text-foreground/90">
+                    {companyResearchData.executiveSummary}
+                  </p>
+
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      companyResearchData.focus.businessUnit,
+                      companyResearchData.focus.targetService,
+                      companyResearchData.focus.focusRole,
+                      companyResearchData.focus.techFocus,
+                    ]
+                      .filter(Boolean)
+                      .map((item) => (
+                        <Badge key={item} variant="outline" className="max-w-full whitespace-normal break-words border-primary/20 bg-background text-primary font-bold">
+                          {item}
+                        </Badge>
+                      ))}
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {companyResearchData.motivationHooks.slice(0, 2).map((item, index) => (
+                      <div key={`motivation-${index}`} className="min-w-0 overflow-hidden break-words rounded-2xl bg-background p-3 text-xs leading-6 text-foreground/90 shadow-sm">
+                        {item}
+                      </div>
+                    ))}
+                    {companyResearchData.resumeAngles.slice(0, 2).map((item, index) => (
+                      <div key={`resume-${index}`} className="min-w-0 overflow-hidden break-words rounded-2xl bg-background p-3 text-xs leading-6 text-foreground/90 shadow-sm">
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
+          )}
+
+          <section className="min-w-0 overflow-hidden">
             <div className="flex items-center gap-2 mb-4">
               <TrendingUp className="size-4 text-primary" />
               <h3 className="text-sm font-black uppercase tracking-wider text-primary">관련 경험 콘텍스트 (RAG)</h3>
             </div>
             <div className="space-y-3">
-              {extractedContext.map((ctx) => (
-                <Card key={ctx.id} className="bg-muted/40 border-none shadow-none group hover:bg-primary/5 transition-colors">
+              {extractedContext.map((ctx, index) => (
+                <Card
+                  key={`${ctx.id ?? "ctx"}-${ctx.experienceTitle}-${index}`}
+                  className="min-w-0 overflow-hidden bg-muted/40 border-none shadow-none group hover:bg-primary/5 transition-colors"
+                >
                   <CardContent className="p-4">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="text-sm font-black group-hover:text-primary transition-colors text-foreground">{ctx.experienceTitle}</span>
+                    <div className="flex min-w-0 items-center justify-between gap-2 mb-2">
+                      <span className="min-w-0 break-words text-sm font-black group-hover:text-primary transition-colors text-foreground">{ctx.experienceTitle}</span>
                       <Badge variant="outline" className="text-[10px] bg-background border-primary/20 text-primary font-bold">
                         {ctx.relevanceScore}% 매칭
                       </Badge>
                     </div>
-                    <p className="text-xs text-foreground/90 leading-relaxed font-medium">
+                    <p className="break-words text-xs text-foreground/90 leading-relaxed font-medium">
                       {ctx.relevantPart}
                     </p>
                   </CardContent>
@@ -400,7 +648,7 @@ export function ContextPanel() {
             </div>
           </section>
 
-          <section>
+          <section className="min-w-0 overflow-hidden">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Wand2 className="size-4 text-primary" />
@@ -423,27 +671,56 @@ export function ContextPanel() {
             </div>
 
             {/* AI 작성 가이드 (Directives) */}
-            <div className="space-y-3 pt-2">
-              <label className="text-sm font-semibold flex items-center gap-2 text-primary">
-                <MessageSquare className="w-4 h-4" />
-                AI 작성 가이드 (Directives)
-              </label>
+            <div className="min-w-0 space-y-4 overflow-hidden pt-2">
+              <div className="flex min-w-0 items-center justify-between gap-3">
+                <label className="text-sm font-semibold flex items-center gap-2 text-primary">
+                  <MessageSquare className="w-4 h-4" />
+                  추가 요청
+                </label>
+                <span className="min-w-0 break-words text-right text-[11px] text-muted-foreground">
+                  원하는 방향을 자연스럽게 적어주세요.
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {NATURAL_DIRECTIVE_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.label}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 rounded-full border-primary/20 bg-background/70 px-3 text-[11px] font-bold hover:bg-primary/5"
+                    onClick={() => handleDirectivePreset(preset.value)}
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+              </div>
               <Textarea
-                placeholder="예: B 프로젝트 위주로 작성해줘, 좀 더 적극적인 어조로 세탁해줘 등..."
-                className="min-h-[100px] text-sm bg-background/50 focus:bg-background border-primary/20 focus:border-primary transition-all duration-300 resize-none"
-                value={activeQuestion.userDirective || ""}
-                onChange={(e) => {
-                  updateActiveQuestion({ userDirective: e.target.value });
+                value={directiveDraft}
+                onChange={(e) => handleDirectiveChange(e.target.value)}
+                onBlur={() => {
+                  if (!isDirectiveComposingRef.current) {
+                    commitDirectiveDraft()
+                  }
                 }}
+                onCompositionStart={() => {
+                  isDirectiveComposingRef.current = true
+                }}
+                onCompositionEnd={(e) => {
+                  isDirectiveComposingRef.current = false
+                  handleDirectiveChange(e.currentTarget.value)
+                }}
+                placeholder="예: 여기는 병원 전산 직무라서 기술 나열보다 운영 안정성과 데이터 신뢰성에 기여할 사람처럼 보이게 써줘. 문장은 너무 추상적으로 말하지 말고, 내가 했던 경험을 근거로 더 구체적으로 풀어줘."
+                className="min-h-[150px] w-full max-w-full resize-none overflow-x-hidden whitespace-pre-wrap break-words text-sm leading-7 bg-background/50 focus:bg-background border border-border/40 focus:border-primary/40 transition-all duration-300"
               />
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                * 입력한 지시사항이 초안 생성 및 세탁 과정에 최우선적으로 반영됩니다.
+              <p className="break-words text-[11px] text-muted-foreground leading-relaxed">
+                이 요청은 최우선 제약사항 바로 아래 우선순위로 반영됩니다. 사실성, 글자수, 금지 규칙과 충돌하지 않는 한 최대한 가깝게 따릅니다.
               </p>
             </div>
 
             <Separator className="bg-primary/10" />
 
-            <div className="relative">
+            <div className="relative min-w-0 overflow-hidden">
               <div className="absolute top-3 left-3 flex items-center gap-1.5 pointer-events-none opacity-70">
                 <FileText className="size-4 text-primary" />
                 <span className="text-[10px] font-black uppercase tracking-tighter text-primary">Draft Pad</span>
@@ -451,7 +728,7 @@ export function ContextPanel() {
               <Textarea
                 value={activeQuestion.content}
                 onChange={(e) => updateActiveQuestion({ content: e.target.value })}
-                className={`min-h-[400px] w-full bg-muted/20 border-none focus-visible:ring-1 focus-visible:ring-primary/20 p-8 pt-12 text-sm leading-relaxed rounded-2xl placeholder:opacity-70 text-foreground font-medium transition-all ${hoveredMistranslationId ? 'ring-2 ring-primary/40 bg-primary/5 scale-[1.01]' : ''}`}
+                className={`min-h-[400px] w-full max-w-full resize-none overflow-x-hidden whitespace-pre-wrap break-words bg-muted/20 border-none focus-visible:ring-1 focus-visible:ring-primary/20 p-8 pt-12 text-sm leading-relaxed rounded-2xl placeholder:opacity-70 text-foreground font-medium transition-all ${hoveredMistranslationId ? 'ring-2 ring-primary/40 bg-primary/5 scale-[1.01]' : ''}`}
                 placeholder="나의 경험 데이터를 기반으로 AI가 초안을 작성합니다. 직접 내용을 입력하거나 수정할 수도 있습니다."
               />
             </div>
@@ -580,6 +857,8 @@ export function ContextPanel() {
               })}
             </div>
 
+            {false && (
+            <>
             {/* Premium AI Refinement Section */}
             <Separator className="my-8 opacity-50" />
             <div className="p-6 rounded-[32px] bg-gradient-to-br from-primary/10 via-background to-secondary/5 border-2 border-primary/20 shadow-xl space-y-4">
@@ -595,12 +874,13 @@ export function ContextPanel() {
                 </div>
                 <Button 
                   size="sm"
-                  disabled={isProcessing || !activeQuestion.userDirective}
+                  disabled={isProcessing || !directiveDraft.trim()}
                   onClick={() => {
+                    commitDirectiveDraft()
                     setLeftPanelTab("context") // Switch tab first
                     setTimeout(() => {
                       scrollToTop()
-                      refineDraft(activeQuestion.userDirective)
+                      refineDraft(directiveDraft)
                     }, 0) // Delay scroll to next tick to ensure tab is rendered if needed
                   }}
                   className="h-8 gap-2 px-4 rounded-xl font-black text-[11px] shadow-lg shadow-primary/20 hover:scale-105 transition-all"
@@ -610,7 +890,7 @@ export function ContextPanel() {
                 </Button>
               </div>
 
-              <div className="relative group">
+              <div className="space-y-4">
                 <Textarea
                   value={activeQuestion.userDirective}
                   onChange={(e) => updateActiveQuestion({ userDirective: e.target.value })}
@@ -620,6 +900,8 @@ export function ContextPanel() {
               </div>
               <p className="text-[10px] text-center text-muted-foreground/60 font-medium">※ 이전의 번역본은 새롭게 생성된 결과로 대체됩니다.</p>
             </div>
+            </>
+            )}
           </div>
         </div>
       )}
