@@ -46,11 +46,11 @@ export function TranslationPanel() {
 
   const processingLabel = (() => {
     if (!isProcessing) return ""
-    if (pipelineStage === "RAG") return "Preparing experience context"
-    if (pipelineStage === "DRAFT") return "Polishing source draft"
-    if (pipelineStage === "WASH") return "Generating washed draft"
-    if (pipelineStage === "PATCH") return "Running human patch analysis"
-    return "Pipeline in progress"
+    if (pipelineStage === "RAG") return "경험 컨텍스트 준비 중"
+    if (pipelineStage === "DRAFT") return "초안 다듬는 중"
+    if (pipelineStage === "WASH") return "세탁본 생성 중"
+    if (pipelineStage === "PATCH") return "휴먼 패치 분석 중"
+    return "파이프라인 실행 중"
   })()
 
   const escapeRegExp = (string: string) => {
@@ -220,10 +220,13 @@ export function TranslationPanel() {
           <Wand2 className="size-16 opacity-20" />
           <div className="absolute inset-0 -z-10 size-16 rounded-full bg-primary/10 blur-2xl" />
         </div>
-        <h3 className="mb-3 text-xl font-bold">Human Patch Studio</h3>
-        <p className="max-w-md text-balance text-sm font-medium leading-relaxed text-muted-foreground/80">
-          Once a draft is generated, translation, back-translation, and human-patch results appear here in order.
-        </p>
+        <h3 className="flex items-center gap-2 text-lg font-bold">
+              <Wand2 className="size-5 text-primary" />
+              휴먼 패치 스튜디오
+            </h3>
+            <p className="max-w-md text-balance text-sm font-medium leading-relaxed text-muted-foreground/80">
+              초안이 생성되면 번역, 역번역, 휴먼 패치 결과가 순서대로 이곳에 표시됩니다.
+            </p>
       </div>
     )
   }
@@ -235,10 +238,10 @@ export function TranslationPanel() {
           <div>
             <h3 className="flex items-center gap-2 text-lg font-bold">
               <CheckCircle className="size-5 text-emerald-500" />
-              Human Patch Result
+              휴먼 패치 결과
             </h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              The draft is washed through translation loops and then reviewed for meaning fidelity.
+              번역 루프로 세탁된 원고를 의미 충실도 기준으로 검토한 결과입니다.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -250,7 +253,7 @@ export function TranslationPanel() {
               disabled={!draft || isProcessing}
             >
               <RefreshCw className="size-3.5" />
-              Rewash
+              재세탁
             </Button>
             <Button
               size="sm"
@@ -260,7 +263,7 @@ export function TranslationPanel() {
               disabled={!draft || !washedKr || isProcessing}
             >
               <ScanSearch className="size-3.5" />
-              Repatch
+              재패치
             </Button>
             <Button
               size="sm"
@@ -268,15 +271,15 @@ export function TranslationPanel() {
               className="h-8 gap-2 rounded-lg border-primary/20 px-3 text-[11px] font-bold shadow-sm transition-all hover:bg-primary/5"
               onClick={() => {
                 navigator.clipboard.writeText(washedKr)
-                toast.success("Copied to clipboard.", {
-                  description: "You can paste this output directly.",
+                toast.success("클립보드에 복사했습니다.", {
+                  description: "결과물을 바로 붙여넣기할 수 있습니다.",
                   position: "top-center",
                 })
               }}
               disabled={!washedKr}
             >
               <Copy className="size-3.5" />
-              Copy
+              복사
             </Button>
             {isProcessing && (
               <Badge variant="secondary" className="animate-in fade-in zoom-in-95 gap-2 px-3 py-1.5">
@@ -301,7 +304,7 @@ export function TranslationPanel() {
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-muted-foreground/60">
                   <FileText className="size-3.5" />
-                  Source Draft
+                  원본 초안
                 </CardTitle>
               </CardHeader>
               <CardContent className="relative min-h-[420px]">
@@ -321,7 +324,7 @@ export function TranslationPanel() {
                       </div>
                       <div className="space-y-1">
                         <p className="text-base font-black tracking-tight text-primary">{processingLabel}</p>
-                        <p className="text-sm font-medium text-foreground/70">A refreshed result will appear shortly.</p>
+                        <p className="text-sm font-medium text-foreground/70">잠시 후 새로운 결과가 표시됩니다.</p>
                       </div>
                     </div>
                   </div>
@@ -333,12 +336,12 @@ export function TranslationPanel() {
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-primary">
                   <CheckCircle className="size-3.5" />
-                  Washed Draft
+                  세탁본
                 </CardTitle>
                 <CardDescription className="text-[10px] font-semibold italic text-muted-foreground/80">
                   {hasHighlights
-                    ? "Highlighted spans are suspected meaning-loss areas that need review."
-                    : "Without a highlight selection, the full washed draft is shown."}
+                    ? "강조 표시된 부분은 의미 손실이 의심되어 검토가 필요한 영역입니다."
+                    : "선택된 하이라이트가 없으면 전체 세탁본이 표시됩니다."}
                 </CardDescription>
               </CardHeader>
               <CardContent ref={containerRef} className="relative min-h-[420px]">
@@ -364,7 +367,7 @@ export function TranslationPanel() {
                       </div>
                       <div className="space-y-1">
                         <p className="text-base font-black tracking-tight text-primary">{processingLabel}</p>
-                        <p className="text-sm font-medium text-foreground/70">The washed draft is being refined from the current baseline.</p>
+                        <p className="text-sm font-medium text-foreground/70">현재 결과를 기준으로 세탁본을 다듬고 있습니다.</p>
                       </div>
                     </div>
                   </div>

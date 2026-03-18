@@ -49,10 +49,10 @@ interface DirectiveFields {
 }
 
 const STRUCTURED_DIRECTIVE_CONFIG: { key: Exclude<DirectiveFieldKey, "note">; label: string; placeholder: string }[] = [
-  { key: "tone", label: "Tone / Voice", placeholder: "Confident, bold, measured" },
-  { key: "focus", label: "Focus / Angle", placeholder: "Highlight leadership, ownership, metrics" },
-  { key: "keep", label: "Must Keep", placeholder: "Preserve specific metric, term, or story" },
-  { key: "avoid", label: "Avoid", placeholder: "Avoid buzzwords like 'passion' or 'team player'" },
+  { key: "tone", label: "톤 / 어조", placeholder: "자신감 있게, 차분하게, 단호하게" },
+  { key: "focus", label: "강조 포인트", placeholder: "리더십, 기여도, 수치 강조" },
+  { key: "keep", label: "반드시 유지", placeholder: "특정 수치, 용어, 핵심 스토리 보존" },
+  { key: "avoid", label: "제외", placeholder: "열정, 팀플레이어 같은 추상어 제거" },
 ];
 
 const DEFAULT_DIRECTIVE_FIELDS: DirectiveFields = {
@@ -168,10 +168,10 @@ const parseLengthTarget = (raw: string, maxLength: number): number | null => {
 }
 
 const PIPELINE_STEPS = [
-  { id: "RAG", label: "Context Match" },
-  { id: "DRAFT", label: "Draft" },
-  { id: "WASH", label: "Wash" },
-  { id: "PATCH", label: "Patch Review" },
+  { id: "RAG", label: "경험 매칭" },
+  { id: "DRAFT", label: "초안 생성" },
+  { id: "WASH", label: "세탁 번역" },
+  { id: "PATCH", label: "휴먼 패치" },
 ] as const
 
 const getPipelineState = (
@@ -182,7 +182,7 @@ const getPipelineState = (
   if (stage === "DONE" || (!isProcessing && stage === "PATCH")) {
     return {
       activeStepId: "PATCH",
-      description: "All pipeline stages are complete.",
+      description: "모든 파이프라인 단계가 완료되었습니다.",
       isComplete: true,
     }
   }
@@ -190,7 +190,7 @@ const getPipelineState = (
   if (stage === "RAG") {
     return {
       activeStepId: "RAG",
-      description: "Matching experiences to this question.",
+      description: "이 문항에 맞는 경험을 매칭하고 있습니다.",
       isComplete: false,
     }
   }
@@ -198,7 +198,7 @@ const getPipelineState = (
   if (stage === "DRAFT") {
     return {
       activeStepId: "DRAFT",
-      description: "Generating the base draft.",
+      description: "경험 근거를 바탕으로 초안을 생성하고 있습니다.",
       isComplete: false,
     }
   }
@@ -206,7 +206,7 @@ const getPipelineState = (
   if (stage === "WASH") {
     return {
       activeStepId: "WASH",
-      description: "Running translation and back-translation wash.",
+      description: "영어 번역 후 역번역으로 세탁본을 만들고 있습니다.",
       isComplete: false,
     }
   }
@@ -214,7 +214,7 @@ const getPipelineState = (
   if (stage === "PATCH") {
     return {
       activeStepId: "PATCH",
-      description: "Reviewing the washed draft for meaning loss and awkward phrasing.",
+      description: "세탁본의 의미 손실과 어색한 표현을 검토하고 있습니다.",
       isComplete: false,
     }
   }
@@ -223,28 +223,28 @@ const getPipelineState = (
   if (normalized.includes("patch") || normalized.includes("review") || normalized.includes("analysis")) {
     return {
       activeStepId: "PATCH",
-      description: "Reviewing the washed draft for meaning loss and awkward phrasing.",
+      description: "세탁본의 의미 손실과 어색한 표현을 검토하고 있습니다.",
       isComplete: false,
     }
   }
   if (normalized.includes("wash") || normalized.includes("translate") || normalized.includes("translation")) {
     return {
       activeStepId: "WASH",
-      description: "Running translation and back-translation wash.",
+      description: "영어 번역 후 역번역으로 세탁본을 만들고 있습니다.",
       isComplete: false,
     }
   }
   if (normalized.includes("draft") || normalized.includes("writing")) {
     return {
       activeStepId: "DRAFT",
-      description: "Generating the base draft.",
+      description: "경험 근거를 바탕으로 초안을 생성하고 있습니다.",
       isComplete: false,
     }
   }
 
   return {
     activeStepId: "RAG",
-    description: "Preparing the pipeline.",
+    description: "파이프라인을 준비하고 있습니다.",
     isComplete: false,
   }
 }
@@ -517,7 +517,7 @@ export function ContextPanel() {
                     <span className="text-[10px] font-bold text-muted-foreground/40 italic"> / {activeQuestion.maxLength.toLocaleString()} 자</span>
                   </div>
                   {currentCount > activeQuestion.maxLength && (
-                    <span className="text-[9px] font-black text-destructive uppercase tracking-widest animate-in fade-in slide-in-from-right-1">Over Limit!</span>
+                    <span className="text-[9px] font-black text-destructive uppercase tracking-widest animate-in fade-in slide-in-from-right-1">한도 초과!</span>
                   )}
                 </div>
               </div>
@@ -588,7 +588,7 @@ export function ContextPanel() {
                     <div className="absolute -inset-1 rounded-2xl bg-primary/20 animate-ping opacity-30" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-black text-primary uppercase tracking-tighter">Human Patch Pipeline</h4>
+                    <h4 className="text-sm font-black text-primary uppercase tracking-tighter">휴먼 패치 파이프라인</h4>
                     <p className="text-xs font-semibold text-foreground/80 italic">{pipelineState.description}</p>
                   </div>
                 </div>
@@ -634,7 +634,7 @@ export function ContextPanel() {
 
                 <div className="mt-6 pt-4 border-t border-primary/10">
                   <p className="text-[13px] font-medium text-foreground/80 break-words leading-relaxed">
-                    <span className="text-[10px] font-black text-primary/70 mr-2">LOG</span>
+                    <span className="text-[10px] font-black text-primary/70 mr-2">로그</span>
                     {progressMessage}
                   </p>
                 </div>
@@ -647,7 +647,7 @@ export function ContextPanel() {
               <CardContent className="p-4 flex items-start gap-3">
                 <AlertTriangle className="size-4 text-destructive mt-0.5 shrink-0" />
                 <div className="space-y-1">
-                  <p className="text-xs font-black uppercase tracking-wider text-destructive">Pipeline Error</p>
+                  <p className="text-xs font-black uppercase tracking-wider text-destructive">파이프라인 오류</p>
                   <p className="text-sm text-foreground/80 break-words">{processingError}</p>
                 </div>
               </CardContent>
@@ -666,7 +666,7 @@ export function ContextPanel() {
                     <Building2 className="size-4" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[11px] font-black uppercase tracking-[0.24em] text-primary/70">Company Lens</p>
+                    <p className="text-[11px] font-black uppercase tracking-[0.24em] text-primary/70">기업 분석</p>
                     <h3 className="truncate text-sm font-black tracking-tight text-foreground">기업 분석 인사이트</h3>
                   </div>
                 </div>
@@ -738,7 +738,7 @@ export function ContextPanel() {
                   <TrendingUp className="size-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[11px] font-black uppercase tracking-[0.24em] text-primary/70">RAG Context</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.24em] text-primary/70">경험 컨텍스트</p>
                   <h3 className="truncate text-sm font-black tracking-tight text-foreground">연결된 경험 컨텍스트</h3>
                 </div>
               </div>
@@ -818,7 +818,7 @@ export function ContextPanel() {
                     className="h-9 w-full max-w-[220px]"
                   />
                   <span className="text-xs text-muted-foreground">
-                    Hard Limit {activeQuestion.maxLength.toLocaleString()}자
+                    최대 {activeQuestion.maxLength.toLocaleString()}자
                   </span>
                 </div>
               </div>
@@ -873,7 +873,7 @@ export function ContextPanel() {
             <div className="relative min-w-0 overflow-hidden">
               <div className="absolute top-3 left-3 flex items-center gap-1.5 pointer-events-none opacity-70">
                 <FileText className="size-4 text-primary" />
-                <span className="text-[10px] font-black uppercase tracking-tighter text-primary">Draft Pad</span>
+                <span className="text-[10px] font-black uppercase tracking-tighter text-primary">초안 편집</span>
               </div>
               <Textarea
                 value={activeQuestion.content}
@@ -893,7 +893,7 @@ export function ContextPanel() {
                 <Sparkles className="size-6" />
               </div>
               <div className="flex-1">
-                <h4 className="text-sm font-black text-primary uppercase tracking-tighter mb-1">Detected Key Summary</h4>
+                <h4 className="text-sm font-black text-primary uppercase tracking-tighter mb-1">AI 검토 요약</h4>
                 <p className="text-[13px] text-foreground/80 leading-relaxed font-bold italic">
                   {aiReviewReport?.summary}
                 </p>
@@ -931,11 +931,11 @@ export function ContextPanel() {
                         {isHovered ? (
                           <div className="flex items-center gap-2 animate-in zoom-in-95">
                             <Badge variant="default" className="text-[9px] font-black uppercase px-2 py-0.5">
-                              Review Point
+                              검토 포인트
                             </Badge>
                             {mis.reason && (
                               <div className="flex items-center gap-1.5 px-2 py-0.5 bg-background/50 rounded-md border border-primary/20 shadow-sm">
-                                <span className="text-[9px] font-black text-primary uppercase tracking-tighter">Judgement Basis:</span>
+                                <span className="text-[9px] font-black text-primary uppercase tracking-tighter">판단 근거:</span>
                                 <span className="text-[10px] font-bold text-foreground/80">{mis.reason}</span>
                               </div>
                             )}
@@ -984,13 +984,13 @@ export function ContextPanel() {
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
-                        <span className="text-[10px] font-bold text-muted-foreground/40 italic">Case #{idx + 1}</span>
+                        <span className="text-[10px] font-bold text-muted-foreground/40 italic">#{idx + 1}</span>
                       </div>
                     </div>
                   <div className="text-[13px] font-bold text-foreground/90 leading-relaxed bg-primary/5 p-4 rounded-2xl border border-primary/20 shadow-sm transition-all group-hover:bg-primary/10">
                     <div className="flex items-center gap-2 mb-2">
                       <Lightbulb className="size-3.5 text-primary" />
-                      <span className="text-[10px] uppercase tracking-wider font-black text-primary">직접 수정 (User Edit)</span>
+                      <span className="text-[10px] uppercase tracking-wider font-black text-primary">직접 수정</span>
                     </div>
                     <Textarea
                       value={mis.suggestion}
