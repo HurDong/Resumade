@@ -1481,10 +1481,10 @@ public class WorkspaceService {
 
     private int calculateFindingTarget(String washedKr) {
         if (washedKr == null || washedKr.isBlank()) {
-            return 4;
+            return 5;
         }
-
-        return Math.max(4, Math.min(10, (washedKr.length() / 220) + 3));
+        // 200자당 약 1개 finding, 글자가 많을수록 더 많이 요청 (상한 15)
+        return Math.max(5, Math.min(15, (washedKr.length() / 200) + 3));
     }
 
     private void supplementMistranslations(
@@ -1631,7 +1631,7 @@ public class WorkspaceService {
             return false;
         }
 
-        if (span.length() > 36) {
+        if (span.length() > 80) {
             return false;
         }
 

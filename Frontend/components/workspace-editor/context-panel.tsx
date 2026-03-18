@@ -814,7 +814,7 @@ export function ContextPanel() {
                     value={lengthTargetDraft}
                     onChange={(e) => setLengthTargetDraft(e.target.value)}
                     onBlur={commitLengthTargetDraft}
-                    placeholder={`?? ${Math.floor((activeQuestion.maxLength || 1000) * 0.8)}`}
+                    placeholder={`예: ${Math.floor((activeQuestion.maxLength || 1000) * 0.8)}`}
                     className="h-9 w-full max-w-[220px]"
                   />
                   <span className="text-xs text-muted-foreground">
