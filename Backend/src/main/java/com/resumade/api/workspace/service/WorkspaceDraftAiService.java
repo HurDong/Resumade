@@ -19,7 +19,10 @@ public interface WorkspaceDraftAiService {
             "[Priority 0: minimum target compliance] If the prompt asks for at least N characters, anything below N is a failed draft unless blocked by the hard limit.",
             "[Priority 0: title style] Start with a bracketed title like [Title], but do not use a question-summary title. The title must read like a strong accepted-cover-letter headline: short, memorable, specific, and centered on the candidate's value, operating stance, or contribution.",
             "[Priority 0: structure] Never use markdown headings, and make the first sentence answer the question directly in a conclusion-first style.",
-            "[Priority 0: five-step flow] After the conclusion-first opening, the body must naturally follow this logic inside one paragraph: problem situation -> cause analysis -> resolution process -> result -> lesson learned or job-relevant takeaway.",
+            "[Priority 0: natural self-introduction form] Write like a polished self-introduction answer, not like an analysis report, consulting memo, or case-study breakdown.",
+            "[Priority 0: no report labels] Do not use explicit section labels or colon-led markers such as 문제점:, 원인:, 분석:, 조치:, 해결:, 결과:, 교훈:, 실행 계획:, 요약:, Summary:, Problem:, Action:, Result:.",
+            "[Priority 0: no list formatting] Do not use numbering or list markers such as (1), (2), 1., 2., 첫째, 둘째, or bullet-point style sequencing unless the user explicitly asked for that format.",
+            "[Priority 0: narrative flow] After the conclusion-first opening, keep a natural narrative arc where situation, judgment, action, result, and takeaway are woven into prose rather than separated into labeled blocks.",
             "[Priority 0: no aspiration-only prose] Do not let the answer drift into a future-promise essay centered on phrases like 하겠습니다, 되고 싶습니다, 기여하겠습니다 without enough concrete past evidence.",
             "[Priority 0: no evidence gap] An answer that lacks problem, cause, action, or result is a failed draft. If needed, reconstruct the story so those elements are explicit.",
             "[Priority 0: factual grounding] Use the supplied experience context as the factual base and do not invent personal experience.",
@@ -29,9 +32,10 @@ public interface WorkspaceDraftAiService {
             "[Priority 0: concise-answer strategy] For shorter answers, do not spread across many themes. Concentrate on one or two role-critical strengths and make the candidate feel like a realistic junior hire for the target team.",
             "[Priority 1: user direction] Unless it conflicts with Priority 0 constraints, follow the user's natural-language directive very closely. Treat it as the preferred tone, emphasis, exclusions, and framing for this answer.",
             "Avoid repeating the same project story that seems already used in other questions unless absolutely necessary.",
-            "Hit the requested length target. If the draft is short, add concrete detail, reasoning, and impact rather than generic filler.",
-            "If the user asks for an approximate character count, stay close to that target and do not underwrite unless constrained by the hard limit or factual grounding.",
-            "Before returning the final answer, silently self-check the character count. If it is materially shorter than requested, expand and recount before returning.",
+            "Treat the preferred target as the real writing goal for the first output, not as a loose ceiling.",
+            "Do not stop merely because the minimum length has been satisfied.",
+            "If the draft is short, add concrete detail, reasoning, and impact rather than generic filler until it reaches the preferred target window.",
+            "Before returning the final answer, silently self-check the character count. If it is materially shorter than the preferred target, expand and recount before returning.",
             "If needed, drop lower-priority detail rather than exceeding the hard limit."
     })
     @UserMessage("""
@@ -41,7 +45,9 @@ public interface WorkspaceDraftAiService {
             Company context:
             {{companyContext}}
 
-            Target length: {{minTarget}} to {{maxTarget}} characters (hard limit: {{maxLength}})
+            Absolute minimum length: {{minTarget}} characters
+            Preferred writing target: {{maxTarget}} characters
+            Hard limit: {{maxLength}} characters
 
             Experience context:
             {{context}}
@@ -59,11 +65,15 @@ public interface WorkspaceDraftAiService {
             - Prefer a compact headline that foregrounds value, stance, strength, or contribution
             - Good title patterns resemble accepted cover-letter headlines such as [상생과 존중], [초석의 중요성], [환자안전을 지키는 데이터 운영], [문제를 운영으로 닫는 개발자]
             - The first sentence must answer directly
-            - Keep a deductive opening, but organize the body in this order: problem situation -> cause analysis -> resolution process -> result -> lesson learned or job-relevant takeaway
-            - Keep the five-step flow inside one paragraph without section labels
+            - Keep a deductive opening, but weave situation, judgment, action, result, and takeaway naturally into prose
+            - Keep the body in self-introduction form, not report form
+            - Do not use labels such as 문제점:, 원인:, 조치:, 결과:, 교훈:, 요약:
+            - Do not use numbering or list-style sequencing such as (1), (2), 1., 2., 첫째, 둘째 unless the user explicitly asks for it
             - Never exceed the hard limit, even by 1 character
             - Count characters with spaces included; every visible character counts as 1
             - If the user gives a minimum length such as 300 characters, anything below that minimum is a failure
+            - Treat the preferred writing target as the real goal for the first output
+            - Do not stop early just because the minimum length has been satisfied
             - Stay grounded in the supplied experience data
             - Use company-specific details only when they genuinely sharpen fit
             - Show role, action, judgment, and result rather than listing experience
@@ -96,7 +106,10 @@ public interface WorkspaceDraftAiService {
             "[Priority 0: minimum target compliance] If the prompt asks for at least N characters, anything below N is a failed draft unless blocked by the hard limit.",
             "[Priority 0: title style] Start with a bracketed title like [Title], but do not use a question-summary title. The title must read like a strong accepted-cover-letter headline: short, memorable, specific, and centered on the candidate's value, operating stance, or contribution.",
             "[Priority 0: structure] Never use markdown headings, and make the first sentence answer the question directly in a conclusion-first style.",
-            "[Priority 0: five-step flow] After the conclusion-first opening, the body must naturally follow this logic inside one paragraph: problem situation -> cause analysis -> resolution process -> result -> lesson learned or job-relevant takeaway.",
+            "[Priority 0: natural self-introduction form] Write like a polished self-introduction answer, not like an analysis report, consulting memo, or case-study breakdown.",
+            "[Priority 0: no report labels] Do not use explicit section labels or colon-led markers such as 문제점:, 원인:, 분석:, 조치:, 해결:, 결과:, 교훈:, 실행 계획:, 요약:, Summary:, Problem:, Action:, Result:.",
+            "[Priority 0: no list formatting] Do not use numbering or list markers such as (1), (2), 1., 2., 첫째, 둘째, or bullet-point style sequencing unless the user explicitly asked for that format.",
+            "[Priority 0: narrative flow] After the conclusion-first opening, keep a natural narrative arc where situation, judgment, action, result, and takeaway are woven into prose rather than separated into labeled blocks.",
             "[Priority 0: no aspiration-only prose] Do not let the answer drift into a future-promise essay centered on phrases like 하겠습니다, 되고 싶습니다, 기여하겠습니다 without enough concrete past evidence.",
             "[Priority 0: no evidence gap] An answer that lacks problem, cause, action, or result is a failed draft. If needed, reconstruct the story so those elements are explicit.",
             "[Priority 0: factual grounding] Keep factual consistency with the supplied experience context and do not embellish unsupported achievements.",
@@ -105,9 +118,10 @@ public interface WorkspaceDraftAiService {
             "[Priority 0: job fit and verifiability] Use the supplied company context to make motivation, service understanding, and role fit more concrete, and prefer wording that can survive interview verification.",
             "[Priority 0: concise-answer strategy] For shorter answers, focus on one or two strengths that best fit the target role instead of sounding broad or grand. Make the candidate read like a strong junior applicant with practical value.",
             "[Priority 1: user direction] Unless it conflicts with Priority 0 constraints, follow the user's natural-language directive very closely. Treat it as the preferred tone, emphasis, exclusions, and framing for this answer.",
-            "Hit the requested length target. Expand with substance, not empty phrases.",
-            "If the user asks for an approximate character count, stay close to that target and avoid stopping materially shorter unless constrained by the hard limit or factual grounding.",
-            "Before returning the final answer, silently self-check the character count. If it is materially shorter than requested, expand and recount before returning.",
+            "Treat the preferred target as the real writing goal for the refined output, not as a loose ceiling.",
+            "Do not stop merely because the minimum length has been satisfied.",
+            "Expand with substance, not empty phrases, until the refined draft reaches the preferred target window.",
+            "Before returning the final answer, silently self-check the character count. If it is materially shorter than the preferred target, expand and recount before returning.",
             "If needed, cut lower-priority wording rather than exceeding the hard limit."
     })
     @UserMessage("""
@@ -119,7 +133,9 @@ public interface WorkspaceDraftAiService {
             Current draft:
             {{input}}
 
-            Target length: {{minTarget}} to {{maxTarget}} characters (hard limit: {{maxLength}})
+            Absolute minimum length: {{minTarget}} characters
+            Preferred writing target: {{maxTarget}} characters
+            Hard limit: {{maxLength}} characters
 
             Experience context:
             {{context}}
@@ -137,11 +153,15 @@ public interface WorkspaceDraftAiService {
             - Prefer a compact headline that foregrounds value, stance, strength, or contribution
             - Good title patterns resemble accepted cover-letter headlines such as [상생과 존중], [초석의 중요성], [환자안전을 지키는 데이터 운영], [문제를 운영으로 닫는 개발자]
             - The first sentence must answer directly
-            - Keep a deductive opening, but organize the body in this order: problem situation -> cause analysis -> resolution process -> result -> lesson learned or job-relevant takeaway
-            - Keep the five-step flow inside one paragraph without section labels
+            - Keep a deductive opening, but weave situation, judgment, action, result, and takeaway naturally into prose
+            - Keep the body in self-introduction form, not report form
+            - Do not use labels such as 문제점:, 원인:, 조치:, 결과:, 교훈:, 요약:
+            - Do not use numbering or list-style sequencing such as (1), (2), 1., 2., 첫째, 둘째 unless the user explicitly asks for it
             - Never exceed the hard limit, even by 1 character
             - Count characters with spaces included; every visible character counts as 1
             - If the user gives a minimum length such as 300 characters, anything below that minimum is a failure
+            - Treat the preferred writing target as the real goal for the refined output
+            - Do not stop early just because the minimum length has been satisfied
             - Keep factual consistency with the supplied experience data
             - Replace generic or praise-heavy wording with job-fit reasoning
             - Upgrade company and role specificity where it helps

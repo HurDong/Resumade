@@ -72,6 +72,7 @@ public class CompanyResearchService {
                     questionGoal,
                     rawJd
             );
+            response = applyFocusOverrides(response, job.request(), company, position);
 
             Application application = applicationRepository.findById(job.applicationId()).orElseThrow();
             application.setCompanyResearch(objectMapper.writeValueAsString(response));
@@ -106,6 +107,35 @@ public class CompanyResearchService {
 
     private String valueOrFallback(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private CompanyResearchResponse applyFocusOverrides(
+            CompanyResearchResponse response,
+            CompanyResearchRequest request,
+            String company,
+            String position
+    ) {
+        CompanyResearchResponse safeResponse = response != null ? response : new CompanyResearchResponse();
+        CompanyResearchResponse.Focus focus = safeResponse.getFocus() != null
+                ? safeResponse.getFocus()
+                : new CompanyResearchResponse.Focus();
+
+        focus.setCompany(company);
+        focus.setPosition(position);
+        focus.setBusinessUnit(preferRequestValue(request.getBusinessUnit(), focus.getBusinessUnit()));
+        focus.setTargetService(preferRequestValue(request.getTargetService(), focus.getTargetService()));
+        focus.setFocusRole(preferRequestValue(request.getFocusRole(), valueOrFallback(focus.getFocusRole(), position)));
+        focus.setTechFocus(preferRequestValue(request.getTechFocus(), focus.getTechFocus()));
+        focus.setQuestionGoal(preferRequestValue(request.getQuestionGoal(), focus.getQuestionGoal()));
+
+        safeResponse.setFocus(focus);
+        return safeResponse;
+    }
+
+    private String preferRequestValue(String requestValue, String fallbackValue) {
+        return requestValue != null && !requestValue.isBlank()
+                ? requestValue.trim()
+                : valueOrFallback(fallbackValue, "");
     }
 
     private record ResearchJob(Long applicationId, Application application, CompanyResearchRequest request) {

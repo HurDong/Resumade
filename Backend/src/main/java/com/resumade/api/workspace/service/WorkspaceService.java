@@ -33,8 +33,24 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class WorkspaceService {
     private static final long HEARTBEAT_INTERVAL_SECONDS = 8L;
-    private static final Pattern REQUESTED_LENGTH_PATTERN = Pattern.compile("(\\d{2,4})\\s*(?:글자|자)");
-
+    private static final Pattern REQUESTED_LENGTH_PATTERN = Pattern.compile(
+            "([0-9][0-9,]{1,4})\\s*(?:\\uAE00\\uC790\\uC218|\\uAE00\\uC790|\\uC790|characters?|chars?)",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern PREFIX_MINIMUM_LENGTH_PATTERN = Pattern.compile(
+            "(?:\\uCD5C\\uC18C|minimum|at\\s+least)\\s*([0-9][0-9,]{1,4})\\s*(?:\\uAE00\\uC790\\uC218|\\uAE00\\uC790|\\uC790|characters?|chars?)",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern SUFFIX_MINIMUM_LENGTH_PATTERN = Pattern.compile(
+            "([0-9][0-9,]{1,4})\\s*(?:\\uAE00\\uC790\\uC218|\\uAE00\\uC790|\\uC790|characters?|chars?)\\s*(?:\\uC774\\uC0C1|\\uCD5C\\uC18C|or\\s+more|minimum)",
+            Pattern.CASE_INSENSITIVE);
+    private static final int MINIMUM_LENGTH_EXPANSION_ATTEMPTS = 3;
+    private static final String LENGTH_RETRY_MARKER = "[LENGTH_RETRY]";
+    private static final double DEFAULT_MIN_TARGET_FLOOR_RATIO = 0.85;
+    private static final String NO_EXTRA_USER_DIRECTIVE = "No extra user directive.";
+    private static final String STAGE_RAG = "RAG";
+    private static final String STAGE_DRAFT = "DRAFT";
+    private static final String STAGE_WASH = "WASH";
+    private static final String STAGE_PATCH = "PATCH";
+    private static final String STAGE_DONE = "DONE";
 
     private static class SseConnectionClosedException extends RuntimeException {
         private SseConnectionClosedException(Throwable cause) {
@@ -50,17 +66,19 @@ public class WorkspaceService {
     private final WorkspaceQuestionRepository questionRepository;
     private final ExperienceVectorRetrievalService experienceVectorRetrievalService;
 
-    public List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> getMatchedExperiences(Long questionId, String customQuery) {
+    public List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> getMatchedExperiences(
+            Long questionId, String customQuery) {
         WorkspaceQuestion question = questionRepository.findById(questionId)
                 .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
 
         String query = (customQuery != null && !customQuery.isBlank()) ? customQuery : question.getTitle();
         List<Experience> allExperiences = experienceRepository.findAll();
-        return experienceVectorRetrievalService.search(query, 3, extractUsedExperienceIds(question, questionId, allExperiences));
+        return experienceVectorRetrievalService.search(query, 3,
+                extractUsedExperienceIds(question, questionId, allExperiences));
     }
 
     @Transactional(readOnly = true)
-    public void processRefinement(Long questionId, String directive, SseEmitter emitter) {
+    public void processRefinement(Long questionId, String directive, Integer targetChars, SseEmitter emitter) {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
             WorkspaceQuestion initialQuestion = questionRepository.findById(questionId)
@@ -69,25 +87,26 @@ public class WorkspaceService {
             String company = initialQuestion.getApplication().getCompanyName();
             String position = initialQuestion.getApplication().getPosition();
             String companyContext = buildApplicationResearchContext(initialQuestion);
+            String questionTitle = initialQuestion.getTitle();
             String currentInput = initialQuestion.getWashedKr() != null
                     ? initialQuestion.getWashedKr()
                     : initialQuestion.getContent();
 
-            sendSse(emitter, "progress", "🪄 기존 초안을 바탕으로 더 자연스럽고 설득력 있게 다듬고 있어요.");
-            sendSse(emitter, "progress", "📚 문항과 잘 맞는 경험을 다시 찾아서 반영하고 있어요.");
+            sendProgress(emitter, STAGE_RAG, "Rebuilding draft context from question and company data.");
+            sendProgress(emitter, STAGE_RAG, "Filtering overlapping experiences from other questions.");
 
             List<Experience> allExperiences = experienceRepository.findAll();
             String others = buildOthersContext(initialQuestion, questionId, allExperiences);
             String context = buildFilteredContext(initialQuestion, questionId, allExperiences);
 
             paceProcessing();
-            sendSse(emitter, "progress", "✍️ 요청하신 방향을 반영해 문장을 더 정교하게 손보고 있어요.");
+            sendProgress(emitter, STAGE_DRAFT, "Regenerating the draft with updated evidence and directives.");
 
             int maxLength = initialQuestion.getMaxLength();
-            int[] targetRange = resolveTargetRange(maxLength, directive, 0.9, 0.98);
+            int[] targetRange = resolveTargetRange(maxLength, directive, targetChars, 0.80, 0.95);
             int minTargetChars = targetRange[0];
             int maxTargetChars = targetRange[1];
-            String directiveForPrompt = augmentDirectiveForPrompt(directive, maxLength);
+            String directiveForPrompt = augmentDirectiveForPrompt(directive, maxLength, targetChars);
 
             WorkspaceDraftAiService.DraftResponse refineResponse = workspaceDraftAiService.refineDraft(
                     company,
@@ -99,11 +118,29 @@ public class WorkspaceService {
                     maxTargetChars,
                     context,
                     others,
-                    directiveForPrompt
-            );
+                    directiveForPrompt);
+            logLengthMetrics("refine", maxLength, minTargetChars, maxTargetChars, refineResponse.text, 0);
 
-            String rawRefinedDraft = normalizeTitleSpacing(refineResponse.text).trim();
-            String refinedDraft = prepareDraftForTranslation(rawRefinedDraft, maxLength);
+            String rawRefinedDraft = expandToMinimumLength(
+                    normalizeTitleSpacing(refineResponse.text).trim(),
+                    minTargetChars,
+                    maxTargetChars,
+                    maxLength,
+                    company,
+                    position,
+                    questionTitle,
+                    companyContext,
+                    context,
+                    others,
+                    directiveForPrompt);
+            String refinedDraft = prepareDraftForTranslation(
+                    rawRefinedDraft,
+                    maxLength,
+                    company,
+                    position,
+                    companyContext,
+                    context,
+                    others);
 
             WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
             question.setContent(rawRefinedDraft);
@@ -115,15 +152,38 @@ public class WorkspaceService {
             }
 
             paceProcessing();
-            sendSse(emitter, "progress", "🧼 문장을 더 사람답게 다듬기 위해 표현을 한 번 더 정리하고 있어요.");
+            sendProgress(emitter, STAGE_WASH, "Translating the draft to English as an intermediate step.");
             String translatedEn = translationService.translateToEnglish(refinedDraft);
 
             paceProcessing();
-            sendSse(emitter, "progress", "🔁 어색한 느낌이 남지 않도록 한국어 문장을 자연스럽게 다시 다듬고 있어요.");
+            sendProgress(emitter, STAGE_WASH, "Back-translating to Korean to produce the washed draft.");
             String washedKr = prepareDraftForTranslation(
                     normalizeTitleSpacing(translationService.translateToKorean(translatedEn)),
-                    maxLength
-            );
+                    maxLength,
+                    company,
+                    position,
+                    companyContext,
+                    context,
+                    others);
+            washedKr = prepareDraftForTranslation(
+                    expandToMinimumLength(
+                            washedKr,
+                            minTargetChars,
+                            maxTargetChars,
+                            maxLength,
+                            company,
+                            position,
+                            questionTitle,
+                            companyContext,
+                            context,
+                            others,
+                            directiveForPrompt),
+                    maxLength,
+                    company,
+                    position,
+                    companyContext,
+                    context,
+                    others);
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setWashedKr(washedKr);
@@ -131,7 +191,7 @@ public class WorkspaceService {
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
-            sendSse(emitter, "progress", "🔎 마지막으로 표현이 어색한 곳이나 의미가 흐려진 부분이 없는지 꼼꼼히 확인하고 있어요.");
+            sendProgress(emitter, STAGE_PATCH, "Reviewing washed draft for meaning loss and awkward phrasing.");
             int maxLengthPatch = initialQuestion.getMaxLength();
             int findingTarget = calculateFindingTarget(washedKr);
             DraftAnalysisResult analysis = analyzePatchSafely(
@@ -140,8 +200,7 @@ public class WorkspaceService {
                     washedKr,
                     maxLengthPatch,
                     findingTarget,
-                    context
-            );
+                    context);
 
             paceProcessing();
             normalizeAnalysis(analysis, refinedDraft, washedKr, findingTarget);
@@ -153,14 +212,23 @@ public class WorkspaceService {
             String responseDraft = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
                     ? analysis.getHumanPatchedText()
                     : washedKr;
-            responseDraft = prepareDraftForTranslation(normalizeTitleSpacing(responseDraft), maxLength);
+            responseDraft = prepareDraftForTranslation(
+                    normalizeTitleSpacing(responseDraft),
+                    maxLength,
+                    company,
+                    position,
+                    companyContext,
+                    context,
+                    others);
 
             Map<String, Object> result = new HashMap<>();
             result.put("draft", washedKr);
             result.put("humanPatched", responseDraft);
             result.put("mistranslations", analysis.getMistranslations());
             result.put("aiReviewReport", analysis.getAiReviewReport());
+            logLengthMetrics("final", maxLength, minTargetChars, maxTargetChars, responseDraft, 0);
 
+            sendStage(emitter, STAGE_DONE);
             sendSse(emitter, "complete", result);
             emitter.complete();
         } catch (SseConnectionClosedException e) {
@@ -168,7 +236,7 @@ public class WorkspaceService {
         } catch (Exception e) {
             log.error("Refinement process failed", e);
             try {
-                sendSse(emitter, "error", "오류가 발생했습니다.");
+                sendSse(emitter, "error", resolveUserFacingErrorMessage(e));
             } catch (SseConnectionClosedException ignored) {
                 log.info("Refinement stream already closed while reporting error");
             }
@@ -179,7 +247,7 @@ public class WorkspaceService {
     }
 
     @Transactional(readOnly = true)
-    public void processHumanPatch(Long questionId, boolean useDirective, SseEmitter emitter) {
+    public void processHumanPatch(Long questionId, boolean useDirective, Integer targetChars, SseEmitter emitter) {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
             WorkspaceQuestion initialQuestion = questionRepository.findById(questionId)
@@ -190,42 +258,62 @@ public class WorkspaceService {
             String questionTitle = initialQuestion.getTitle();
             String companyContext = buildApplicationResearchContext(initialQuestion);
 
-            Thread.sleep(100);
             sendComment(emitter, "flush buffer");
 
-            sendSse(emitter, "progress", "🚀 자기소개서 초안 작성을 시작하고 있어요.");
+            sendProgress(emitter, STAGE_RAG, "Preparing question and company context for draft generation.");
             paceProcessing();
 
-            sendSse(emitter, "progress", "🔍 다른 문항과 내용이 겹치지 않도록 먼저 확인하고 있어요.");
+            sendProgress(emitter, STAGE_RAG, "Checking other questions to reduce repeated experience usage.");
             List<Experience> allExperiences = experienceRepository.findAll();
             String others = buildOthersContext(initialQuestion, questionId, allExperiences);
 
-            sendSse(emitter, "progress", "📚 이 문항에 가장 잘 맞는 경험을 골라 글에 녹일 준비를 하고 있어요.");
+            sendProgress(emitter, STAGE_RAG, "Selecting the most relevant experience evidence for this prompt.");
             String context = buildFilteredContext(initialQuestion, questionId, allExperiences);
 
             paceProcessing();
-            sendSse(emitter, "progress", "✍️ 경험과 기업 맥락을 바탕으로 초안을 작성하고 있어요.");
+            sendProgress(emitter, STAGE_DRAFT, "Generating a fresh draft from selected evidence.");
 
             int maxLengthGen = initialQuestion.getMaxLength();
+            String rawDirective = initialQuestion.getUserDirective();
             String directiveForPrompt = useDirective
-                    ? augmentDirectiveForPrompt(initialQuestion.getUserDirective(), maxLengthGen)
-                    : "없음";
-            int[] targetRange = resolveTargetRange(maxLengthGen, directiveForPrompt, 0.88, 0.95);
+                    ? augmentDirectiveForPrompt(rawDirective, maxLengthGen, targetChars)
+                    : NO_EXTRA_USER_DIRECTIVE;
+            int[] targetRange = resolveTargetRange(maxLengthGen, rawDirective, targetChars, 0.80, 0.95);
+            int minTargetChars = targetRange[0];
+            int preferredTargetChars = targetRange[1];
             WorkspaceDraftAiService.DraftResponse draftResponse = workspaceDraftAiService.generateDraft(
                     company,
                     position,
                     questionTitle,
                     companyContext,
                     maxLengthGen,
-                    targetRange[0],
-                    targetRange[1],
+                    minTargetChars,
+                    preferredTargetChars,
                     context,
                     others,
-                    directiveForPrompt
-            );
+                    directiveForPrompt);
+            logLengthMetrics("generate", maxLengthGen, minTargetChars, preferredTargetChars, draftResponse.text, 0);
 
-            String rawDraft = normalizeTitleSpacing(draftResponse.text).trim();
-            String draft = prepareDraftForTranslation(rawDraft, maxLengthGen);
+            String rawDraft = expandToMinimumLength(
+                    normalizeTitleSpacing(draftResponse.text).trim(),
+                    minTargetChars,
+                    preferredTargetChars,
+                    maxLengthGen,
+                    company,
+                    position,
+                    questionTitle,
+                    companyContext,
+                    context,
+                    others,
+                    directiveForPrompt);
+            String draft = prepareDraftForTranslation(
+                    rawDraft,
+                    maxLengthGen,
+                    company,
+                    position,
+                    companyContext,
+                    context,
+                    others);
 
             WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
             question.setContent(rawDraft);
@@ -236,15 +324,38 @@ public class WorkspaceService {
             }
 
             paceProcessing();
-            sendSse(emitter, "progress", "🧼 더 자연스럽고 사람다운 문장이 되도록 표현을 한 번 더 정리하고 있어요.");
+            sendProgress(emitter, STAGE_WASH, "Translating the generated draft to English intermediate text.");
             String translatedEn = translationService.translateToEnglish(draft);
 
             paceProcessing();
-            sendSse(emitter, "progress", "🔁 읽었을 때 부드럽게 느껴지도록 한국어 문장을 다시 다듬고 있어요.");
+            sendProgress(emitter, STAGE_WASH, "Back-translating to Korean to produce the washed draft.");
             String washedKr = prepareDraftForTranslation(
                     normalizeTitleSpacing(translationService.translateToKorean(translatedEn)),
-                    maxLengthGen
-            );
+                    maxLengthGen,
+                    company,
+                    position,
+                    companyContext,
+                    context,
+                    others);
+            washedKr = prepareDraftForTranslation(
+                    expandToMinimumLength(
+                            washedKr,
+                            minTargetChars,
+                            preferredTargetChars,
+                            maxLengthGen,
+                            company,
+                            position,
+                            questionTitle,
+                            companyContext,
+                            context,
+                            others,
+                            directiveForPrompt),
+                    maxLengthGen,
+                    company,
+                    position,
+                    companyContext,
+                    context,
+                    others);
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setWashedKr(washedKr);
@@ -252,7 +363,7 @@ public class WorkspaceService {
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
-            sendSse(emitter, "progress", "✨ 마지막으로 어색한 표현과 의미 차이를 점검하면서 결과를 마무리하고 있어요.");
+            sendProgress(emitter, STAGE_PATCH, "Running human-patch analysis on washed draft quality.");
             int maxLengthFinal = initialQuestion.getMaxLength();
             int findingTarget = calculateFindingTarget(washedKr);
             DraftAnalysisResult analysis = analyzePatchSafely(
@@ -261,8 +372,7 @@ public class WorkspaceService {
                     washedKr,
                     maxLengthFinal,
                     findingTarget,
-                    context
-            );
+                    context);
 
             paceProcessing();
             normalizeAnalysis(analysis, draft, washedKr, findingTarget);
@@ -274,14 +384,23 @@ public class WorkspaceService {
             String responseDraft = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
                     ? analysis.getHumanPatchedText()
                     : washedKr;
-            responseDraft = prepareDraftForTranslation(normalizeTitleSpacing(responseDraft), maxLengthFinal);
+            responseDraft = prepareDraftForTranslation(
+                    normalizeTitleSpacing(responseDraft),
+                    maxLengthFinal,
+                    company,
+                    position,
+                    companyContext,
+                    context,
+                    others);
 
             Map<String, Object> result = new HashMap<>();
             result.put("draft", washedKr);
             result.put("humanPatched", responseDraft);
             result.put("mistranslations", analysis.getMistranslations());
             result.put("aiReviewReport", analysis.getAiReviewReport());
+            logLengthMetrics("final", maxLengthFinal, minTargetChars, preferredTargetChars, responseDraft, 0);
 
+            sendStage(emitter, STAGE_DONE);
             sendSse(emitter, "complete", result);
             emitter.complete();
         } catch (SseConnectionClosedException e) {
@@ -289,7 +408,7 @@ public class WorkspaceService {
         } catch (Exception e) {
             log.error("Human Patch process failed", e);
             try {
-                sendSse(emitter, "error", "오류가 발생했습니다.");
+                sendSse(emitter, "error", resolveUserFacingErrorMessage(e));
             } catch (SseConnectionClosedException ignored) {
                 log.info("Human patch stream already closed while reporting error");
             }
@@ -297,6 +416,216 @@ public class WorkspaceService {
         } finally {
             heartbeat.stop();
         }
+    }
+
+    @Transactional(readOnly = true)
+    public void processRewash(Long questionId, SseEmitter emitter) {
+        HeartbeatHandle heartbeat = startHeartbeat(emitter);
+        try {
+            WorkspaceQuestion question = questionRepository.findById(questionId)
+                    .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
+
+            String draft = question.getContent();
+            if (draft == null || draft.isBlank()) {
+                throw new IllegalStateException("Draft is empty");
+            }
+
+            String company = question.getApplication().getCompanyName();
+            String position = question.getApplication().getPosition();
+            String questionTitle = question.getTitle();
+            String companyContext = buildApplicationResearchContext(question);
+            List<Experience> allExperiences = experienceRepository.findAll();
+            String others = buildOthersContext(question, questionId, allExperiences);
+            String context = buildFilteredContext(question, questionId, allExperiences);
+
+            sendComment(emitter, "flush buffer");
+            sendProgress(emitter, STAGE_DRAFT, "Restarting wash pipeline from the current draft.");
+            sendSse(emitter, "draft_intermediate", draft);
+
+            paceProcessing();
+            sendProgress(emitter, STAGE_WASH, "Translating current draft to English intermediate text.");
+            String translatedEn = translationService.translateToEnglish(draft);
+
+            paceProcessing();
+            sendProgress(emitter, STAGE_WASH, "Back-translating to Korean and recalibrating length.");
+
+            int maxLength = question.getMaxLength();
+            String rawDirective = question.getUserDirective();
+            String directiveForPrompt = augmentDirectiveForPrompt(rawDirective, maxLength, null);
+            int[] targetRange = resolveTargetRange(maxLength, rawDirective, null, 0.80, 0.95);
+            int minTargetChars = targetRange[0];
+            int preferredTargetChars = targetRange[1];
+
+            String washedKr = prepareDraftForTranslation(
+                    normalizeTitleSpacing(translationService.translateToKorean(translatedEn)),
+                    maxLength,
+                    company,
+                    position,
+                    companyContext,
+                    context,
+                    others);
+            washedKr = prepareDraftForTranslation(
+                    expandToMinimumLength(
+                            washedKr,
+                            minTargetChars,
+                            preferredTargetChars,
+                            maxLength,
+                            company,
+                            position,
+                            questionTitle,
+                            companyContext,
+                            context,
+                            others,
+                            directiveForPrompt),
+                    maxLength,
+                    company,
+                    position,
+                    companyContext,
+                    context,
+                    others);
+
+            question = questionRepository.findById(questionId).orElseThrow();
+            question.setWashedKr(washedKr);
+            questionRepository.save(question);
+            sendSse(emitter, "washed_intermediate", washedKr);
+
+            paceProcessing();
+            sendProgress(emitter, STAGE_PATCH, "Re-running patch analysis on the refreshed washed draft.");
+            finalizePatchAnalysis(
+                    emitter,
+                    questionId,
+                    draft,
+                    washedKr,
+                    maxLength,
+                    context,
+                    company,
+                    position,
+                    companyContext,
+                    others);
+            emitter.complete();
+        } catch (SseConnectionClosedException e) {
+            log.info("Rewash stream closed by client");
+        } catch (Exception e) {
+            log.error("Rewash process failed", e);
+            try {
+                sendSse(emitter, "error", resolveUserFacingErrorMessage(e));
+            } catch (SseConnectionClosedException ignored) {
+                log.info("Rewash stream already closed while reporting error");
+            }
+            completeQuietly(emitter);
+        } finally {
+            heartbeat.stop();
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public void processRepatch(Long questionId, SseEmitter emitter) {
+        HeartbeatHandle heartbeat = startHeartbeat(emitter);
+        try {
+            WorkspaceQuestion question = questionRepository.findById(questionId)
+                    .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
+
+            String draft = question.getContent();
+            String washedKr = question.getWashedKr();
+            if (draft == null || draft.isBlank()) {
+                throw new IllegalStateException("Draft is empty");
+            }
+            if (washedKr == null || washedKr.isBlank()) {
+                throw new IllegalStateException("Washed draft is empty");
+            }
+
+            List<Experience> allExperiences = experienceRepository.findAll();
+            String context = buildFilteredContext(question, questionId, allExperiences);
+            String company = question.getApplication().getCompanyName();
+            String position = question.getApplication().getPosition();
+            String companyContext = buildApplicationResearchContext(question);
+            String others = buildOthersContext(question, questionId, allExperiences);
+
+            sendComment(emitter, "flush buffer");
+            sendProgress(emitter, STAGE_PATCH, "Reloading current draft and washed draft for repatch.");
+            sendSse(emitter, "draft_intermediate", draft);
+            sendSse(emitter, "washed_intermediate", washedKr);
+
+            paceProcessing();
+            sendProgress(emitter, STAGE_PATCH, "Re-analyzing washed draft for critical patch points.");
+            finalizePatchAnalysis(
+                    emitter,
+                    questionId,
+                    draft,
+                    washedKr,
+                    question.getMaxLength(),
+                    context,
+                    company,
+                    position,
+                    companyContext,
+                    others);
+            emitter.complete();
+        } catch (SseConnectionClosedException e) {
+            log.info("Repatch stream closed by client");
+        } catch (Exception e) {
+            log.error("Repatch process failed", e);
+            try {
+                sendSse(emitter, "error", resolveUserFacingErrorMessage(e));
+            } catch (SseConnectionClosedException ignored) {
+                log.info("Repatch stream already closed while reporting error");
+            }
+            completeQuietly(emitter);
+        } finally {
+            heartbeat.stop();
+        }
+    }
+
+    private void finalizePatchAnalysis(
+            SseEmitter emitter,
+            Long questionId,
+            String originalDraft,
+            String washedKr,
+            int maxLength,
+            String context,
+            String company,
+            String position,
+            String companyContext,
+            String others) throws Exception {
+        int findingTarget = calculateFindingTarget(washedKr);
+        DraftAnalysisResult analysis = analyzePatchSafely(
+                emitter,
+                originalDraft,
+                washedKr,
+                maxLength,
+                findingTarget,
+                context);
+
+        paceProcessing();
+        normalizeAnalysis(analysis, originalDraft, washedKr, findingTarget);
+
+        WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
+        question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
+        question.setAiReview(objectMapper.writeValueAsString(analysis.getAiReviewReport()));
+        question.setWashedKr(washedKr);
+        questionRepository.save(question);
+
+        String responseDraft = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
+                ? analysis.getHumanPatchedText()
+                : washedKr;
+        responseDraft = prepareDraftForTranslation(
+                normalizeTitleSpacing(responseDraft),
+                maxLength,
+                company,
+                position,
+                companyContext,
+                context,
+                others);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("draft", washedKr);
+        result.put("humanPatched", responseDraft);
+        result.put("mistranslations", analysis.getMistranslations());
+        result.put("aiReviewReport", analysis.getAiReviewReport());
+        int[] finalTargetRange = resolveTargetRange(maxLength, null, null, 0.80, 0.95);
+        logLengthMetrics("final", maxLength, finalTargetRange[0], finalTargetRange[1], responseDraft, 0);
+
+        sendStage(emitter, STAGE_DONE);
+        sendSse(emitter, "complete", result);
     }
 
     private HeartbeatHandle startHeartbeat(SseEmitter emitter) {
@@ -317,7 +646,8 @@ public class WorkspaceService {
         return new HeartbeatHandle(scheduler, future);
     }
 
-    private String buildOthersContext(WorkspaceQuestion initialQuestion, Long questionId, List<Experience> allExperiences) {
+    private String buildOthersContext(WorkspaceQuestion initialQuestion, Long questionId,
+            List<Experience> allExperiences) {
         return initialQuestion.getApplication().getQuestions().stream()
                 .filter(q -> !q.getId().equals(questionId))
                 .map(q -> {
@@ -326,76 +656,167 @@ public class WorkspaceService {
                             .filter(exp -> content.contains(exp.getTitle()))
                             .map(Experience::getTitle)
                             .findFirst()
-                            .orElse("알 수 없음");
-                    return String.format("[문항: %s | 주내용: %s | 사용된 소재: %s]", q.getTitle(), content, usedProject);
+                            .orElse("None specified");
+                    return String.format("[Other question: %s | Current content: %s | Used experience: %s]",
+                            q.getTitle(), content, usedProject);
                 })
                 .collect(Collectors.joining("\n"));
     }
 
-    private int[] resolveTargetRange(int maxLength, String directive, double defaultMinRatio, double defaultMaxRatio) {
-        int minTarget = (int) (maxLength * defaultMinRatio);
-        int maxTarget = (int) (maxLength * defaultMaxRatio);
-
-        Integer requestedLength = extractRequestedLength(directive);
-        if (requestedLength == null || maxLength <= 0) {
-            return new int[]{minTarget, maxTarget};
+    private String resolveUserFacingErrorMessage(Exception e) {
+        if (e instanceof IllegalStateException && e.getMessage() != null
+                && e.getMessage().contains("minimum length requirement")) {
+            return "The minimum length requirement was not met. Relax the directive or raise the hard limit and try again.";
         }
-
-        int cappedTarget = Math.min(requestedLength, maxLength);
-        int requestedMin = Math.max(1, Math.min(cappedTarget, cappedTarget - 25));
-        int requestedMax = Math.max(requestedMin, cappedTarget);
-        return new int[]{requestedMin, requestedMax};
+        return "An error occurred while generating the draft. Please try again shortly.";
     }
 
-    private String augmentDirectiveForPrompt(String directive, int maxLength) {
-        String normalized = directive == null || directive.isBlank() ? "없음" : directive.trim();
-        Integer requestedLength = extractRequestedLength(directive);
+    private int[] resolveTargetRange(
+            int maxLength,
+            String directive,
+            Integer targetChars,
+            double defaultMinRatio,
+            double defaultMaxRatio) {
+        if (targetChars != null && targetChars > 0) {
+            int requestedTarget = targetChars;
+            if (maxLength > 0) {
+                requestedTarget = Math.min(requestedTarget, maxLength);
+            }
+            requestedTarget = Math.max(1, requestedTarget);
+            return new int[] { requestedTarget, requestedTarget };
+        }
+
+        RequestedLengthDirective requestedLength = extractRequestedLengthDirective(directive, maxLength);
+        if (requestedLength != null) {
+            return new int[] { requestedLength.minimum(), requestedLength.preferredTarget() };
+        }
+
+        if (maxLength <= 0) {
+            return new int[] { 1, 1 };
+        }
+
+        double effectiveMinRatio = Math.max(defaultMinRatio, DEFAULT_MIN_TARGET_FLOOR_RATIO);
+        int preferredTarget = Math.max(1, (int) Math.round(maxLength * defaultMaxRatio));
+        preferredTarget = Math.min(preferredTarget, maxLength);
+
+        int minTarget = Math.max(1, (int) Math.round(maxLength * effectiveMinRatio));
+        minTarget = Math.min(minTarget, preferredTarget);
+        return new int[] { minTarget, preferredTarget };
+    }
+
+    private String augmentDirectiveForPrompt(String directive, int maxLength, Integer targetChars) {
+        String normalized = directive == null || directive.isBlank() ? NO_EXTRA_USER_DIRECTIVE : directive.trim();
+        RequestedLengthDirective requestedLength;
+        if (targetChars != null && targetChars > 0) {
+            int target = targetChars;
+            if (maxLength > 0) {
+                target = Math.min(target, maxLength);
+            }
+            target = Math.max(1, target);
+            requestedLength = new RequestedLengthDirective(target, target);
+        } else {
+            requestedLength = extractRequestedLengthDirective(directive, maxLength);
+        }
         if (requestedLength == null) {
             return normalized;
         }
 
-        int cappedTarget = Math.min(requestedLength, maxLength);
         StringBuilder builder = new StringBuilder();
-        if (!"없음".equals(normalized)) {
+        if (!NO_EXTRA_USER_DIRECTIVE.equals(normalized)) {
             builder.append(normalized).append("\n");
         }
 
-        builder.append("Length guidance: ")
-                .append(cappedTarget)
-                .append("자 부근까지 충분히 채울 것. 글자수는 띄어쓰기를 포함해 계산하며, 보이는 모든 문자는 1글자로 센다. 공백, 문장부호, 괄호, 숫자, 영문, 줄바꿈까지 모두 1글자다.");
+        builder.append("Length guidance: minimum required length is ")
+                .append(requestedLength.minimum())
+                .append(" characters. Count visible characters including spaces and line breaks, and treat each visible character as 1.");
+        builder.append(" Preferred target is ")
+                .append(requestedLength.preferredTarget())
+                .append(" characters.");
 
-        int minimumRequired = Math.max(1, Math.min(cappedTarget, cappedTarget - 50));
-        builder.append(" 최소 허용 분량은 ")
-                .append(minimumRequired)
-                .append("자이며, 그보다 짧으면 실패로 간주할 것.");
-
-        if (requestedLength > maxLength) {
-            builder.append(" 현재 하드 리밋은 ")
+        if (requestedLength.preferredTarget() > maxLength) {
+            builder.append(" Current hard limit is ")
                     .append(maxLength)
-                    .append("자이므로 그 한도 안에서 최대한 가깝게 작성할 것.");
+                    .append(" characters, so stay within that limit while getting as close as possible.");
         }
 
-        builder.append(" 최종 답변을 내기 전에 스스로 글자수를 다시 세고, 최소 분량보다 짧으면 내용을 보강한 뒤 다시 셀 것.");
+        builder.append(
+                " Before returning, recount characters and, if the answer is too short, add concrete evidence and explanation before recounting.");
 
         return builder.toString();
     }
 
-    private Integer extractRequestedLength(String directive) {
+    private RequestedLengthDirective extractRequestedLengthDirective(String directive, int maxLength) {
         if (directive == null || directive.isBlank()) {
             return null;
         }
 
+        List<Integer> mentionedLengths = new ArrayList<>();
         Matcher matcher = REQUESTED_LENGTH_PATTERN.matcher(directive);
-        Integer requested = null;
         while (matcher.find()) {
-            requested = Integer.parseInt(matcher.group(1));
+            mentionedLengths.add(parseLengthNumber(matcher.group(1)));
         }
-        return requested;
+        if (mentionedLengths.isEmpty()) {
+            return null;
+        }
+
+        Integer explicitMinimum = extractPatternLength(directive, PREFIX_MINIMUM_LENGTH_PATTERN,
+                SUFFIX_MINIMUM_LENGTH_PATTERN);
+        int minimum = explicitMinimum != null ? explicitMinimum : mentionedLengths.get(0);
+        int preferredTarget = resolvePreferredRequestedTarget(mentionedLengths, minimum);
+
+        if (maxLength > 0) {
+            minimum = Math.min(minimum, maxLength);
+            preferredTarget = Math.min(preferredTarget, maxLength);
+        }
+
+        preferredTarget = Math.max(minimum, preferredTarget);
+        return new RequestedLengthDirective(Math.max(1, minimum), Math.max(1, preferredTarget));
+    }
+
+    private Integer extractPatternLength(String directive, Pattern... patterns) {
+        if (directive == null || directive.isBlank()) {
+            return null;
+        }
+
+        for (Pattern pattern : patterns) {
+            Matcher matcher = pattern.matcher(directive);
+            if (matcher.find()) {
+                return parseLengthNumber(matcher.group(1));
+            }
+        }
+
+        return null;
+    }
+
+    private int parseLengthNumber(String value) {
+        return Integer.parseInt(value.replace(",", ""));
+    }
+
+    private int resolvePreferredRequestedTarget(List<Integer> mentionedLengths, int minimum) {
+        if (mentionedLengths == null || mentionedLengths.isEmpty()) {
+            return minimum;
+        }
+
+        if (mentionedLengths.size() == 1) {
+            return mentionedLengths.get(0);
+        }
+
+        int ceiling = mentionedLengths.stream()
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(minimum);
+
+        if (ceiling <= minimum) {
+            return minimum;
+        }
+
+        return minimum + (int) Math.round((ceiling - minimum) * 0.8);
     }
 
     private String expandToMinimumLength(
             String text,
             int minTargetChars,
+            int preferredTargetChars,
             int maxLength,
             String company,
             String position,
@@ -403,61 +824,133 @@ public class WorkspaceService {
             String companyContext,
             String context,
             String others,
-            String directive
-    ) {
-        String normalized = normalizeTitleSpacing(text).trim();
-        if (normalized.isBlank() || minTargetChars <= 0 || normalized.length() >= minTargetChars) {
+            String directive) {
+        String normalized = normalizeLengthText(normalizeTitleSpacing(text)).trim();
+        int preferredTarget = resolvePreferredTargetForExpansion(minTargetChars, preferredTargetChars, maxLength);
+        int currentLength = countResumeCharacters(normalized);
+        logLengthMetrics("expand", maxLength, minTargetChars, preferredTarget, normalized, 0);
+        if (normalized.isBlank() || minTargetChars <= 0) {
+            return normalized;
+        }
+        if (currentLength >= preferredTarget) {
             return normalized;
         }
 
-        String expansionDirective = (directive == null || directive.isBlank() || "없음".equals(directive))
-                ? ""
-                : directive + "\n";
-        expansionDirective += "현재 초안이 너무 짧다. 최소 " + minTargetChars + "자 이상, 가능하면 " + maxLength
-                + "자에 가깝게 채워라. 분량을 억지로 늘리지 말고, 핵심 역량 1~2개를 더 구체적인 근거와 역할, 판단, 결과로 풀어 써라.";
+        String candidate = normalized;
 
-        try {
-            WorkspaceDraftAiService.DraftResponse expanded = workspaceDraftAiService.refineDraft(
-                    company,
-                    position,
-                    companyContext,
-                    normalized,
-                    maxLength,
+        for (int attempt = 1; attempt <= MINIMUM_LENGTH_EXPANSION_ATTEMPTS; attempt++) {
+            int candidateLength = countResumeCharacters(candidate);
+            if (candidateLength >= preferredTarget) {
+                return candidate;
+            }
+
+            String expansionDirective = buildMinimumLengthDirective(
+                    directive,
+                    candidateLength,
                     minTargetChars,
+                    preferredTarget,
                     maxLength,
-                    context,
-                    others,
-                    expansionDirective
-            );
+                    attempt);
 
-            String candidate = enforceLengthLimit(
-                    enforceAcceptedTitleStyle(
-                            normalizeTitleSpacing(expanded.text),
-                            company,
-                            position,
-                            questionTitle,
-                            companyContext,
-                            context
-                    ),
-                    maxLength,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others
-            );
+            log.warn("Draft under target. current={}, min={}, preferred={}, hardLimit={}, attempt={}",
+                    candidateLength, minTargetChars, preferredTarget, maxLength, attempt);
+            try {
+                WorkspaceDraftAiService.DraftResponse expanded = workspaceDraftAiService.refineDraft(
+                        company,
+                        position,
+                        companyContext,
+                        candidate,
+                        maxLength,
+                        minTargetChars,
+                        preferredTarget,
+                        context,
+                        others,
+                        expansionDirective);
 
-            return candidate.length() >= normalized.length() ? candidate : normalized;
-        } catch (Exception e) {
-            log.warn("Failed to expand under-length draft to minimum target. current={}, min={}", normalized.length(), minTargetChars, e);
-            return normalized;
+                if (expanded == null || expanded.text == null || expanded.text.isBlank()) {
+                    continue;
+                }
+
+                String expandedCandidate = prepareDraftForTranslation(
+                        expanded.text,
+                        maxLength,
+                        company,
+                        position,
+                        companyContext,
+                        context,
+                        others);
+                if (countResumeCharacters(expandedCandidate) > countResumeCharacters(candidate)) {
+                    candidate = expandedCandidate;
+                }
+                logLengthMetrics("expand", maxLength, minTargetChars, preferredTarget, candidate, attempt);
+
+                if (countResumeCharacters(candidate) >= preferredTarget) {
+                    return candidate;
+                }
+            } catch (Exception e) {
+                log.warn(
+                        "Failed to expand under-length draft. current={}, min={}, preferred={}, hardLimit={}, attempt={}",
+                        countResumeCharacters(candidate), minTargetChars, preferredTarget, maxLength, attempt, e);
+            }
         }
+
+        if (extractRequestedLengthDirective(directive, maxLength) != null
+                && countResumeCharacters(candidate) < minTargetChars) {
+            throw new IllegalStateException("minimum length requirement not met");
+        }
+
+        return candidate;
+    }
+
+    private String buildMinimumLengthDirective(
+            String directive,
+            int previousLength,
+            int minTargetChars,
+            int preferredTargetChars,
+            int maxLength,
+            int attempt) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(LENGTH_RETRY_MARKER).append("\n");
+        if (directive != null && !directive.isBlank()) {
+            builder.append(directive.trim()).append("\n");
+        }
+        builder.append("Retry feedback: previous output length was ")
+                .append(previousLength)
+                .append(" characters, which is below the minimum target.\n");
+        builder.append("Retry attempt: ")
+                .append(attempt)
+                .append(" / ")
+                .append(MINIMUM_LENGTH_EXPANSION_ATTEMPTS)
+                .append(".\n");
+        builder.append("Target range for this retry: ")
+                .append(minTargetChars)
+                .append(" to ")
+                .append(preferredTargetChars)
+                .append(" characters.\n");
+        builder.append("Hard limit: ")
+                .append(maxLength)
+                .append(" characters.\n");
+        builder.append("Preserve all strong facts from the current draft.\n");
+        builder.append("Expand only missing depth. Do not summarize, compress, or delete existing strong evidence.\n");
+        builder.append(
+                "Expansion order: background -> role -> judgment -> execution detail -> measurable result -> job connection.\n");
+        builder.append("Count spaces and line breaks as 1 character each. Generic filler is forbidden.");
+        return builder.toString();
+    }
+
+    private int resolvePreferredTargetForExpansion(int minTargetChars, int preferredTargetChars, int maxLength) {
+        int preferred = Math.max(minTargetChars, preferredTargetChars);
+        if (maxLength > 0) {
+            preferred = Math.min(preferred, maxLength);
+        }
+        return Math.max(1, preferred);
     }
 
     private String buildApplicationResearchContext(WorkspaceQuestion question) {
         List<String> sections = new ArrayList<>();
 
-        if (question.getApplication().getCompanyResearch() != null && !question.getApplication().getCompanyResearch().isBlank()) {
+        if (question.getApplication().getCompanyResearch() != null
+                && !question.getApplication().getCompanyResearch().isBlank()) {
             sections.add("[Company Research]\n" + question.getApplication().getCompanyResearch());
         }
 
@@ -476,14 +969,16 @@ public class WorkspaceService {
         return String.join("\n---\n", sections);
     }
 
-    private String buildFilteredContext(WorkspaceQuestion initialQuestion, Long questionId, List<Experience> allExperiences) {
+    private String buildFilteredContext(WorkspaceQuestion initialQuestion, Long questionId,
+            List<Experience> allExperiences) {
         Set<Long> excludedExperienceIds = extractUsedExperienceIds(initialQuestion, questionId, allExperiences);
-        List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> selectedContext =
-                experienceVectorRetrievalService.search(initialQuestion.getTitle(), 4, excludedExperienceIds);
+        List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> selectedContext = experienceVectorRetrievalService
+                .search(initialQuestion.getTitle(), 4, excludedExperienceIds);
 
         if (!selectedContext.isEmpty()) {
             return selectedContext.stream()
-                    .map(item -> String.format("[경험: %s]\n%s", item.getExperienceTitle(), item.getRelevantPart()))
+                    .map(item -> String.format("[Matched Experience: %s]\n%s", item.getExperienceTitle(),
+                            item.getRelevantPart()))
                     .collect(Collectors.joining("\n---\n"));
         }
 
@@ -500,7 +995,8 @@ public class WorkspaceService {
                 .collect(Collectors.joining("\n---\n"));
     }
 
-    private Set<Long> extractUsedExperienceIds(WorkspaceQuestion initialQuestion, Long questionId, List<Experience> allExperiences) {
+    private Set<Long> extractUsedExperienceIds(WorkspaceQuestion initialQuestion, Long questionId,
+            List<Experience> allExperiences) {
         return initialQuestion.getApplication().getQuestions().stream()
                 .filter(q -> !q.getId().equals(questionId))
                 .map(q -> {
@@ -539,59 +1035,127 @@ public class WorkspaceService {
             String position,
             String companyContext,
             String context,
-            String others
-    ) {
+            String others) {
         if (text == null) {
             return null;
         }
 
-        String normalized = normalizeTitleSpacing(text).trim();
-        if (maxLength <= 0 || normalized.length() <= maxLength) {
+        String normalized = normalizeLengthText(normalizeTitleSpacing(text)).trim();
+        if (maxLength <= 0 || countResumeCharacters(normalized) <= maxLength) {
             return normalized;
         }
 
-        log.warn("Draft exceeded max length. current={}, limit={}", normalized.length(), maxLength);
+        int[] defaultRange = resolveTargetRange(maxLength, null, null, 0.80, 0.95);
+        logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], normalized, 0);
+        log.warn("Draft exceeded max length. current={}, limit={}", countResumeCharacters(normalized), maxLength);
+
+        String safeCompany = safeTrim(company);
+        String safePosition = safeTrim(position);
+        String safeCompanyContext = safeTrim(companyContext);
+        String safeContext = safeTrim(context);
+        String safeOthers = safeTrim(others);
 
         try {
             WorkspaceDraftAiService.DraftResponse shortened = workspaceDraftAiService.shortenToLimit(
-                    company,
-                    position,
-                    companyContext,
+                    safeCompany,
+                    safePosition,
+                    safeCompanyContext,
                     normalized,
                     maxLength,
-                    context,
-                    others
-            );
+                    safeContext,
+                    safeOthers);
 
-            String candidate = normalizeTitleSpacing(shortened.text).trim();
-            if (candidate.length() <= maxLength) {
+            if (shortened == null || shortened.text == null || shortened.text.isBlank()) {
+                log.warn("Length enforcement AI retry returned empty text. Falling back to hard trim.");
+                String trimmed = hardTrimToLimit(normalized, maxLength);
+                logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], trimmed, 2);
+                return trimmed;
+            }
+
+            String candidate = normalizeLengthText(normalizeTitleSpacing(shortened.text)).trim();
+            if (countResumeCharacters(candidate) <= maxLength) {
+                logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], candidate, 1);
                 return candidate;
             }
 
-            log.warn("Length enforcement retry still exceeded limit. current={}, limit={}", candidate.length(), maxLength);
-            return hardTrimToLimit(candidate, maxLength);
+            log.warn("Length enforcement retry still exceeded limit. current={}, limit={}",
+                    countResumeCharacters(candidate), maxLength);
+            String trimmed = hardTrimToLimit(candidate, maxLength);
+            logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], trimmed, 2);
+            return trimmed;
         } catch (Exception e) {
             log.warn("Length enforcement AI retry failed. Falling back to hard trim.", e);
-            return hardTrimToLimit(normalized, maxLength);
+            String trimmed = hardTrimToLimit(normalized, maxLength);
+            logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], trimmed, 2);
+            return trimmed;
         }
     }
 
     private String hardTrimToLimit(String text, int maxLength) {
-        if (text == null || text.length() <= maxLength) {
+        if (text == null || maxLength <= 0) {
             return text;
         }
 
-        String trimmed = text.substring(0, maxLength).trim();
+        String normalized = normalizeLengthText(text);
+        if (countResumeCharacters(normalized) <= maxLength) {
+            return normalized;
+        }
+
+        String trimmed = substringByCharacterLimit(normalized, maxLength).trim();
         int breakpoint = Math.max(
-                Math.max(trimmed.lastIndexOf("다."), trimmed.lastIndexOf("요.")),
-                Math.max(trimmed.lastIndexOf(". "), Math.max(trimmed.lastIndexOf("! "), trimmed.lastIndexOf("? ")))
-        );
+                Math.max(trimmed.lastIndexOf("\n"), trimmed.lastIndexOf(".")),
+                Math.max(trimmed.lastIndexOf("!"), trimmed.lastIndexOf("?")));
 
         if (breakpoint >= Math.max(0, maxLength - 80)) {
             return trimmed.substring(0, breakpoint + 1).trim();
         }
 
-        return trimmed;
+        int softBreakpoint = Math.max(trimmed.lastIndexOf(","), trimmed.lastIndexOf(" "));
+        if (softBreakpoint >= Math.max(0, maxLength - 40)) {
+            return appendEllipsisWithinLimit(trimmed.substring(0, softBreakpoint).trim(), maxLength);
+        }
+
+        return appendEllipsisWithinLimit(trimmed, maxLength);
+    }
+
+    private String appendEllipsisWithinLimit(String text, int maxLength) {
+        if (text == null || text.isBlank()) {
+            return text;
+        }
+        if (text.endsWith(".") || text.endsWith("!") || text.endsWith("?")) {
+            return text;
+        }
+
+        String base = text;
+        if (maxLength > 3 && countResumeCharacters(base) > maxLength - 3) {
+            base = substringByCharacterLimit(base, maxLength - 3).trim();
+        }
+
+        if (base.isBlank()) {
+            return text;
+        }
+
+        return base + "...";
+    }
+
+    private String prepareDraftForTranslation(
+            String text,
+            int maxLength,
+            String company,
+            String position,
+            String companyContext,
+            String context,
+            String others) {
+        if (text == null) {
+            return null;
+        }
+
+        String normalized = normalizeLengthText(normalizeTitleSpacing(text)).trim();
+        if (maxLength > 0 && countResumeCharacters(normalized) > maxLength) {
+            return enforceLengthLimit(normalized, maxLength, company, position, companyContext, context, others);
+        }
+
+        return normalized;
     }
 
     private String prepareDraftForTranslation(String text, int maxLength) {
@@ -599,13 +1163,82 @@ public class WorkspaceService {
             return null;
         }
 
-        String normalized = normalizeTitleSpacing(text).trim();
-        if (maxLength > 0 && normalized.length() > maxLength) {
-            log.warn("Draft exceeded max length. current={}, limit={}", normalized.length(), maxLength);
-            return hardTrimToLimit(normalized, maxLength);
+        String normalized = normalizeLengthText(normalizeTitleSpacing(text)).trim();
+        if (maxLength > 0 && countResumeCharacters(normalized) > maxLength) {
+            int[] defaultRange = resolveTargetRange(maxLength, null, null, 0.80, 0.95);
+            logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], normalized, 0);
+            log.warn("Draft exceeded max length. current={}, limit={}", countResumeCharacters(normalized), maxLength);
+            String trimmed = hardTrimToLimit(normalized, maxLength);
+            logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], trimmed, 1);
+            return trimmed;
         }
 
         return normalized;
+    }
+
+    private String normalizeLengthText(String text) {
+        if (text == null) {
+            return null;
+        }
+        return text.replace("\r\n", "\n").replace('\r', '\n');
+    }
+
+    private int countResumeCharacters(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+
+        String normalized = normalizeLengthText(text);
+        int count = 0;
+        for (int i = 0; i < normalized.length();) {
+            int codePoint = normalized.codePointAt(i);
+            i += Character.charCount(codePoint);
+
+            if (codePoint == '\n') {
+                count++;
+                continue;
+            }
+
+            if (Character.isISOControl(codePoint)) {
+                continue;
+            }
+
+            if (Character.getType(codePoint) == Character.FORMAT) {
+                continue;
+            }
+
+            count++;
+        }
+        return count;
+    }
+
+    private void logLengthMetrics(
+            String stage,
+            int hardLimit,
+            int minimumTarget,
+            int preferredTarget,
+            String text,
+            int retryCount) {
+        int actualChars = countResumeCharacters(text);
+        boolean underMin = minimumTarget > 0 && actualChars < minimumTarget;
+        boolean overHard = hardLimit > 0 && actualChars > hardLimit;
+        log.info(
+                "LengthMetrics stage={} hardLimit={} minimumTarget={} preferredTarget={} actualChars={} underMin={} overHard={} retry={}",
+                stage, hardLimit, minimumTarget, preferredTarget, actualChars, underMin, overHard, retryCount);
+    }
+
+    private String substringByCharacterLimit(String text, int maxLength) {
+        if (text == null) {
+            return null;
+        }
+
+        String normalized = normalizeLengthText(text);
+        if (maxLength <= 0 || countResumeCharacters(normalized) <= maxLength) {
+            return normalized;
+        }
+
+        int endIndex = normalized.offsetByCodePoints(0, maxLength);
+        return normalized.substring(0, endIndex);
     }
 
     private DraftAnalysisResult analyzePatchSafely(
@@ -614,32 +1247,61 @@ public class WorkspaceService {
             String washedKr,
             int maxLength,
             int findingTarget,
-            String context
-    ) {
+            String context) {
         try {
             return workspacePatchAiService.analyzePatch(
-                    originalDraft,
-                    washedKr,
+                    sanitizeOpenAiPromptText(originalDraft),
+                    sanitizeOpenAiPromptText(washedKr),
                     maxLength,
                     (int) (maxLength * 0.92),
                     findingTarget,
-                    context
-            );
+                    sanitizeOpenAiPromptText(context));
         } catch (Exception e) {
-            if (isQuotaError(e)) {
-                log.warn("Patch analysis skipped due to OpenAI quota exhaustion");
-                sendSse(emitter, "progress", "⚠️ 오역 검토는 잠시 건너뛰고, 작성된 결과를 먼저 보여드릴게요.");
+            if (isQuotaError(e) || isPatchAnalysisRequestError(e) || isTimeoutError(e)) {
+                log.warn("Patch analysis skipped due to upstream OpenAI issue", e);
+                sendProgress(emitter, STAGE_PATCH, "Patch analysis response was unstable; returning washed draft only.");
                 return DraftAnalysisResult.builder()
                         .humanPatchedText(washedKr)
                         .mistranslations(new ArrayList<>())
                         .aiReviewReport(DraftAnalysisResult.AiReviewReport.builder()
-                                .summary("오역 검토 모델 사용량이 초과되어 이번에는 세탁 결과만 먼저 제공했습니다.")
+                                .summary("Patch analysis response was unstable, so this run returned the washed draft only.")
                                 .build())
                         .build();
             }
 
             throw e;
         }
+    }
+
+    private String sanitizeOpenAiPromptText(String text) {
+        if (text == null || text.isBlank()) {
+            return text;
+        }
+
+        StringBuilder sanitized = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char current = text.charAt(i);
+
+            if (Character.isHighSurrogate(current)) {
+                if (i + 1 < text.length() && Character.isLowSurrogate(text.charAt(i + 1))) {
+                    sanitized.append(current).append(text.charAt(i + 1));
+                    i++;
+                }
+                continue;
+            }
+
+            if (Character.isLowSurrogate(current)) {
+                continue;
+            }
+
+            if (Character.isISOControl(current) && current != '\n' && current != '\r' && current != '\t') {
+                continue;
+            }
+
+            sanitized.append(current);
+        }
+
+        return sanitized.toString();
     }
 
     private boolean isQuotaError(Throwable throwable) {
@@ -659,14 +1321,50 @@ public class WorkspaceService {
         return false;
     }
 
+    private boolean isTimeoutError(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof java.io.InterruptedIOException
+                    || current instanceof java.net.SocketTimeoutException) {
+                return true;
+            }
+
+            String message = current.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase();
+                if (lower.contains("timeout") || lower.contains("timed out")) {
+                    return true;
+                }
+            }
+
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isPatchAnalysisRequestError(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase();
+                if (lower.contains("could not parse the json body of your request")
+                        || lower.contains("not valid json")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     private String enforceAcceptedTitleStyle(
             String text,
             String company,
             String position,
             String question,
             String companyContext,
-            String context
-    ) {
+            String context) {
         if (text == null || text.isBlank()) {
             return text;
         }
@@ -683,8 +1381,7 @@ public class WorkspaceService {
                     question,
                     companyContext,
                     normalized,
-                    context
-            );
+                    context);
 
             String candidate = normalizeTitleSpacing(rewritten.text).trim();
             return candidate.isBlank() ? normalized : candidate;
@@ -727,17 +1424,19 @@ public class WorkspaceService {
         }
 
         String lowered = title.toLowerCase();
-        return lowered.contains("지원 동기")
-                || lowered.contains("입사 후")
-                || lowered.contains("목표")
-                || lowered.contains("포부")
-                || lowered.contains("역량")
-                || lowered.contains("성장과정")
-                || lowered.contains("및")
+        return lowered.contains("\uC9C0\uC6D0\uB3D9\uAE30")
+                || lowered.contains("\uC785\uC0AC \uD6C4")
+                || lowered.contains("\uC785\uC0AC\uD6C4")
+                || lowered.contains("\uBAA9\uD45C")
+                || lowered.contains("\uC5ED\uB7C9")
+                || lowered.contains("\uD3EC\uBD80")
+                || lowered.contains("\uC131\uC7A5\uACFC\uC815")
+                || lowered.contains("\uC9C1\uBB34")
                 || title.length() > 18;
     }
 
-    private void normalizeAnalysis(DraftAnalysisResult analysis, String originalDraft, String washedKr, int findingTarget) {
+    private void normalizeAnalysis(DraftAnalysisResult analysis, String originalDraft, String washedKr,
+            int findingTarget) {
         if (analysis == null) {
             return;
         }
@@ -760,7 +1459,8 @@ public class WorkspaceService {
 
             if (washedKr != null) {
                 HighlightSpan highlightSpan = resolveHighlightSpan(washedKr, mistranslation);
-                if (highlightSpan != null && isReasonableHighlightSpan(washedKr, highlightSpan.start(), highlightSpan.end())) {
+                if (highlightSpan != null
+                        && isReasonableHighlightSpan(washedKr, highlightSpan.start(), highlightSpan.end())) {
                     mistranslation.setStartIndex(highlightSpan.start());
                     mistranslation.setEndIndex(highlightSpan.end());
                 } else {
@@ -788,8 +1488,7 @@ public class WorkspaceService {
             DraftAnalysisResult analysis,
             String originalDraft,
             String washedKr,
-            int findingTarget
-    ) {
+            int findingTarget) {
         if (analysis == null || washedKr == null || washedKr.isBlank()) {
             return;
         }
@@ -801,7 +1500,8 @@ public class WorkspaceService {
         }
 
         // Do not auto-add sentence-level fallback findings.
-        // Broad sentence highlights look noisy in the UI and often obscure the real phrase-level issue.
+        // Broad sentence highlights look noisy in the UI and often obscure the real
+        // phrase-level issue.
     }
 
     private List<String> splitSentences(String text) {
@@ -815,7 +1515,8 @@ public class WorkspaceService {
                 .toList();
     }
 
-    private boolean containsTranslatedSpan(List<DraftAnalysisResult.Mistranslation> mistranslations, String translated) {
+    private boolean containsTranslatedSpan(List<DraftAnalysisResult.Mistranslation> mistranslations,
+            String translated) {
         return mistranslations.stream()
                 .map(DraftAnalysisResult.Mistranslation::getTranslated)
                 .anyMatch(existing -> translated.equals(safeTrim(existing)));
@@ -844,7 +1545,7 @@ public class WorkspaceService {
         }
 
         return java.util.Arrays.stream(sentence.toLowerCase().split("\\s+"))
-                .map(token -> token.replaceAll("[^0-9a-zA-Z가-힣]+", ""))
+                .map(token -> token.replaceAll("[^\\p{L}\\p{N}-]", ""))
                 .filter(token -> token.length() > 1)
                 .toList();
     }
@@ -869,22 +1570,12 @@ public class WorkspaceService {
             return new HighlightSpan(providedStart, providedEnd);
         }
 
-        List<Integer> exactMatches = findExactMatchIndexes(source, translated);
-        if (exactMatches.size() == 1) {
-            int start = exactMatches.get(0);
-            return new HighlightSpan(start, start + translated.length());
+        HighlightSpan uniqueExactSpan = findUniqueExactSpan(source, translated);
+        if (uniqueExactSpan != null) {
+            return uniqueExactSpan;
         }
 
-        if (!exactMatches.isEmpty()) {
-            return null;
-        }
-
-        int compactIndex = findTranslatedSpan(source, translated);
-        if (compactIndex < 0) {
-            return null;
-        }
-
-        return new HighlightSpan(compactIndex, compactIndex + translated.length());
+        return findCompactEquivalentSpan(source, translated);
     }
 
     private boolean isExactSpan(String source, Integer start, Integer end, String translated) {
@@ -915,6 +1606,16 @@ public class WorkspaceService {
             fromIndex = matchIndex + 1;
         }
         return matches;
+    }
+
+    private HighlightSpan findUniqueExactSpan(String source, String target) {
+        List<Integer> exactMatches = findExactMatchIndexes(source, target);
+        if (exactMatches.size() != 1) {
+            return null;
+        }
+
+        int start = exactMatches.get(0);
+        return new HighlightSpan(start, start + target.length());
     }
 
     private boolean isReasonableHighlightSpan(String source, int start, int end) {
@@ -953,43 +1654,101 @@ public class WorkspaceService {
         return ch == '.' || ch == '!' || ch == '?' || ch == '\n';
     }
 
-    private int findTranslatedSpan(String source, String target) {
-        if (source == null || target == null || target.isEmpty()) {
-            return -1;
+    private HighlightSpan findCompactEquivalentSpan(String source, String target) {
+        if (source == null || target == null || target.isBlank()) {
+            return null;
         }
 
-        int directIndex = source.indexOf(target);
-        if (directIndex >= 0) {
-            return directIndex;
+        String compactSource = stripWhitespace(source);
+        String compactTarget = stripWhitespace(target);
+        if (compactTarget.isBlank()) {
+            return null;
         }
 
-        String compactSource = source.replaceAll("\\s+", "");
-        String compactTarget = target.replaceAll("\\s+", "");
-        int compactIndex = compactSource.indexOf(compactTarget);
-        if (compactIndex < 0) {
-            return -1;
+        List<Integer> compactMatches = findExactMatchIndexes(compactSource, compactTarget);
+        if (compactMatches.size() != 1) {
+            return null;
+        }
+
+        int compactStart = compactMatches.get(0);
+        int compactEndExclusive = compactStart + compactTarget.length();
+
+        Integer start = mapCompactOffsetToSourceIndex(source, compactStart);
+        Integer end = mapCompactExclusiveOffsetToSourceIndex(source, compactEndExclusive);
+        if (start == null || end == null || end <= start) {
+            return null;
+        }
+
+        if (!isCompactEquivalentSpan(source, start, end, target)) {
+            return null;
+        }
+
+        return new HighlightSpan(start, end);
+    }
+
+    private Integer mapCompactOffsetToSourceIndex(String source, int compactOffset) {
+        if (source == null || compactOffset < 0) {
+            return null;
         }
 
         int count = 0;
         for (int i = 0; i < source.length(); i++) {
-            char ch = source.charAt(i);
-            if (!Character.isWhitespace(ch)) {
-                if (count == compactIndex) {
+            if (!Character.isWhitespace(source.charAt(i))) {
+                if (count == compactOffset) {
                     return i;
                 }
                 count++;
             }
         }
 
-        return -1;
+        return null;
+    }
+
+    private Integer mapCompactExclusiveOffsetToSourceIndex(String source, int compactOffsetExclusive) {
+        if (source == null || compactOffsetExclusive <= 0) {
+            return null;
+        }
+
+        int count = 0;
+        for (int i = 0; i < source.length(); i++) {
+            if (!Character.isWhitespace(source.charAt(i))) {
+                count++;
+                if (count == compactOffsetExclusive) {
+                    return i + 1;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private boolean isCompactEquivalentSpan(String source, int start, int end, String target) {
+        if (source == null || target == null || start < 0 || end <= start || end > source.length()) {
+            return false;
+        }
+
+        return stripWhitespace(source.substring(start, end)).equals(stripWhitespace(target));
+    }
+
+    private String stripWhitespace(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+
+        return value.replaceAll("\\s+", "");
     }
 
     private void paceProcessing() {
-        try {
-            Thread.sleep(700);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // No-op: speed is preferred over staged progress pacing.
+    }
+
+    private void sendStage(SseEmitter emitter, String stage) {
+        sendSse(emitter, "stage", stage);
+    }
+
+    private void sendProgress(SseEmitter emitter, String stage, String message) {
+        sendStage(emitter, stage);
+        sendSse(emitter, "progress", message);
     }
 
     private void sendSse(SseEmitter emitter, String name, Object data) {
@@ -998,10 +1757,11 @@ public class WorkspaceService {
             if (!(data instanceof String)) {
                 sseData = objectMapper.writeValueAsString(data);
             }
-            log.info("📡 [SSE Send] Name: {}, Data: {}", name, sseData);
+            log.debug("SSE send: name={}, payloadType={}", name,
+                    data == null ? "null" : data.getClass().getSimpleName());
             emitter.send(SseEmitter.event().name(name).data(sseData));
         } catch (IOException | IllegalStateException e) {
-            log.warn("❌ Failed to send SSE event: {}", name);
+            log.warn("Failed to send SSE event: {}", name);
             throw new SseConnectionClosedException(e);
         }
     }
@@ -1010,7 +1770,7 @@ public class WorkspaceService {
         try {
             emitter.send(SseEmitter.event().comment(comment));
         } catch (IOException | IllegalStateException e) {
-            log.warn("❌ Failed to send SSE comment");
+            log.warn("Failed to send SSE comment");
             throw new SseConnectionClosedException(e);
         }
     }
@@ -1031,5 +1791,8 @@ public class WorkspaceService {
             future.cancel(true);
             scheduler.shutdownNow();
         }
+    }
+
+    private record RequestedLengthDirective(int minimum, int preferredTarget) {
     }
 }
