@@ -2,6 +2,9 @@ spring:
   application:
     name: resumade-api
 
+  config:
+    import: optional:file:../.env[.properties]
+
   mvc:
     async:
       request-timeout: 10m
@@ -15,10 +18,10 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
-        format_sql: true
+        format_sql: false
         dialect: org.hibernate.dialect.MySQLDialect
 
   data:
@@ -53,3 +56,8 @@ deepl:
 
 server:
   port: 8080
+
+logging:
+  level:
+    org.hibernate.SQL: OFF
+    org.hibernate.orm.jdbc.bind: OFF
