@@ -28,13 +28,14 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useWorkspaceStore } from "@/lib/store/workspace-store"
+import { type PipelineStage, useWorkspaceStore } from "@/lib/store/workspace-store"
 import { parseCompanyResearch } from "@/lib/application-intelligence"
+import { countResumeCharacters } from "@/lib/text/resume-character-count"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 // Helper for standard character length (including spaces)
 const getLength = (str: string) => {
-  return str ? str.length : 0;
+  return countResumeCharacters(str);
 };
 
 type DirectiveFieldKey = "tone" | "focus" | "keep" | "avoid" | "note";
@@ -133,13 +134,15 @@ const buildRefineDirective = (fields: DirectiveFields): string => {
 };
 
 const NATURAL_DIRECTIVE_PRESETS = [
-  { label: "담백하게", value: "전체 톤을 과장 없이 담백하고 차분하게 다듬어줘." },
-  { label: "자신감 있게", value: "근거는 유지하되 더 자신감 있고 선명한 문장으로 다듬어줘." },
-  { label: "성과 강조", value: "수치, 개선폭, 결과, 기여도가 더 또렷하게 보이게 써줘." },
-  { label: "문제 해결", value: "내가 어떤 문제를 어떻게 판단하고 해결했는지가 더 잘 드러나게 써줘." },
+  { label: "담백하게", value: "전체 톤을 과장 없이 담백하고 차분하게 정리해줘." },
+  { label: "자신감 있게", value: "근거는 유지하되 더 자신감 있고 단단한 문장으로 다듬어줘." },
+  { label: "성과 강조", value: "수치, 개선 결과, 기여도가 더 명확하게 보이게 해줘." },
+  { label: "문제 해결", value: "어떤 문제를 어떻게 판단하고 해결했는지 흐름이 드러나게 해줘." },
   { label: "수치 유지", value: "들어간 수치, 기술명, 산출물은 최대한 유지해줘." },
   { label: "추상어 줄이기", value: "열정, 노력 같은 추상어는 줄이고 구체적인 행동과 근거 중심으로 써줘." },
 ];
+
+const PLACEHOLDER_FOCUS_VALUES = new Set(["미정", "N/A", "n/a", "-", ""]);
 
 const normalizeDirectiveText = (raw?: string) => {
   if (!raw) {
@@ -153,70 +156,98 @@ const normalizeDirectiveText = (raw?: string) => {
     .join("\n")
 }
 
+const parseLengthTarget = (raw: string, maxLength: number): number | null => {
+  const parsed = Number.parseInt(raw.trim(), 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null
+  }
+  if (maxLength > 0) {
+    return Math.min(parsed, maxLength)
+  }
+  return parsed
+}
+
 const PIPELINE_STEPS = [
-  { id: "RAG", label: "경험 데이터 매칭" },
-  { id: "DRAFT", label: "AI 초안 작성" },
-  { id: "WASH", label: "세탁본 생성" },
-  { id: "PATCH", label: "휴먼 패치 분석" },
+  { id: "RAG", label: "Context Match" },
+  { id: "DRAFT", label: "Draft" },
+  { id: "WASH", label: "Wash" },
+  { id: "PATCH", label: "Patch Review" },
 ] as const
 
-const getPipelineState = (message: string) => {
-  const normalized = (message || "").toLowerCase()
-
-  if (
-    normalized.includes("다른 문항") ||
-    normalized.includes("가장 잘 맞는 경험") ||
-    normalized.includes("경험 데이터")
-  ) {
-    return {
-      activeStepId: "RAG",
-      description: "관련 경험과 문항 맥락을 연결하고 있습니다.",
-    }
-  }
-
-  if (
-    normalized.includes("초안을 작성") ||
-    normalized.includes("문장을 더 정교하게") ||
-    normalized.includes("문장을 더 다듬") ||
-    normalized.includes("초안")
-  ) {
-    return {
-      activeStepId: "DRAFT",
-      description: "초안 원문을 생성하고 있습니다.",
-    }
-  }
-
-  if (
-    normalized.includes("사람답게") ||
-    normalized.includes("한국어 문장을 자연스럽게") ||
-    normalized.includes("읽었을 때") ||
-    normalized.includes("번역") ||
-    normalized.includes("세탁")
-  ) {
-    return {
-      activeStepId: "WASH",
-      description: "번역과 역번역을 거쳐 세탁본을 만들고 있습니다.",
-    }
-  }
-
-  if (
-    normalized.includes("표현이 어색한 곳") ||
-    normalized.includes("의미가 흐려진") ||
-    normalized.includes("꼼꼼히 확인") ||
-    normalized.includes("검토")
-  ) {
+const getPipelineState = (
+  stage: PipelineStage,
+  message: string,
+  isProcessing: boolean
+): { activeStepId: (typeof PIPELINE_STEPS)[number]["id"]; description: string; isComplete: boolean } => {
+  if (stage === "DONE" || (!isProcessing && stage === "PATCH")) {
     return {
       activeStepId: "PATCH",
-      description: "세탁본의 의미 손실과 어색한 표현을 점검하고 있습니다.",
+      description: "All pipeline stages are complete.",
+      isComplete: true,
+    }
+  }
+
+  if (stage === "RAG") {
+    return {
+      activeStepId: "RAG",
+      description: "Matching experiences to this question.",
+      isComplete: false,
+    }
+  }
+
+  if (stage === "DRAFT") {
+    return {
+      activeStepId: "DRAFT",
+      description: "Generating the base draft.",
+      isComplete: false,
+    }
+  }
+
+  if (stage === "WASH") {
+    return {
+      activeStepId: "WASH",
+      description: "Running translation and back-translation wash.",
+      isComplete: false,
+    }
+  }
+
+  if (stage === "PATCH") {
+    return {
+      activeStepId: "PATCH",
+      description: "Reviewing the washed draft for meaning loss and awkward phrasing.",
+      isComplete: false,
+    }
+  }
+
+  const normalized = (message || "").toLowerCase()
+  if (normalized.includes("patch") || normalized.includes("review") || normalized.includes("analysis")) {
+    return {
+      activeStepId: "PATCH",
+      description: "Reviewing the washed draft for meaning loss and awkward phrasing.",
+      isComplete: false,
+    }
+  }
+  if (normalized.includes("wash") || normalized.includes("translate") || normalized.includes("translation")) {
+    return {
+      activeStepId: "WASH",
+      description: "Running translation and back-translation wash.",
+      isComplete: false,
+    }
+  }
+  if (normalized.includes("draft") || normalized.includes("writing")) {
+    return {
+      activeStepId: "DRAFT",
+      description: "Generating the base draft.",
+      isComplete: false,
     }
   }
 
   return {
     activeStepId: "RAG",
-    description: "작업 흐름을 준비하고 있습니다.",
+    description: "Preparing the pipeline.",
+    isComplete: false,
   }
 }
-
 export function ContextPanel() {
   const { 
     company,
@@ -230,6 +261,7 @@ export function ContextPanel() {
     addQuestion,
     updateActiveQuestion,
     isProcessing,
+    pipelineStage,
     progressMessage,
     processingError,
     refineDraft,
@@ -248,6 +280,9 @@ export function ContextPanel() {
 
   const activeQuestion = questions.find(q => q.id === activeQuestionId) || questions[0]
   const [directiveDraft, setDirectiveDraft] = useState(normalizeDirectiveText(activeQuestion.userDirective))
+  const [lengthTargetDraft, setLengthTargetDraft] = useState(
+    activeQuestion.lengthTarget ? String(activeQuestion.lengthTarget) : ""
+  )
   const [isCompanyInsightOpen, setIsCompanyInsightOpen] = useState(true)
   const [isRagContextOpen, setIsRagContextOpen] = useState(true)
   const topRef = useRef<HTMLDivElement>(null)
@@ -259,11 +294,16 @@ export function ContextPanel() {
 
   useEffect(() => {
     setDirectiveDraft(normalizeDirectiveText(activeQuestion.userDirective))
+    setLengthTargetDraft(
+      activeQuestion.lengthTarget && activeQuestion.lengthTarget > 0
+        ? String(activeQuestion.lengthTarget)
+        : ""
+    )
   }, [activeQuestion.id])
 
   const { mistranslations, aiReviewReport, washedKr } = activeQuestion
   const companyResearchData = parseCompanyResearch(companyResearch)
-  const pipelineState = getPipelineState(progressMessage)
+  const pipelineState = getPipelineState(pipelineStage, progressMessage, isProcessing)
   const activeStepIndex = PIPELINE_STEPS.findIndex((step) => step.id === pipelineState.activeStepId)
 
   const currentCount = getLength(washedKr || activeQuestion.content)
@@ -296,16 +336,31 @@ export function ContextPanel() {
     })
   }
 
+  const commitLengthTargetDraft = () => {
+    const parsed = parseLengthTarget(lengthTargetDraft, activeQuestion.maxLength)
+    const stored = activeQuestion.lengthTarget ?? null
+    if (parsed !== stored) {
+      updateActiveQuestion({ lengthTarget: parsed })
+    }
+  }
+
   const handleInitialGenerate = () => {
     commitDirectiveDraft()
+    commitLengthTargetDraft()
     scrollToTop()
-    generateDraft({ useDirective: directiveDraft.trim().length > 0 })
+    generateDraft({
+      useDirective: directiveDraft.trim().length > 0,
+      lengthTarget: parseLengthTarget(lengthTargetDraft, activeQuestion.maxLength),
+    })
   }
 
   const handleRegenerate = () => {
     commitDirectiveDraft()
+    commitLengthTargetDraft()
     scrollToTop()
-    refineDraft(directiveDraft)
+    refineDraft(directiveDraft, {
+      lengthTarget: parseLengthTarget(lengthTargetDraft, activeQuestion.maxLength),
+    })
   }
 
   return (
@@ -370,7 +425,7 @@ export function ContextPanel() {
             </Button>
           )}
         </div>
-        
+
         <div className="space-y-4">
           <div className="flex items-start gap-3">
             <Button
@@ -393,7 +448,7 @@ export function ContextPanel() {
                 value={activeQuestion.title}
                 onChange={(e) => updateActiveQuestion({ title: e.target.value })}
                 onFocus={(e) => {
-                  if (activeQuestion.title === "새로운 문항을 입력하세요.") {
+                  if (activeQuestion.title === "새로운 문항을 입력하세요") {
                     updateActiveQuestion({ title: "" });
                   }
                 }}
@@ -540,8 +595,8 @@ export function ContextPanel() {
 
                 <div className="space-y-4">
                   {PIPELINE_STEPS.map((step, idx, arr) => {
-                    const isCompleted = idx < activeStepIndex
-                    const isActive = idx === activeStepIndex
+                    const isCompleted = pipelineState.isComplete ? idx <= activeStepIndex : idx < activeStepIndex
+                    const isActive = !pipelineState.isComplete && idx === activeStepIndex
                     
                     return (
                       <div key={idx} className="flex items-center gap-3 relative">
@@ -633,18 +688,25 @@ export function ContextPanel() {
                     </p>
 
                     <div className="flex flex-wrap gap-2">
-                      {[
-                        companyResearchData.focus.businessUnit,
-                        companyResearchData.focus.targetService,
-                        companyResearchData.focus.focusRole,
-                        companyResearchData.focus.techFocus,
-                      ]
-                        .filter(Boolean)
-                        .map((item) => (
-                          <Badge key={item} variant="outline" className="max-w-full whitespace-normal break-words border-primary/20 bg-background text-primary font-bold">
-                            {item}
-                          </Badge>
-                        ))}
+                      {Array.from(
+                        new Set(
+                          [
+                            companyResearchData.focus.businessUnit,
+                            companyResearchData.focus.targetService,
+                            companyResearchData.focus.focusRole,
+                            companyResearchData.focus.techFocus,
+                          ].filter(
+                            (item): item is string =>
+                              typeof item === "string" &&
+                              item.trim().length > 0 &&
+                              !PLACEHOLDER_FOCUS_VALUES.has(item.trim())
+                          )
+                        )
+                      ).map((item) => (
+                        <Badge key={item} variant="outline" className="max-w-full whitespace-normal break-words border-primary/20 bg-background text-primary font-bold">
+                          {item}
+                        </Badge>
+                      ))}
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-2">
@@ -715,10 +777,10 @@ export function ContextPanel() {
 
           <section className="min-w-0 overflow-hidden">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Wand2 className="size-4 text-primary" />
-                <h3 className="text-sm font-black uppercase tracking-wider text-primary">AI 초안 작업장</h3>
-              </div>
+                <div className="flex items-center gap-2">
+                  <Wand2 className="size-4 text-primary" />
+                  <h3 className="text-sm font-black uppercase tracking-wider text-primary">AI 초안 작업장</h3>
+                </div>
               <Button 
                 size="sm" 
                 variant="default" 
@@ -737,6 +799,29 @@ export function ContextPanel() {
 
             {/* AI 작성 가이드 (Directives) */}
             <div className="min-w-0 space-y-4 overflow-hidden pt-2">
+              <div className="rounded-xl border border-primary/15 bg-primary/[0.03] p-4">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <label className="text-sm font-semibold text-primary">희망 글자수</label>
+                  <span className="text-[11px] text-muted-foreground">
+                    미입력 시 자동으로 최대 글자수의 80% 이상을 목표로 생성합니다.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={Math.max(1, activeQuestion.maxLength)}
+                    value={lengthTargetDraft}
+                    onChange={(e) => setLengthTargetDraft(e.target.value)}
+                    onBlur={commitLengthTargetDraft}
+                    placeholder={`?? ${Math.floor((activeQuestion.maxLength || 1000) * 0.8)}`}
+                    className="h-9 w-full max-w-[220px]"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    Hard Limit {activeQuestion.maxLength.toLocaleString()}자
+                  </span>
+                </div>
+              </div>
               <div className="flex min-w-0 items-center justify-between gap-3">
                 <label className="text-sm font-semibold flex items-center gap-2 text-primary">
                   <MessageSquare className="w-4 h-4" />
@@ -775,7 +860,7 @@ export function ContextPanel() {
                   isDirectiveComposingRef.current = false
                   handleDirectiveChange(e.currentTarget.value)
                 }}
-                placeholder="예: 여기는 병원 전산 직무라서 기술 나열보다 운영 안정성과 데이터 신뢰성에 기여할 사람처럼 보이게 써줘. 문장은 너무 추상적으로 말하지 말고, 내가 했던 경험을 근거로 더 구체적으로 풀어줘."
+                placeholder="예) 병원 전산 직무라서 기술 나열보다 운영 안정성과 데이터 흐름 개선에 기여한 경험을 강조해줘. 문장은 추상적 표현보다 근거 중심으로 다듬어줘."
                 className="min-h-[150px] w-full max-w-full resize-none overflow-x-hidden whitespace-pre-wrap break-words text-sm leading-7 bg-background/50 focus:bg-background border border-border/40 focus:border-primary/40 transition-all duration-300"
               />
               <p className="break-words text-[11px] text-muted-foreground leading-relaxed">
@@ -810,22 +895,20 @@ export function ContextPanel() {
               <div className="flex-1">
                 <h4 className="text-sm font-black text-primary uppercase tracking-tighter mb-1">Detected Key Summary</h4>
                 <p className="text-[13px] text-foreground/80 leading-relaxed font-bold italic">
-                  "{aiReviewReport?.summary}"
+                  {aiReviewReport?.summary}
                 </p>
               </div>
             </CardContent>
           </Card>
 
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle className="size-4 text-destructive" />
-              <h5 className="text-xs font-black uppercase tracking-tighter">감지된 주요 오역 ({mistranslations.filter(m => !m.original.includes("최적의 휴먼 패치")).length})</h5>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="size-4 text-destructive" />
+              <h5 className="text-xs font-black uppercase tracking-tighter">감지된 주요 오역 ({mistranslations.length})</h5>
             </div>
             
             <div className="space-y-4">
-              {mistranslations
-                .filter(m => !m.original.includes("최적의 휴먼 패치") && !m.translated.includes("세탁본 전반"))
-                .map((mis, idx) => {
+              {mistranslations.map((mis, idx) => {
                 const isHovered = hoveredMistranslationId === mis.id
                 return (
                   <div
@@ -893,11 +976,11 @@ export function ContextPanel() {
                                   dismissMistranslation(mis.id);
                                 }}
                               >
-                                넘기기
+                                숨기기
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p className="text-[10px]">이 오역은 무시하고 리스트에서 제거합니다.</p>
+                              <p className="text-[10px]">이 항목을 무시하고 목록에서 제거합니다.</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -922,51 +1005,6 @@ export function ContextPanel() {
               })}
             </div>
 
-            {false && (
-            <>
-            {/* Premium AI Refinement Section */}
-            <Separator className="my-8 opacity-50" />
-            <div className="p-6 rounded-[32px] bg-gradient-to-br from-primary/10 via-background to-secondary/5 border-2 border-primary/20 shadow-xl space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
-                    <Wand2 className="size-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-black text-primary uppercase tracking-tighter">추가 피드백 기반 리터칭</h4>
-                    <p className="text-[10px] text-muted-foreground font-bold">원하는 방향으로 한 번 더 세탁합니다.</p>
-                  </div>
-                </div>
-                <Button 
-                  size="sm"
-                  disabled={isProcessing || !directiveDraft.trim()}
-                  onClick={() => {
-                    commitDirectiveDraft()
-                    setLeftPanelTab("context") // Switch tab first
-                    setTimeout(() => {
-                      scrollToTop()
-                      refineDraft(directiveDraft)
-                    }, 0) // Delay scroll to next tick to ensure tab is rendered if needed
-                  }}
-                  className="h-8 gap-2 px-4 rounded-xl font-black text-[11px] shadow-lg shadow-primary/20 hover:scale-105 transition-all"
-                >
-                  <Sparkles className="size-3.5" />
-                  다시 세탁하기
-                </Button>
-              </div>
-
-              <div className="space-y-4">
-                <Textarea
-                  value={activeQuestion.userDirective}
-                  onChange={(e) => updateActiveQuestion({ userDirective: e.target.value })}
-                  placeholder="예: '조금 더 열정적인 톤으로 바꿔줘', '협업 능력을 더 강조해줘' 등..."
-                  className="min-h-[100px] bg-background/50 border-2 border-muted-foreground/10 rounded-2xl p-4 text-sm font-medium focus:border-primary/40 focus:ring-0 focus:bg-background transition-all"
-                />
-              </div>
-              <p className="text-[10px] text-center text-muted-foreground/60 font-medium">※ 이전의 번역본은 새롭게 생성된 결과로 대체됩니다.</p>
-            </div>
-            </>
-            )}
           </div>
         </div>
       )}
@@ -975,3 +1013,4 @@ export function ContextPanel() {
     </div>
   )
 }
+

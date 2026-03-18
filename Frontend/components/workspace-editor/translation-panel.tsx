@@ -7,6 +7,8 @@ import {
   CheckCircle,
   Wand2,
   Copy,
+  RefreshCw,
+  ScanSearch,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -20,16 +22,36 @@ export function TranslationPanel() {
     questions,
     activeQuestionId,
     isProcessing,
+    pipelineStage,
     progressMessage,
     processingError,
     hoveredMistranslationId,
     setHoveredMistranslationId,
+    rerunWash,
+    rerunPatch,
   } = useWorkspaceStore()
 
   const containerRef = useRef<HTMLDivElement>(null)
   const activeQuestion = questions.find((q) => q.id === activeQuestionId) || questions[0]
   const { content: draft, washedKr, mistranslations } = activeQuestion
   const hasHighlights = mistranslations.length > 0
+
+  const processingTarget = (() => {
+    if (!isProcessing) return null
+    if (pipelineStage === "RAG" || pipelineStage === "DRAFT") {
+      return "draft"
+    }
+    return "washed"
+  })()
+
+  const processingLabel = (() => {
+    if (!isProcessing) return ""
+    if (pipelineStage === "RAG") return "Preparing experience context"
+    if (pipelineStage === "DRAFT") return "Polishing source draft"
+    if (pipelineStage === "WASH") return "Generating washed draft"
+    if (pipelineStage === "PATCH") return "Running human patch analysis"
+    return "Pipeline in progress"
+  })()
 
   const escapeRegExp = (string: string) => {
     return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -55,6 +77,30 @@ export function TranslationPanel() {
     return { start: matches[0], end: matches[0] + target.length }
   }
 
+  const findVerifiedIndexedRange = (
+    source: string,
+    target: string,
+    startIndex?: number | null,
+    endIndex?: number | null
+  ) => {
+    if (
+      !Number.isInteger(startIndex) ||
+      !Number.isInteger(endIndex) ||
+      (startIndex ?? -1) < 0 ||
+      (endIndex ?? -1) <= (startIndex ?? -1) ||
+      (endIndex ?? 0) > source.length
+    ) {
+      return null
+    }
+
+    const actual = source.slice(startIndex as number, endIndex as number).normalize("NFC").trim()
+    if (actual !== target) {
+      return null
+    }
+
+    return { start: startIndex as number, end: endIndex as number }
+  }
+
   const highlightText = (text: string) => {
     if (!text || !mistranslations.length) return text
 
@@ -62,25 +108,17 @@ export function TranslationPanel() {
     const matches: { start: number; end: number; mis: any }[] = []
 
     mistranslations.forEach((mis) => {
-      if (
-        Number.isInteger(mis.startIndex) &&
-        Number.isInteger(mis.endIndex) &&
-        (mis.startIndex ?? -1) >= 0 &&
-        (mis.endIndex ?? -1) > (mis.startIndex ?? -1) &&
-        (mis.endIndex ?? 0) <= normalizedText.length
-      ) {
+      const target = mis.translated?.normalize("NFC").trim()
+      if (!target) return
+
+      const indexedRange = findVerifiedIndexedRange(normalizedText, target, mis.startIndex, mis.endIndex)
+      if (indexedRange) {
         matches.push({
-          start: mis.startIndex as number,
-          end: mis.endIndex as number,
+          ...indexedRange,
           mis,
         })
         return
       }
-
-      if (!mis.translated) return
-
-      const target = mis.translated.normalize("NFC").trim()
-      if (!target) return
 
       const uniqueRange = findUniqueExactRange(normalizedText, target)
       if (uniqueRange) {
@@ -115,7 +153,7 @@ export function TranslationPanel() {
           ? "opacity-20 grayscale scale-95 blur-[0.5px]"
           : "opacity-100"
       const reasonLabel = mis.reason ? ` [${mis.reason}]` : ""
-      result += `<mark data-mis-id="${mis.id}" title="검토 사유${reasonLabel}" class="bg-highlight-warning text-foreground ${hoverEffect} px-0.5 rounded cursor-help transition-all duration-300 inline-block origin-center">${normalizedText.substring(match.start, match.end)}</mark>`
+      result += `<mark data-mis-id="${mis.id}" title="Review reason${reasonLabel}" class="bg-highlight-warning text-foreground ${hoverEffect} px-0.5 rounded cursor-help transition-all duration-300 inline-block origin-center">${normalizedText.substring(match.start, match.end)}</mark>`
       lastIndex = match.end
     })
 
@@ -182,9 +220,9 @@ export function TranslationPanel() {
           <Wand2 className="size-16 opacity-20" />
           <div className="absolute inset-0 -z-10 size-16 rounded-full bg-primary/10 blur-2xl" />
         </div>
-        <h3 className="mb-3 text-xl font-bold">휴먼 패치 작업실</h3>
+        <h3 className="mb-3 text-xl font-bold">Human Patch Studio</h3>
         <p className="max-w-md text-balance text-sm font-medium leading-relaxed text-muted-foreground/80">
-          왼쪽 작업소에서 초안을 생성하면 번역, 역번역, 휴먼 패치 검토 결과가 이 영역에 순서대로 표시됩니다.
+          Once a draft is generated, translation, back-translation, and human-patch results appear here in order.
         </p>
       </div>
     )
@@ -197,10 +235,10 @@ export function TranslationPanel() {
           <div>
             <h3 className="flex items-center gap-2 text-lg font-bold">
               <CheckCircle className="size-5 text-emerald-500" />
-              휴먼 패치 결과
+              Human Patch Result
             </h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              역번역(EN→KR)을 거쳐 기계적인 문투를 지우고 자연스럽게 다듬었습니다.
+              The draft is washed through translation loops and then reviewed for meaning fidelity.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -208,17 +246,37 @@ export function TranslationPanel() {
               size="sm"
               variant="outline"
               className="h-8 gap-2 rounded-lg border-primary/20 px-3 text-[11px] font-bold shadow-sm transition-all hover:bg-primary/5"
+              onClick={() => void rerunWash()}
+              disabled={!draft || isProcessing}
+            >
+              <RefreshCw className="size-3.5" />
+              Rewash
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-2 rounded-lg border-primary/20 px-3 text-[11px] font-bold shadow-sm transition-all hover:bg-primary/5"
+              onClick={() => void rerunPatch()}
+              disabled={!draft || !washedKr || isProcessing}
+            >
+              <ScanSearch className="size-3.5" />
+              Repatch
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-2 rounded-lg border-primary/20 px-3 text-[11px] font-bold shadow-sm transition-all hover:bg-primary/5"
               onClick={() => {
                 navigator.clipboard.writeText(washedKr)
-                toast.success("클립보드에 복사했습니다.", {
-                  description: "지원서에 바로 붙여 넣어 사용할 수 있습니다.",
+                toast.success("Copied to clipboard.", {
+                  description: "You can paste this output directly.",
                   position: "top-center",
                 })
               }}
               disabled={!washedKr}
             >
               <Copy className="size-3.5" />
-              복사하기
+              Copy
             </Button>
             {isProcessing && (
               <Badge variant="secondary" className="animate-in fade-in zoom-in-95 gap-2 px-3 py-1.5">
@@ -243,14 +301,31 @@ export function TranslationPanel() {
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-muted-foreground/60">
                   <FileText className="size-3.5" />
-                  원문 (AI 초안)
+                  Source Draft
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="relative min-h-[420px]">
                 <div
                   className={`min-h-[200px] whitespace-pre-wrap text-sm font-medium italic leading-relaxed text-muted-foreground transition-all duration-300 ${hoveredMistranslationId ? "opacity-100" : "opacity-70"}`}
                   dangerouslySetInnerHTML={{ __html: highlightOriginalText(draft) }}
                 />
+                {processingTarget === "draft" && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-b-xl bg-background/72 backdrop-blur-[2px]">
+                    <div className="flex flex-col items-center gap-4 text-center">
+                      <div className="relative">
+                        <div className="absolute inset-0 rounded-full bg-primary/20 blur-2xl" />
+                        <div className="relative flex size-20 items-center justify-center rounded-full border border-primary/20 bg-primary/8 shadow-lg">
+                          <div className="absolute inset-0 rounded-full border-4 border-primary/15 border-t-primary animate-spin" />
+                          <Wand2 className="size-9 text-primary" />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-base font-black tracking-tight text-primary">{processingLabel}</p>
+                        <p className="text-sm font-medium text-foreground/70">A refreshed result will appear shortly.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -258,15 +333,15 @@ export function TranslationPanel() {
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-primary">
                   <CheckCircle className="size-3.5" />
-                  세탁본
+                  Washed Draft
                 </CardTitle>
                 <CardDescription className="text-[10px] font-semibold italic text-muted-foreground/80">
                   {hasHighlights
-                    ? "하이라이트된 표현은 의미가 약해졌거나 검토가 필요한 부분입니다."
-                    : "하이라이트 전에는 세탁본 전체 텍스트를 그대로 보여줍니다."}
+                    ? "Highlighted spans are suspected meaning-loss areas that need review."
+                    : "Without a highlight selection, the full washed draft is shown."}
                 </CardDescription>
               </CardHeader>
-              <CardContent ref={containerRef}>
+              <CardContent ref={containerRef} className="relative min-h-[420px]">
                 {hasHighlights ? (
                   <div
                     className="min-h-[200px] whitespace-pre-wrap text-sm font-medium leading-relaxed text-foreground"
@@ -277,10 +352,21 @@ export function TranslationPanel() {
                     {washedKr}
                   </div>
                 )}
-                {!washedKr && isProcessing && (
-                  <div className="flex flex-col items-center justify-center gap-3 py-20 opacity-20">
-                    <Wand2 className="size-8 animate-spin" />
-                    <span className="text-xs font-bold tracking-tighter">Washing in progress...</span>
+                {processingTarget === "washed" && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-b-xl bg-background/72 backdrop-blur-[2px]">
+                    <div className="flex flex-col items-center gap-4 text-center">
+                      <div className="relative">
+                        <div className="absolute inset-0 rounded-full bg-primary/20 blur-2xl" />
+                        <div className="relative flex size-20 items-center justify-center rounded-full border border-primary/20 bg-primary/8 shadow-lg">
+                          <div className="absolute inset-0 rounded-full border-4 border-primary/15 border-t-primary animate-spin" />
+                          <Wand2 className="size-9 text-primary" />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-base font-black tracking-tight text-primary">{processingLabel}</p>
+                        <p className="text-sm font-medium text-foreground/70">The washed draft is being refined from the current baseline.</p>
+                      </div>
+                    </div>
                   </div>
                 )}
               </CardContent>
