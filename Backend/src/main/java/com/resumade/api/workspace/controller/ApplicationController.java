@@ -11,6 +11,7 @@ import com.resumade.api.workspace.dto.JdAnalysisResponse;
 import com.resumade.api.workspace.service.CompanyResearchService;
 import com.resumade.api.workspace.service.JdAnalysisService;
 import com.resumade.api.workspace.service.WorkspaceService;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -159,17 +160,35 @@ public class ApplicationController {
 
     @Transactional
     @PutMapping("/{id}")
-    public Application updateApplication(@PathVariable Long id, @RequestBody Map<String, Object> updates) {
+    public Application updateApplication(@PathVariable Long id, @RequestBody JsonNode updates) {
         Application application = applicationRepository.findById(id).orElseThrow();
-        
-        if (updates.containsKey("companyName")) application.setCompanyName((String) updates.get("companyName"));
-        if (updates.containsKey("position")) application.setPosition((String) updates.get("position"));
-        if (updates.containsKey("status")) application.setStatus(ApplicationStatus.fromId((String) updates.get("status")));
-        if (updates.containsKey("result")) application.setResult(ApplicationResult.fromId((String) updates.get("result")));
-        if (updates.containsKey("logoUrl")) application.setLogoUrl((String) updates.get("logoUrl"));
-        if (updates.containsKey("companyResearch")) application.setCompanyResearch((String) updates.get("companyResearch"));
-        if (updates.containsKey("deadline")) {
-            String deadlineStr = (String) updates.get("deadline");
+
+        String companyName = getOptionalText(updates, "companyName", "company_name");
+        if (companyName != null) application.setCompanyName(companyName);
+
+        String position = getOptionalText(updates, "position");
+        if (position != null) application.setPosition(position);
+
+        String rawJd = getOptionalText(updates, "rawJd", "rawJD", "raw_jd");
+        if (rawJd != null) application.setRawJd(rawJd);
+
+        String aiInsight = getOptionalText(updates, "aiInsight", "ai_insight");
+        if (aiInsight != null) application.setAiInsight(aiInsight);
+
+        String status = getOptionalText(updates, "status");
+        if (status != null) application.setStatus(ApplicationStatus.fromId(status));
+
+        String result = getOptionalText(updates, "result");
+        if (result != null) application.setResult(ApplicationResult.fromId(result));
+
+        String logoUrl = getOptionalText(updates, "logoUrl", "logo_url");
+        if (logoUrl != null) application.setLogoUrl(logoUrl);
+
+        String companyResearch = getOptionalText(updates, "companyResearch", "company_research");
+        if (companyResearch != null) application.setCompanyResearch(companyResearch);
+
+        if (hasAnyField(updates, "deadline")) {
+            String deadlineStr = getOptionalText(updates, "deadline");
             if (deadlineStr != null && !deadlineStr.isBlank()) {
                 try {
                     // Handle ISO-8601 (e.g., 2026-03-16T14:29:00.000Z)
@@ -194,8 +213,31 @@ public class ApplicationController {
                 application.setDeadline(null);
             }
         }
-        
-        return applicationRepository.save(application);
+
+        return applicationRepository.saveAndFlush(application);
+    }
+
+    private boolean hasAnyField(JsonNode updates, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            if (updates.has(fieldName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String getOptionalText(JsonNode updates, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            JsonNode field = updates.get(fieldName);
+            if (field == null || field.isMissingNode()) {
+                continue;
+            }
+            if (field.isNull()) {
+                return null;
+            }
+            return field.asText();
+        }
+        return null;
     }
 
     @Transactional

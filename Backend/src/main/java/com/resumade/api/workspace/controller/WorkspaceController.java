@@ -24,18 +24,34 @@ public class WorkspaceController {
     @GetMapping("/stream/{questionId}")
     public SseEmitter streamHumanPatch(
             @PathVariable Long questionId,
-            @RequestParam(defaultValue = "true") boolean useDirective) {
+            @RequestParam(defaultValue = "true") boolean useDirective,
+            @RequestParam(required = false) Integer targetChars) {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
-        executorService.execute(() -> workspaceService.processHumanPatch(questionId, useDirective, emitter));
+        executorService.execute(() -> workspaceService.processHumanPatch(questionId, useDirective, targetChars, emitter));
         return emitter;
     }
 
     @GetMapping("/refine-stream/{questionId}")
     public SseEmitter streamRefinement(
             @PathVariable Long questionId,
-            @RequestParam String directive) {
+            @RequestParam String directive,
+            @RequestParam(required = false) Integer targetChars) {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
-        executorService.execute(() -> workspaceService.processRefinement(questionId, directive, emitter));
+        executorService.execute(() -> workspaceService.processRefinement(questionId, directive, targetChars, emitter));
+        return emitter;
+    }
+
+    @GetMapping("/rewash-stream/{questionId}")
+    public SseEmitter streamRewash(@PathVariable Long questionId) {
+        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
+        executorService.execute(() -> workspaceService.processRewash(questionId, emitter));
+        return emitter;
+    }
+
+    @GetMapping("/repatch-stream/{questionId}")
+    public SseEmitter streamRepatch(@PathVariable Long questionId) {
+        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
+        executorService.execute(() -> workspaceService.processRepatch(questionId, emitter));
         return emitter;
     }
 }
