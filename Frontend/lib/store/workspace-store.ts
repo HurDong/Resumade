@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { toApiUrl } from "@/lib/network/api-base";
 import { streamSse } from "@/lib/network/stream-sse";
+import {
+  playCompletionSound,
+  prepareCompletionSound,
+} from "@/lib/audio/completion-sound";
 
 export interface Mistranslation {
   id: string;
@@ -24,6 +28,7 @@ export interface WorkspaceQuestion {
   dbId?: number; // Backend DB ID
   title: string;
   maxLength: number;
+  lengthTarget?: number | null;
   userDirective: string;
   content: string;
   washedKr: string;
@@ -38,6 +43,8 @@ export interface ContextItem {
   relevantPart: string;
   relevanceScore: number;
 }
+
+export type PipelineStage = "IDLE" | "RAG" | "DRAFT" | "WASH" | "PATCH" | "DONE";
 
 interface WorkspaceState {
   // Global context
@@ -58,6 +65,7 @@ interface WorkspaceState {
   
   // Transient processing state
   isProcessing: boolean;
+  pipelineStage: PipelineStage;
   progressMessage: string;
   progressHistory: string[];
   processingError: string | null;
@@ -85,19 +93,63 @@ interface WorkspaceState {
   toggleActiveQuestionCompletion: () => Promise<void>;
   
   startProcessing: () => void;
+  setPipelineStage: (stage: PipelineStage) => void;
   updateProgress: (message: string) => void;
   updateDraftIntermediate: (draft: string) => void;
   updateWashedIntermediate: (washed: string) => void;
   completeProcessing: (data: any) => void;
   setError: (error: string) => void;
-  generateDraft: (options?: { useDirective?: boolean }) => Promise<void>;
-  refineDraft: (directive: string) => Promise<void>;
+  generateDraft: (options?: { useDirective?: boolean; lengthTarget?: number | null }) => Promise<void>;
+  refineDraft: (directive: string, options?: { lengthTarget?: number | null }) => Promise<void>;
+  rerunWash: () => Promise<void>;
+  rerunPatch: () => Promise<void>;
+}
+
+async function ensureQuestionPersisted(state: WorkspaceState) {
+  const activeQ = state.questions.find((q) => q.id === state.activeQuestionId);
+  if (!activeQ) {
+    return null;
+  }
+
+  if (activeQ.dbId) {
+    return activeQ;
+  }
+
+  if (!state.applicationId) {
+    return null;
+  }
+
+  const response = await fetch(`/api/applications/${state.applicationId}/questions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: activeQ.title,
+      maxLength: activeQ.maxLength,
+      isCompleted: activeQ.isCompleted,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to create question");
+  }
+
+  const savedQuestion = await response.json();
+  const persistedQuestion = { ...activeQ, dbId: savedQuestion.id };
+
+  useWorkspaceStore.setState((current) => ({
+    questions: current.questions.map((question) =>
+      question.id === activeQ.id ? persistedQuestion : question
+    ),
+  }));
+
+  return persistedQuestion;
 }
 
 const defaultQuestion: WorkspaceQuestion = {
   id: "q-default",
-  title: "참여했던 도전적인 프로젝트를 설명하고 기술적 어려움을 어떻게 해결했는지 서술하세요.",
+  title: "Describe a project you joined and explain how you solved a technical challenge.",
   maxLength: 1000,
+  lengthTarget: null,
   content: "",
   washedKr: "",
   mistranslations: [],
@@ -118,6 +170,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   leftPanelTab: "context",
   hoveredMistranslationId: null,
   isProcessing: false,
+  pipelineStage: "IDLE",
   progressMessage: "",
   progressHistory: [],
   processingError: null,
@@ -303,31 +356,37 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   fetchApplicationData: async (id) => {
+    const loadingMessage = "Loading application data...";
     set({
       isProcessing: true,
-      progressMessage: "데이터를 불러오는 중...",
-      progressHistory: ["데이터를 불러오는 중..."],
+      pipelineStage: "IDLE",
+      progressMessage: loadingMessage,
+      progressHistory: [loadingMessage],
       processingError: null,
     });
+
     try {
       const response = await fetch(`/api/applications/${id}`);
       if (!response.ok) throw new Error("Failed to fetch application");
       const data = await response.json();
-      
+
       const mappedQuestions: WorkspaceQuestion[] = data.questions.map((q: any) => ({
         id: `q-${q.id}`,
         dbId: q.id,
         title: q.title,
         maxLength: q.maxLength,
+        lengthTarget: null,
         userDirective: q.userDirective || "",
         content: q.content || "",
         washedKr: q.washedKr || "",
-        mistranslations: q.mistranslations ? JSON.parse(q.mistranslations).map((m: any, idx: number) => ({
-          ...m,
-          id: m.id || `mis-${idx}`
-        })) : [],
+        mistranslations: q.mistranslations
+          ? JSON.parse(q.mistranslations).map((m: any, idx: number) => ({
+              ...m,
+              id: m.id || `mis-${idx}`,
+            }))
+          : [],
         aiReviewReport: q.aiReview ? JSON.parse(q.aiReview) : null,
-        isCompleted: !!q.completed || !!q.isCompleted
+        isCompleted: !!q.completed || !!q.isCompleted,
       }));
 
       set({
@@ -339,51 +398,56 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         questions: mappedQuestions.length > 0 ? mappedQuestions : [defaultQuestion],
         activeQuestionId: mappedQuestions.length > 0 ? mappedQuestions[0].id : "q-default",
         isProcessing: false,
+        pipelineStage: "IDLE",
         progressMessage: "",
         progressHistory: [],
         processingError: null,
       });
 
-      // Fetch RAG context for the first question
       if (mappedQuestions.length > 0 && mappedQuestions[0].dbId) {
         get().fetchRAGContext(mappedQuestions[0].dbId, mappedQuestions[0].title);
       }
     } catch (err) {
       console.error(err);
-      set({ isProcessing: false, progressMessage: "오류 발생" });
+      set({
+        isProcessing: false,
+        pipelineStage: "IDLE",
+        progressMessage: "Error",
+        processingError: "Failed to load application data.",
+      });
     }
   },
 
   deleteActiveQuestion: async () => {
     const state = get();
-    const activeQ = state.questions.find((q) => q.id === state.activeQuestionId);
+    const activeQ = await ensureQuestionPersisted(state);
     if (!activeQ?.dbId) {
-      state.setError("저장된 문항 ID를 찾지 못했습니다.");
+      state.setError("Could not find a valid question ID.");
       return;
     }
 
-    if (!confirm("정말 이 문항을 삭제하시겠습니까?")) return;
+    if (!confirm("Delete this question?")) return;
 
     try {
       const response = await fetch(`/api/applications/questions/${activeQ.dbId}`, {
-        method: "DELETE"
+        method: "DELETE",
       });
       if (!response.ok) throw new Error("Failed to delete question");
 
-      const remainingQuestions = state.questions.filter(q => q.id !== state.activeQuestionId);
-      set({ 
+      const remainingQuestions = state.questions.filter((q) => q.id !== state.activeQuestionId);
+      set({
         questions: remainingQuestions,
-        activeQuestionId: remainingQuestions.length > 0 ? remainingQuestions[0].id : null
+        activeQuestionId: remainingQuestions.length > 0 ? remainingQuestions[0].id : null,
       });
     } catch (err) {
       console.error(err);
-      alert("문항 삭제에 실패했습니다.");
+      alert("Failed to delete the question.");
     }
   },
 
   toggleActiveQuestionCompletion: async () => {
     const state = get();
-    const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
+    const activeQ = state.questions.find((q) => q.id === state.activeQuestionId);
     if (!activeQ) return;
 
     const newStatus = !activeQ.isCompleted;
@@ -392,17 +456,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   fetchRAGContext: async (questionId, query) => {
     try {
-      const url = query 
+      const url = query
         ? `/api/applications/questions/${questionId}/rag?query=${encodeURIComponent(query)}`
         : `/api/applications/questions/${questionId}/rag`;
-        
+
       const response = await fetch(url);
       if (!response.ok) throw new Error("Failed to fetch RAG context");
       const data = await response.json();
       set({ extractedContext: data.extractedContext || [] });
     } catch (err) {
       console.error("RAG fetch failed", err);
-      // Keep existing context or clear it? Clearing is safer to avoid confusion
       set({ extractedContext: [] });
     }
   },
@@ -410,70 +473,80 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   startProcessing: () => {
     get().activeStreamController?.abort();
 
-    const initialMessage = "서버 연결 대기 중...";
+    const initialMessage = "Waiting for server response...";
     set({
       isProcessing: true,
-      progressMessage: "서버 연결 대기 중...",
+      pipelineStage: "RAG",
+      progressMessage: initialMessage,
       progressHistory: [initialMessage],
       processingError: null,
       leftPanelTab: "context",
       activeStreamController: null,
-      progressMessage: initialMessage,
     });
   },
-    
+
+  setPipelineStage: (pipelineStage) => set({ pipelineStage }),
+
   updateProgress: (progressMessage) =>
     set((state) => ({
       progressMessage,
       progressHistory: appendProgressHistory(state.progressHistory, progressMessage),
+      pipelineStage: inferStageFromProgress(state.pipelineStage, progressMessage),
     })),
-  
-  updateDraftIntermediate: (draft) => set((state) => ({
-    questions: state.questions.map(q => 
-      q.id === state.activeQuestionId ? { ...q, content: draft } : q
-    )
-  })),
 
-  updateWashedIntermediate: (washedKr) => set((state) => ({
-    questions: state.questions.map(q => 
-      q.id === state.activeQuestionId ? { ...q, washedKr } : q
-    )
-  })),
+  updateDraftIntermediate: (draft) =>
+    set((state) => ({
+      pipelineStage: state.pipelineStage === "RAG" ? "DRAFT" : state.pipelineStage,
+      questions: state.questions.map((q) =>
+        q.id === state.activeQuestionId ? { ...q, content: draft } : q
+      ),
+    })),
+
+  updateWashedIntermediate: (washedKr) =>
+    set((state) => ({
+      pipelineStage: state.pipelineStage === "PATCH" ? "PATCH" : "WASH",
+      questions: state.questions.map((q) =>
+        q.id === state.activeQuestionId ? { ...q, washedKr } : q
+      ),
+    })),
 
   completeProcessing: (data) => {
     const state = get();
-    const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
+    const activeQ = state.questions.find((q) => q.id === state.activeQuestionId);
     if (!activeQ) return;
 
     const updatedMistranslations = data.mistranslations.map((m: any, idx: number) => ({
       ...m,
       id: `mis-${idx}`,
-      suggestion: m.translated, // Pre-fill with translation for manual editing
+      suggestion: m.translated,
     }));
 
-    // Update frontend state
     set((state) => ({
       isProcessing: false,
-      progressMessage: "완료!",
-      progressHistory: appendProgressHistory(state.progressHistory, "?꾨즺!"),
+      pipelineStage: "DONE",
+      progressMessage: "Completed.",
+      progressHistory: appendProgressHistory(state.progressHistory, "Completed."),
       processingError: null,
       activeStreamController: null,
       leftPanelTab: "report",
-      questions: state.questions.map(q => 
-        q.id === state.activeQuestionId ? { 
-          ...q, 
-          washedKr: data.draft,
-          mistranslations: updatedMistranslations,
-          aiReviewReport: data.aiReviewReport
-        } : q
-      )
+      questions: state.questions.map((q) =>
+        q.id === state.activeQuestionId
+          ? {
+              ...q,
+              washedKr: data.draft,
+              mistranslations: updatedMistranslations,
+              aiReviewReport: data.aiReviewReport,
+            }
+          : q
+      ),
     }));
 
-    // IMMEDIATELY sync to backend
+    void playCompletionSound();
+
     if (activeQ.dbId) {
       fetch(`/api/applications/questions/${activeQ.dbId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: activeQ.title,
           maxLength: activeQ.maxLength,
@@ -481,165 +554,141 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           content: activeQ.content,
           washedKr: data.draft,
           mistranslations: JSON.stringify(updatedMistranslations),
-          aiReview: JSON.stringify(data.aiReviewReport)
-        })
-      }).catch(err => console.error("Initial wash save failed", err));
+          aiReview: JSON.stringify(data.aiReviewReport),
+        }),
+      }).catch((err) => console.error("Initial wash save failed", err));
     }
   },
 
   setError: (error) =>
-    set((state) => ({
-      isProcessing: false,
-      progressMessage: "오류가 발생했습니다.",
-      progressHistory: appendProgressHistory(
-        state.progressHistory,
-        "오류가 발생했습니다."
-      ),
-      processingError: "오류가 발생했습니다.",
-      activeStreamController: null,
-      leftPanelTab: "context",
-      progressMessage: "오류가 발생했습니다.",
-    })),
+    set((state) => {
+      const message = error || "An error occurred.";
+      return {
+        isProcessing: false,
+        pipelineStage: "IDLE",
+        progressMessage: message,
+        progressHistory: appendProgressHistory(state.progressHistory, message),
+        processingError: message,
+        activeStreamController: null,
+        leftPanelTab: "context",
+      };
+    }),
 
   generateDraft: async (options) => {
     const state = get();
-    const activeQ = state.questions.find((q) => q.id === state.activeQuestionId);
+    let activeQ;
+    try {
+      activeQ = await ensureQuestionPersisted(state);
+    } catch (error) {
+      console.error("Failed to persist question before draft generation", error);
+      state.setError("An error occurred while saving the question.");
+      return;
+    }
     if (!activeQ?.dbId) {
-      state.setError("저장된 문항 ID를 찾지 못했습니다.");
+      state.setError("Could not find a valid question ID.");
       return;
     }
 
+    await prepareCompletionSound();
     state.startProcessing();
     const useDirective = options?.useDirective ?? true;
+    const requestedLengthTarget = options?.lengthTarget ?? activeQ.lengthTarget;
+    const normalizedTarget =
+      requestedLengthTarget && requestedLengthTarget > 0
+        ? Math.min(
+            Math.max(1, Math.floor(requestedLengthTarget)),
+            Math.max(1, activeQ.maxLength || requestedLengthTarget)
+          )
+        : null;
+    const targetQuery = normalizedTarget ? `&targetChars=${normalizedTarget}` : "";
 
     await runWorkspaceSse({
       url: toApiUrl(
-        `/api/workspace/stream/${activeQ.dbId}?useDirective=${useDirective}`
+        `/api/workspace/stream/${activeQ.dbId}?useDirective=${useDirective}${targetQuery}`
       ),
       set,
       get,
-      errorFallbackMessage: "초안 생성 중 오류가 발생했습니다.",
+      errorFallbackMessage: "An error occurred while generating the draft.",
     });
-    return;
-
-    const eventSource = new EventSource(
-      `/api/workspace/stream/${activeQ.dbId}`
-    );
-
-    eventSource.onopen = () => {
-      console.log("🟢 SSE Connection Opened");
-      get().updateProgress("📡 파이프라인 연결됨...");
-    };
-
-    eventSource.addEventListener("progress", (event) => {
-      console.log("SSE Progress:", event.data);
-      get().updateProgress(parseSseMessage(event.data));
-    });
-
-    eventSource.addEventListener("draft_intermediate", (event) => {
-      get().updateDraftIntermediate(parseSseMessage(event.data));
-    });
-
-    eventSource.addEventListener("washed_intermediate", (event) => {
-      get().updateWashedIntermediate(parseSseMessage(event.data));
-    });
-
-    eventSource.addEventListener("complete", (event) => {
-      const data = parseSseJson(event.data);
-      if (!data) {
-        state.setError("SSE 완료 응답을 해석하지 못했습니다.");
-        eventSource.close();
-        return;
-      }
-      get().completeProcessing(data);
-      eventSource.close();
-    });
-
-    eventSource.addEventListener("error", (event: MessageEvent<string>) => {
-      const data = parseSseJson(event.data);
-      state.setError(
-        data?.message ||
-          parseSseMessage(event.data) ||
-          "초안 생성 중 오류가 발생했습니다."
-      );
-      eventSource.close();
-    });
-
-    eventSource.onerror = () => {
-      state.setError("서버와의 연결이 끊어졌습니다.");
-      eventSource.close();
-    };
   },
 
-  refineDraft: async (directive: string) => {
+  refineDraft: async (directive: string, options?: { lengthTarget?: number | null }) => {
     const state = get();
-    const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
-    if (!activeQ || !activeQ.dbId) return;
+    let activeQ;
+    try {
+      activeQ = await ensureQuestionPersisted(state);
+    } catch (error) {
+      console.error("Failed to persist question before refinement", error);
+      state.setError("An error occurred while saving the question.");
+      return;
+    }
+    if (!activeQ?.dbId) {
+      state.setError("Could not find a valid question ID.");
+      return;
+    }
 
+    await prepareCompletionSound();
     state.startProcessing();
     state.updateActiveQuestion({ userDirective: directive });
+    const requestedLengthTarget = options?.lengthTarget ?? activeQ.lengthTarget;
+    const normalizedTarget =
+      requestedLengthTarget && requestedLengthTarget > 0
+        ? Math.min(
+            Math.max(1, Math.floor(requestedLengthTarget)),
+            Math.max(1, activeQ.maxLength || requestedLengthTarget)
+          )
+        : null;
+    const targetQuery = normalizedTarget ? `&targetChars=${normalizedTarget}` : "";
 
     await runWorkspaceSse({
       url: toApiUrl(
         `/api/workspace/refine-stream/${activeQ.dbId}?directive=${encodeURIComponent(
           directive
-        )}`
+        )}${targetQuery}`
       ),
       set,
       get,
-      errorFallbackMessage: "수정 중 오류가 발생했습니다.",
+      errorFallbackMessage: "An error occurred while refining the draft.",
     });
-    return;
+  },
 
-    const eventSource = new EventSource(
-      `/api/workspace/refine-stream/${activeQ.dbId}?directive=${encodeURIComponent(directive)}`
-    );
+  rerunWash: async () => {
+    const state = get();
+    const activeQ = state.questions.find((q) => q.id === state.activeQuestionId);
+    if (!activeQ?.dbId) {
+      state.setError("Could not find a valid question ID.");
+      return;
+    }
 
-    eventSource.onopen = () => {
-      console.log("SSE Refine Connection Opened");
-      get().updateProgress("리터칭 파이프라인 연결됨...");
-    };
+    await prepareCompletionSound();
+    state.startProcessing();
 
-    eventSource.addEventListener("progress", (event) => {
-      console.log("SSE Refine Progress:", event.data);
-      get().updateProgress(parseSseMessage(event.data));
+    await runWorkspaceSse({
+      url: toApiUrl(`/api/workspace/rewash-stream/${activeQ.dbId}`),
+      set,
+      get,
+      errorFallbackMessage: "An error occurred while rerunning wash.",
     });
+  },
 
-    eventSource.addEventListener("draft_intermediate", (event) => {
-      get().updateDraftIntermediate(parseSseMessage(event.data));
+  rerunPatch: async () => {
+    const state = get();
+    const activeQ = state.questions.find((q) => q.id === state.activeQuestionId);
+    if (!activeQ?.dbId) {
+      state.setError("Could not find a valid question ID.");
+      return;
+    }
+
+    await prepareCompletionSound();
+    state.startProcessing();
+
+    await runWorkspaceSse({
+      url: toApiUrl(`/api/workspace/repatch-stream/${activeQ.dbId}`),
+      set,
+      get,
+      errorFallbackMessage: "An error occurred while rerunning patch.",
     });
-
-    eventSource.addEventListener("washed_intermediate", (event) => {
-      get().updateWashedIntermediate(parseSseMessage(event.data));
-    });
-
-    eventSource.addEventListener("complete", (event) => {
-      const data = parseSseJson(event.data);
-      if (!data) {
-        state.setError("SSE 완료 응답을 해석하지 못했습니다.");
-        eventSource.close();
-        return;
-      }
-      get().completeProcessing(data);
-      eventSource.close();
-    });
-
-    eventSource.addEventListener("error", (event: MessageEvent<string>) => {
-      const data = parseSseJson(event.data);
-      state.setError(
-        data?.message ||
-          parseSseMessage(event.data) ||
-          "수정 중 오류가 발생했습니다."
-      );
-      eventSource.close();
-    });
-
-    eventSource.onerror = () => {
-      state.setError("서버와의 연결이 끊어졌습니다.");
-      eventSource.close();
-    };
-  }
-}));
+  }}));
 
 function parseSseMessage(raw: string) {
   if (!raw) {
@@ -660,6 +709,57 @@ function parseSseJson(raw: string) {
   } catch {
     return null;
   }
+}
+
+function parsePipelineStage(raw: string): PipelineStage | null {
+  const stage = parseSseMessage(raw).trim().toUpperCase();
+  if (stage === "RAG" || stage === "DRAFT" || stage === "WASH" || stage === "PATCH" || stage === "DONE") {
+    return stage;
+  }
+  return null;
+}
+
+function inferStageFromProgress(current: PipelineStage, message: string): PipelineStage {
+  const normalized = (message || "").toLowerCase();
+
+  if (
+    normalized.includes("done") ||
+    normalized.includes("complete") ||
+    normalized.includes("finished")
+  ) {
+    return "DONE";
+  }
+
+  if (
+    normalized.includes("patch") ||
+    normalized.includes("review") ||
+    normalized.includes("analysis")
+  ) {
+    return "PATCH";
+  }
+
+  if (
+    normalized.includes("wash") ||
+    normalized.includes("translate") ||
+    normalized.includes("translation")
+  ) {
+    return current === "DONE" ? current : "WASH";
+  }
+
+  if (normalized.includes("draft") || normalized.includes("writing")) {
+    if (current === "PATCH" || current === "DONE") {
+      return current;
+    }
+    return "DRAFT";
+  }
+
+  if (normalized.includes("rag") || normalized.includes("context")) {
+    if (current === "IDLE") {
+      return "RAG";
+    }
+  }
+
+  return current;
 }
 
 function appendProgressHistory(history: string[], message: string) {
@@ -693,10 +793,18 @@ async function runWorkspaceSse({
       url,
       signal: controller.signal,
       onOpen: () => {
-        get().updateProgress("파이프라인 연결됨...");
+        get().updateProgress("Pipeline connected.");
       },
       onEvent: ({ event, data }) => {
         const eventName = event.toLowerCase();
+
+        if (eventName === "stage") {
+          const parsedStage = parsePipelineStage(data);
+          if (parsedStage) {
+            get().setPipelineStage(parsedStage);
+          }
+          return;
+        }
 
         if (eventName === "progress") {
           get().updateProgress(parseSseMessage(data));
@@ -716,7 +824,7 @@ async function runWorkspaceSse({
         if (eventName === "complete") {
           const parsed = parseSseJson(data);
           if (!parsed) {
-            get().setError("SSE 완료 응답을 해석하지 못했습니다.");
+            get().setError("Could not parse SSE completion payload.");
             controller.abort();
             return;
           }
@@ -738,7 +846,7 @@ async function runWorkspaceSse({
 
     const state = get();
     if (state.isProcessing && !state.processingError) {
-      state.setError("스트림이 예기치 않게 종료되었습니다.");
+      state.setError("The stream ended unexpectedly.");
     }
   } catch (error) {
     if (controller.signal.aborted) {
@@ -759,8 +867,10 @@ function normalizeSseError(error: unknown, fallbackMessage: string) {
   }
 
   if (error instanceof Error && error.message) {
-    return "오류가 발생했습니다.";
+    return "An error occurred.";
   }
 
-  return "오류가 발생했습니다.";
+  return "An error occurred.";
 }
+
+
