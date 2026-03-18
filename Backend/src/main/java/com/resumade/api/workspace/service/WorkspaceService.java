@@ -678,12 +678,13 @@ public class WorkspaceService {
             double defaultMinRatio,
             double defaultMaxRatio) {
         if (targetChars != null && targetChars > 0) {
-            int requestedTarget = targetChars;
+            int preferredTarget = targetChars;
             if (maxLength > 0) {
-                requestedTarget = Math.min(requestedTarget, maxLength);
+                preferredTarget = Math.min(preferredTarget, maxLength);
             }
-            requestedTarget = Math.max(1, requestedTarget);
-            return new int[] { requestedTarget, requestedTarget };
+            preferredTarget = Math.max(1, preferredTarget);
+            int minTarget = Math.max(1, (int) Math.round(preferredTarget * 0.90));
+            return new int[] { minTarget, preferredTarget };
         }
 
         RequestedLengthDirective requestedLength = extractRequestedLengthDirective(directive, maxLength);
@@ -708,12 +709,13 @@ public class WorkspaceService {
         String normalized = directive == null || directive.isBlank() ? NO_EXTRA_USER_DIRECTIVE : directive.trim();
         RequestedLengthDirective requestedLength;
         if (targetChars != null && targetChars > 0) {
-            int target = targetChars;
+            int preferred = targetChars;
             if (maxLength > 0) {
-                target = Math.min(target, maxLength);
+                preferred = Math.min(preferred, maxLength);
             }
-            target = Math.max(1, target);
-            requestedLength = new RequestedLengthDirective(target, target);
+            preferred = Math.max(1, preferred);
+            int min = Math.max(1, (int) Math.round(preferred * 0.90));
+            requestedLength = new RequestedLengthDirective(min, preferred);
         } else {
             requestedLength = extractRequestedLengthDirective(directive, maxLength);
         }
