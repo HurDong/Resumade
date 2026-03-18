@@ -894,9 +894,10 @@ public class WorkspaceService {
             }
         }
 
-        if (extractRequestedLengthDirective(directive, maxLength) != null
-                && countResumeCharacters(candidate) < minTargetChars) {
-            throw new IllegalStateException("minimum length requirement not met");
+        int finalLength = countResumeCharacters(candidate);
+        if (finalLength < minTargetChars) {
+            log.warn("expandToMinimumLength: gave up after {} attempts. current={}, min={}, preferred={}, hardLimit={}",
+                    MINIMUM_LENGTH_EXPANSION_ATTEMPTS, finalLength, minTargetChars, preferredTarget, maxLength);
         }
 
         return candidate;
