@@ -47,7 +47,7 @@ export function ApplicationDetailSheet({
   isOpen: boolean
   onClose: () => void
   onRefresh: () => void
-  onUpdateApplication: (updates: Partial<Application>) => void
+  onUpdateApplication: (updates: Partial<Application>) => Promise<void>
   onDelete: (id: string) => void
 }) {
   const router = useRouter()
@@ -65,7 +65,7 @@ export function ApplicationDetailSheet({
   if (!application) return null
 
   const handleUpdate = async (updates: Partial<Application>) => {
-    onUpdateApplication(updates)
+    await onUpdateApplication(updates)
   }
 
   return (
@@ -301,7 +301,10 @@ export function ApplicationDetailSheet({
 
           <ScrollArea className="h-full min-h-0 flex-1">
             <TabsContent value="jd" className="m-0 min-w-0 overflow-x-auto p-4 sm:p-6 lg:p-7">
-              <JDAnalysisPanel application={application} />
+              <JDAnalysisPanel
+                application={application}
+                onUpdateApplication={onUpdateApplication}
+              />
             </TabsContent>
             <TabsContent value="research" className="m-0 min-w-0 overflow-x-auto p-4 sm:p-6 lg:p-7">
               <CompanyResearchPanel

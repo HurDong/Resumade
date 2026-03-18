@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { ChevronRight, Plus, Loader2, Eye, EyeOff } from "lucide-react"
 import { type Application, type ApplicationStatus } from "@/lib/mock-data"
 import { getCompanyLogo } from "@/lib/logo-utils"
+import { countResumeCharacters } from "@/lib/text/resume-character-count"
 import { KanbanColumn, type ColumnDefinition } from "./kanban-column"
 import { ApplicationDetailSheet } from "./application-detail-sheet"
 import { DragDropContext, DropResult } from "@hello-pangea/dnd"
@@ -19,6 +20,31 @@ export const columns: ColumnDefinition[] = [
 
 import { AddApplicationDialog } from "./add-application-dialog"
 import { useEffect } from "react"
+
+function mapApplicationFromApi(app: any): Application {
+  return {
+    id: app.id.toString(),
+    company: app.companyName,
+    position: app.position,
+    status: app.status?.toLowerCase() || "document",
+    logoColor: "bg-blue-500",
+    logoUrl: app.logoUrl,
+    deadline: app.deadline,
+    techStack: [],
+    rawJd: app.rawJd || "",
+    aiInsight: app.aiInsight || "",
+    companyResearch: app.companyResearch || "",
+    questions: (app.questions || []).map((q: any) => ({
+      id: q.id.toString(),
+      title: q.title,
+      maxLength: q.maxLength || 1000,
+      currentLength: countResumeCharacters(q.content),
+      content: q.content || "",
+      isCompleted: !!q.isCompleted || !!q.completed
+    })),
+    result: (app.result?.toLowerCase() || "pending") as any
+  }
+}
 
 export function KanbanBoard() {
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null)
@@ -53,29 +79,7 @@ export function KanbanBoard() {
         console.error("Expected array from /api/applications, but got:", data)
         return
       }
-      // Map backend data to frontend Application type
-      const mapped = data.map((app: any) => ({
-        id: app.id.toString(),
-        company: app.companyName,
-        position: app.position,
-        status: app.status?.toLowerCase() || "document",
-        logoColor: "bg-blue-500",
-        logoUrl: app.logoUrl,
-        deadline: app.deadline,
-        techStack: [],
-        rawJd: app.rawJd || "",
-        aiInsight: app.aiInsight || "",
-        companyResearch: app.companyResearch || "",
-        questions: (app.questions || []).map((q: any) => ({
-          id: q.id.toString(),
-          title: q.title,
-          maxLength: q.maxLength || 1000,
-          currentLength: q.content?.length || 0,
-          content: q.content || "",
-          isCompleted: !!q.isCompleted || !!q.completed
-        })),
-        result: (app.result?.toLowerCase() || "pending") as any
-      }))
+      const mapped = data.map(mapApplicationFromApi)
       setLocalApplications(mapped)
     } catch (err) {
       console.error("Failed to fetch applications:", err)
@@ -181,27 +185,7 @@ export function KanbanBoard() {
       
       const savedApp = await response.json()
       
-      const application: Application = {
-        id: savedApp.id.toString(),
-        company: savedApp.companyName,
-        position: savedApp.position,
-        status: savedApp.status?.toLowerCase() || "document",
-        logoColor: "bg-primary",
-        deadline: savedApp.deadline,
-        techStack: [],
-        rawJd: savedApp.rawJd || "",
-        aiInsight: savedApp.aiInsight || "",
-        companyResearch: savedApp.companyResearch || "",
-        questions: (savedApp.questions || []).map((q: any) => ({
-          id: q.id.toString(),
-          title: q.title,
-          maxLength: q.maxLength || 1000,
-          currentLength: q.content?.length || 0,
-          content: q.content || "",
-          isCompleted: !!q.isCompleted || !!q.completed
-        })),
-        result: (savedApp.result?.toLowerCase() || "pending") as any
-      }
+      const application = mapApplicationFromApi(savedApp)
       setLocalApplications([application, ...localApplications])
     } catch (err) {
       console.error(err)
@@ -210,6 +194,7 @@ export function KanbanBoard() {
   }
 
   const handleUpdateApplication = async (id: string, updates: Partial<Application>) => {
+    const previousApplications = localApplications
     try {
       setLocalApplications(prev => prev.map(app => 
         app.id === id ? { ...app, ...updates } : app
@@ -221,9 +206,14 @@ export function KanbanBoard() {
         body: JSON.stringify(updates)
       })
       if (!response.ok) throw new Error("Update failed")
+      const savedApp = mapApplicationFromApi(await response.json())
+      setLocalApplications(prev => prev.map(app => (
+        app.id === id ? { ...app, ...savedApp } : app
+      )))
     } catch (err) {
       console.error(err)
-      fetchApplications()
+      setLocalApplications(previousApplications)
+      await fetchApplications()
     }
   }
 
@@ -320,7 +310,10 @@ export function KanbanBoard() {
         isOpen={isSheetOpen}
         onClose={handleCloseSheet}
         onRefresh={fetchApplications}
-        onUpdateApplication={(updates) => selectedApplication && handleUpdateApplication(selectedApplication.id, updates)}
+        onUpdateApplication={async (updates) => {
+          if (!selectedApplication) return
+          await handleUpdateApplication(selectedApplication.id, updates)
+        }}
         onDelete={handleDeleteApplication}
       />
 

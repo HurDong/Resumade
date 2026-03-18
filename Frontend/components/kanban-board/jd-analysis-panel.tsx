@@ -1,54 +1,79 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Sparkles } from "lucide-react"
+import { Save, Sparkles } from "lucide-react"
 import { parseJdInsight } from "@/lib/application-intelligence"
 import { type Application } from "@/lib/mock-data"
 
-// Mock JD Analysis Data
-const mockJDAnalysis = {
-  requiredSkills: ["Spring Boot", "Kotlin", "MySQL", "Redis", "Kafka"],
-  coreCompetencies: ["대용량 트래픽 처리 경험", "MSA 설계 경험", "협업 및 커뮤니케이션 능력"],
-  preferredQualifications: ["오픈소스 기여 경험", "기술 블로그 운영", "컨퍼런스 발표 경험"],
-}
-
-export function JDAnalysisPanel({ application }: { application: Application }) {
+export function JDAnalysisPanel({
+  application,
+  onUpdateApplication,
+}: {
+  application: Application
+  onUpdateApplication: (updates: Partial<Application>) => void | Promise<void>
+}) {
   const [jdText, setJdText] = useState(application.rawJd || "")
-  
-  // Try to parse aiInsight if it's JSON
-  const aiData = parseJdInsight(application.aiInsight)
+  const [isSaving, setIsSaving] = useState(false)
 
+  const aiData = parseJdInsight(application.aiInsight)
   const isAnalyzed = !!application.aiInsight
+  const originalJd = application.rawJd || ""
+  const hasChanges = useMemo(() => jdText !== originalJd, [jdText, originalJd])
+
+  useEffect(() => {
+    setJdText(application.rawJd || "")
+  }, [application.id, application.rawJd])
+
+  const handleSave = async () => {
+    setIsSaving(true)
+    try {
+      await onUpdateApplication({ rawJd: jdText })
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
       <div>
-        <label className="text-sm font-medium mb-2 block">채용 공고 원문 (JD)</label>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <label className="text-sm font-medium">채용 공고 원문 (JD)</label>
+          <Button
+            onClick={handleSave}
+            disabled={!hasChanges || isSaving}
+            size="sm"
+            className="gap-2 rounded-full"
+          >
+            <Save className={`size-4 ${isSaving ? "animate-pulse" : ""}`} />
+            저장
+          </Button>
+        </div>
         <Textarea
-          placeholder="채용 공고 내용을 붙여넣기 하세요..."
+          placeholder="채용 공고 내용을 수정하세요."
           className="min-h-[160px] resize-none border-primary/10"
           value={jdText}
-          onChange={(e) => setJdText(e.target.value)}
-          readOnly
+          onChange={(event) => setJdText(event.target.value)}
         />
-        <p className="text-[10px] text-muted-foreground mt-1">※ 공고 수정은 새 공고 등록을 이용해주세요.</p>
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          공고 원문을 바로 수정할 수 있습니다. 저장해도 기존 분석 결과는 유지되며, 필요하면 다시 분석하면 됩니다.
+        </p>
       </div>
 
       {isAnalyzed ? (
-        <div className="space-y-5 pt-4 border-t border-border">
-          {aiData?.requirements && (
+        <div className="space-y-5 border-t border-border pt-4">
+          {aiData?.requirements ? (
             <>
               <div>
-                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold">
                   <div className="size-2 rounded-full bg-primary" />
                   필수 기술 스택
                 </h4>
                 <div className="flex flex-wrap gap-2">
                   {(aiData.requirements.technicalSkills || []).map((skill: string) => (
-                    <Badge key={skill} className="bg-primary/10 text-primary hover:bg-primary/20 border-0">
+                    <Badge key={skill} className="border-0 bg-primary/10 text-primary hover:bg-primary/20">
                       {skill}
                     </Badge>
                   ))}
@@ -56,49 +81,49 @@ export function JDAnalysisPanel({ application }: { application: Application }) {
               </div>
 
               <div>
-                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold">
                   <div className="size-2 rounded-full bg-chart-2" />
                   핵심 요구 역량
                 </h4>
                 <div className="space-y-2">
-                  {(aiData.requirements.coreCompetencies || []).map((comp: string, idx: number) => (
-                    <div key={idx} className="flex items-start gap-2 text-sm">
-                      <span className="size-5 shrink-0 rounded bg-chart-2/10 text-chart-2 flex items-center justify-center text-xs font-medium">
-                        {idx + 1}
+                  {(aiData.requirements.coreCompetencies || []).map((competency: string, index: number) => (
+                    <div key={`${competency}-${index}`} className="flex items-start gap-2 text-sm">
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded bg-chart-2/10 text-xs font-medium text-chart-2">
+                        {index + 1}
                       </span>
-                      <span className="text-muted-foreground">{comp}</span>
+                      <span className="text-muted-foreground">{competency}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {aiData.requirements.preferredExperience && (
+              {(aiData.requirements.preferredExperience || []).length > 0 && (
                 <div>
-                  <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold">
                     <div className="size-2 rounded-full bg-chart-3" />
                     우대 사항
                   </h4>
                   <div className="flex flex-wrap gap-2">
-                    {(aiData.requirements.preferredExperience || []).map((qual: string) => (
-                      <Badge key={qual} variant="outline" className="text-xs">
-                        {qual}
+                    {(aiData.requirements.preferredExperience || []).map((qualification: string) => (
+                      <Badge key={qualification} variant="outline" className="text-xs">
+                        {qualification}
                       </Badge>
                     ))}
                   </div>
                 </div>
               )}
             </>
-          )}
-          
-          {!aiData?.requirements && application.aiInsight && (
-            <div className="bg-muted/30 p-4 rounded-xl text-sm leading-relaxed whitespace-pre-line">
-              {application.aiInsight}
-            </div>
+          ) : (
+            application.aiInsight && (
+              <div className="whitespace-pre-line rounded-xl bg-muted/30 p-4 text-sm leading-relaxed">
+                {application.aiInsight}
+              </div>
+            )
           )}
         </div>
       ) : (
-        <div className="py-10 text-center text-muted-foreground border-t border-dashed border-border mt-4">
-          <Sparkles className="size-8 mx-auto mb-2 opacity-20" />
+        <div className="mt-4 border-t border-dashed border-border py-10 text-center text-muted-foreground">
+          <Sparkles className="mx-auto mb-2 size-8 opacity-20" />
           <p className="text-sm">분석된 AI 데이터가 없습니다.</p>
         </div>
       )}

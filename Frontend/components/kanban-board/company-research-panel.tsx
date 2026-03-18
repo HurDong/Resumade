@@ -18,6 +18,10 @@ import { Separator } from "@/components/ui/separator"
 import { toApiUrl } from "@/lib/network/api-base"
 import { streamSse } from "@/lib/network/stream-sse"
 import {
+  playCompletionSound,
+  prepareCompletionSound,
+} from "@/lib/audio/completion-sound"
+import {
   parseCompanyResearch,
   type CompanyResearchData,
 } from "@/lib/application-intelligence"
@@ -59,6 +63,7 @@ export function CompanyResearchPanel({
   }, [application.id, application.companyResearch, application.position])
 
   const handleResearch = async () => {
+    await prepareCompletionSound()
     setIsResearching(true)
     setError(null)
     setProgressMessage("기업 분석 준비 중입니다.")
@@ -106,10 +111,21 @@ export function CompanyResearchPanel({
               return
             }
 
+            const normalizedResearch = mergeResearchFocus(parsed, {
+              company: application.company,
+              position: application.position,
+              businessUnit,
+              targetService,
+              focusRole,
+              techFocus,
+              questionGoal,
+            })
+
             completed = true
-            setResearchData(parsed)
+            setResearchData(normalizedResearch)
             setProgressMessage("기업 분석이 완료되었습니다.")
-            onUpdateApplication({ companyResearch: JSON.stringify(parsed) })
+            onUpdateApplication({ companyResearch: JSON.stringify(normalizedResearch) })
+            void playCompletionSound()
             return
           }
 
@@ -237,16 +253,18 @@ export function CompanyResearchPanel({
                 {researchData.executiveSummary}
               </p>
               <div className="flex flex-wrap gap-2">
-                {[
-                  researchData.focus.businessUnit,
-                  researchData.focus.targetService,
-                  researchData.focus.focusRole,
-                  researchData.focus.techFocus,
-                ]
-                  .filter(Boolean)
-                  .map((item) => (
+                {Array.from(
+                  new Set(
+                    [
+                      researchData.focus.businessUnit,
+                      researchData.focus.targetService,
+                      researchData.focus.focusRole,
+                      researchData.focus.techFocus,
+                    ].filter(Boolean),
+                  ),
+                ).map((item, index) => (
                     <Badge
-                      key={item}
+                      key={`${item}-${index}`}
                       variant="outline"
                       className="max-w-full whitespace-normal break-all border-primary/20 bg-background px-3 py-1 text-primary"
                     >
@@ -328,6 +346,33 @@ export function CompanyResearchPanel({
       )}
     </div>
   )
+}
+
+function mergeResearchFocus(
+  research: CompanyResearchData,
+  overrides: {
+    company?: string
+    position?: string
+    businessUnit?: string
+    targetService?: string
+    focusRole?: string
+    techFocus?: string
+    questionGoal?: string
+  },
+): CompanyResearchData {
+  return {
+    ...research,
+    focus: {
+      ...research.focus,
+      company: research.focus.company || overrides.company || "",
+      position: research.focus.position || overrides.position || "",
+      businessUnit: overrides.businessUnit?.trim() || research.focus.businessUnit || "",
+      targetService: overrides.targetService?.trim() || research.focus.targetService || "",
+      focusRole: overrides.focusRole?.trim() || research.focus.focusRole || overrides.position || "",
+      techFocus: overrides.techFocus?.trim() || research.focus.techFocus || "",
+      questionGoal: overrides.questionGoal?.trim() || research.focus.questionGoal || DEFAULT_GOAL,
+    },
+  }
 }
 
 function FieldBlock({
