@@ -10,10 +10,21 @@ Thumbs.db
 Backend/.gradle-user-home/
 Backend/bootrun.out.log
 Backend/bootrun.err.log
+Backend/bootrun.pid
+Backend/run-backend-with-env.ps1
+
+# Gradle user home (if checked out locally)
+.gradle-user-home/
+
+# AI agent logs
+.codex-logs/
 
 # Frontend local dependencies and build output
 Frontend/node_modules/
 Frontend/.next/
+Frontend/app/assets/
+Frontend/lib/audio/
+Frontend/public/
 
 # Environment files
 .env
