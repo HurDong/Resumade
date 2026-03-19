@@ -153,7 +153,7 @@ export function TranslationPanel() {
           ? "opacity-20 grayscale scale-95 blur-[0.5px]"
           : "opacity-100"
       const reasonLabel = mis.reason ? ` [${mis.reason}]` : ""
-      result += `<mark data-mis-id="${mis.id}" title="Review reason${reasonLabel}" class="bg-highlight-warning text-foreground ${hoverEffect} px-0.5 rounded cursor-help transition-all duration-300 inline-block origin-center">${normalizedText.substring(match.start, match.end)}</mark>`
+      result += `<mark data-mis-id="${mis.id}" title="검토 이유${reasonLabel}" class="bg-highlight-warning text-foreground ${hoverEffect} px-0.5 rounded cursor-help transition-all duration-300 inline-block origin-center">${normalizedText.substring(match.start, match.end)}</mark>`
       lastIndex = match.end
     })
 

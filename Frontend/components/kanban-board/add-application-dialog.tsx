@@ -308,7 +308,7 @@ export function AddApplicationDialog({
                   <div className="h-full animate-progress bg-primary" />
                 </div>
                 <p className="text-center text-[10px] uppercase tracking-widest text-muted-foreground">
-                  Processing Job Description...
+                  채용공고 분석 중...
                 </p>
               </div>
             </div>

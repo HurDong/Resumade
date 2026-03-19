@@ -44,14 +44,14 @@ export function DropZone({ onUploadSuccess }: { onUploadSuccess?: () => void }) 
           throw new Error(message || "경험 데이터를 업로드하는 데 실패했습니다.")
         }
 
-        toast("Upload complete", {
-          description: "The experience file was added to the vault.",
+        toast.success("업로드 완료", {
+          description: "경험 파일이 보관소에 저장되었습니다.",
         })
         onUploadSuccess?.()
       } catch (error) {
         console.error("Failed to upload experience:", error)
-        toast("Upload failed", {
-          description: error instanceof Error ? error.message : "The file could not be uploaded.",
+        toast.error("업로드 실패", {
+          description: error instanceof Error ? error.message : "파일을 업로드할 수 없습니다.",
         })
       } finally {
         setIsUploading(false)
@@ -163,13 +163,13 @@ export function DropZone({ onUploadSuccess }: { onUploadSuccess?: () => void }) 
                 : "경험 파일을 여기에 드래그 앤 드랍하세요"}
           </p>
           <p className="mt-1 text-sm text-muted-foreground font-mono">
-            {isInvalid ? "Only .md and .json files are allowed" : "지원 포맷: .md, .json"}
+            {isInvalid ? "지원 형식: .md, .json만 가능합니다" : "지원 포맷: .md, .json"}
           </p>
         </div>
         <div className="mt-2 flex items-center gap-6">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <FileText className="size-4" />
-            <span>Markdown</span>
+            <span>마크다운</span>
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <FileJson className="size-4" />
@@ -184,7 +184,7 @@ export function DropZone({ onUploadSuccess }: { onUploadSuccess?: () => void }) 
           onClick={() => inputRef.current?.click()}
         >
           <Upload className="mr-2 size-4" />
-          {isUploading ? "Uploading..." : "Select file"}
+          {isUploading ? "업로드 중..." : "파일 선택"}
         </Button>
       </div>
     </div>
