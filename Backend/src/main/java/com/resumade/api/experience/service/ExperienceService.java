@@ -69,8 +69,9 @@ public class ExperienceService {
                 .build();
         Experience savedExperience = experienceRepository.save(experience);
 
-        // 4. Chunking & Embedding for Elasticsearch
-        indexToElasticsearch(savedExperience.getId(), content);
+        // 4. Chunking & Embedding for Elasticsearch - Use structured text for better RAG
+        String narrativeText = buildNarrativeText(savedExperience, aiResult.getTechStack(), aiResult.getMetrics());
+        indexToElasticsearch(savedExperience.getId(), narrativeText);
 
         return ExperienceResponse.from(savedExperience, aiResult.getTechStack(), aiResult.getMetrics());
     }
@@ -101,6 +102,11 @@ public class ExperienceService {
                     aiResult.getRole()
             );
             experienceRepository.save(experience);
+            // Update ES index when reclassifying
+            experienceDocumentRepository.deleteByExperienceId(experience.getId());
+            String narrativeText = buildNarrativeText(experience, aiResult.getTechStack(), aiResult.getMetrics());
+            indexToElasticsearch(experience.getId(), narrativeText);
+
             log.info("Reclassified experience id {}", experience.getId());
         } catch (Exception e) {
             log.error("Failed to reclassify experience id {}", experience.getId(), e);
@@ -216,7 +222,8 @@ public class ExperienceService {
         );
 
         experienceDocumentRepository.deleteByExperienceId(id);
-        indexToElasticsearch(id, normalizedRawContent);
+        String narrativeText = buildNarrativeText(experience, techStack, metrics);
+        indexToElasticsearch(id, narrativeText);
 
         Experience saved = experienceRepository.save(experience);
         return ExperienceResponse.from(saved, techStack, metrics);
@@ -348,6 +355,27 @@ public class ExperienceService {
     private String getSectionText(Map<String, StringBuilder> sections, String key) {
         StringBuilder builder = sections.get(key);
         return builder == null ? "" : builder.toString().trim();
+    }
+
+    private String buildNarrativeText(Experience exp, List<String> techStack, List<String> metrics) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("제목: ").append(exp.getTitle()).append("\n");
+        if (exp.getRole() != null && !exp.getRole().isBlank()) {
+            sb.append("역할: ").append(exp.getRole()).append("\n");
+        }
+        if (exp.getPeriod() != null && !exp.getPeriod().isBlank()) {
+            sb.append("기간: ").append(exp.getPeriod()).append("\n");
+        }
+        if (exp.getDescription() != null && !exp.getDescription().isBlank()) {
+            sb.append("상세내용: ").append(exp.getDescription()).append("\n");
+        }
+        if (techStack != null && !techStack.isEmpty()) {
+            sb.append("기술스택: ").append(String.join(", ", techStack)).append("\n");
+        }
+        if (metrics != null && !metrics.isEmpty()) {
+            sb.append("성과항목: ").append(String.join(", ", metrics)).append("\n");
+        }
+        return sb.toString();
     }
 
     private record MarkdownSnapshot(
