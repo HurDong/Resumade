@@ -50,14 +50,14 @@ public class JdAnalysisService {
     public void processAnalysis(String uuid, SseEmitter emitter) {
         String rawJd = jdCache.remove(uuid);
         if (rawJd == null) {
-            sendError(emitter, "Invalid or expired session");
+            sendError(emitter, "세션이 만료되었습니다. 다시 시도해 주세요. ⚠️");
             return;
         }
 
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
-            sendEvent(emitter, "START", "JD 분석을 시작합니다.");
-            sendEvent(emitter, "ANALYZING", "공고 내용을 구조화하고 있습니다.");
+            sendEvent(emitter, "START", "채용 공고 분석을 시작합니다. 🔍");
+            sendEvent(emitter, "ANALYZING", "공고의 핵심 직무 역량을 구조화하고 있어요. 🏷️");
 
             JdAnalysisResponse response = jdTextAiService.analyzeJd(rawJd);
 
@@ -75,19 +75,19 @@ public class JdAnalysisService {
     public void processImageAnalysis(String uuid, SseEmitter emitter) {
         byte[] imageBytes = imageCache.remove(uuid);
         if (imageBytes == null) {
-            sendError(emitter, "Invalid or expired session");
+            sendError(emitter, "세션이 만료되었습니다. 다시 시도해 주세요. ⚠️");
             return;
         }
 
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
-            sendEvent(emitter, "START", "이미지 JD 분석을 시작합니다.");
-            sendEvent(emitter, "ANALYZING", "OCR로 텍스트를 추출하고 있습니다.");
+            sendEvent(emitter, "START", "공고 이미지 분석을 시작합니다. 🖼️");
+            sendEvent(emitter, "ANALYZING", "텍스트를 정밀하게 추출하고 있어요. 🤖");
 
             String ocrText = tesseractService.extractText(imageBytes);
             log.info("Specialized OCR extracted {} characters", ocrText.length());
 
-            sendEvent(emitter, "ANALYZING", "OCR 결과와 이미지를 함께 검증하고 있습니다.");
+            sendEvent(emitter, "ANALYZING", "추출된 정보가 정확한지 AI가 꼼꼼하게 검토 중입니다. ✅");
 
             byte[] processedImage = resizeImageIfNeeded(imageBytes);
             String base64Image = java.util.Base64.getEncoder().encodeToString(processedImage);

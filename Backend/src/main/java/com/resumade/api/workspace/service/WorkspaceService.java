@@ -92,15 +92,15 @@ public class WorkspaceService {
                     ? initialQuestion.getWashedKr()
                     : initialQuestion.getContent();
 
-            sendProgress(emitter, STAGE_RAG, "Rebuilding draft context from question and company data.");
-            sendProgress(emitter, STAGE_RAG, "Filtering overlapping experiences from other questions.");
+            sendProgress(emitter, STAGE_RAG, "지원하신 기업 정보와 문항을 토대로 초안 컨텍스트를 구성하고 있어요. 🏢");
+            sendProgress(emitter, STAGE_RAG, "다른 문항과 겹치지 않도록 경험 데이터를 세밀하게 조정 중입니다. 🔍");
 
             List<Experience> allExperiences = experienceRepository.findAll();
             String others = buildOthersContext(initialQuestion, questionId, allExperiences);
             String context = buildFilteredContext(initialQuestion, questionId, allExperiences);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_DRAFT, "Regenerating the draft with updated evidence and directives.");
+            sendProgress(emitter, STAGE_DRAFT, "선택한 경험과 요청사항을 반영하여 초안을 다시 작성하고 있습니다. ✍️");
 
             int maxLength = initialQuestion.getMaxLength();
             int[] targetRange = resolveTargetRange(maxLength, directive, targetChars, 0.80, 0.95);
@@ -152,7 +152,7 @@ public class WorkspaceService {
             }
 
             paceProcessing();
-            sendProgress(emitter, STAGE_WASH, "Translating the draft to English as an intermediate step.");
+            sendProgress(emitter, STAGE_WASH, "기계적인 말투를 지우기 위해 1차 가공(EN)을 진행 중입니다. 🚿");
             String translatedEn = translationService.translateToEnglish(refinedDraft);
 
             paceProcessing();
@@ -191,7 +191,7 @@ public class WorkspaceService {
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_PATCH, "Reviewing washed draft for meaning loss and awkward phrasing.");
+            sendProgress(emitter, STAGE_PATCH, "세탁된 문장에서 의미가 변하거나 어색한 부분을 '휴먼패치'로 점검 중입니다. 🩹");
             int maxLengthPatch = initialQuestion.getMaxLength();
             int findingTarget = calculateFindingTarget(washedKr);
             DraftAnalysisResult analysis = analyzePatchSafely(
@@ -260,18 +260,21 @@ public class WorkspaceService {
 
             sendComment(emitter, "flush buffer");
 
-            sendProgress(emitter, STAGE_RAG, "Preparing question and company context for draft generation.");
+            sendProgress(emitter, STAGE_RAG, "자기소개서 작성을 위해 기업 분석 데이터와 문항을 준비하고 있어요. 📋");
+
             paceProcessing();
 
-            sendProgress(emitter, STAGE_RAG, "Checking other questions to reduce repeated experience usage.");
+            sendProgress(emitter, STAGE_RAG, "경험이 중복되지 않도록 다른 문항의 작성 내용을 확인하고 있습니다. ✨");
+
             List<Experience> allExperiences = experienceRepository.findAll();
             String others = buildOthersContext(initialQuestion, questionId, allExperiences);
 
-            sendProgress(emitter, STAGE_RAG, "Selecting the most relevant experience evidence for this prompt.");
+            sendProgress(emitter, STAGE_RAG, "문항에 가장 딱 맞는 나만의 핵심 경험을 선정하고 있어요. 🎯");
+
             String context = buildFilteredContext(initialQuestion, questionId, allExperiences);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_DRAFT, "Generating a fresh draft from selected evidence.");
+            sendProgress(emitter, STAGE_DRAFT, "엄선된 경험 데이터를 바탕으로 새로운 초안을 생성 중입니다. 🚀");
 
             int maxLengthGen = initialQuestion.getMaxLength();
             String rawDirective = initialQuestion.getUserDirective();
@@ -324,7 +327,7 @@ public class WorkspaceService {
             }
 
             paceProcessing();
-            sendProgress(emitter, STAGE_WASH, "Translating the generated draft to English intermediate text.");
+            sendProgress(emitter, STAGE_WASH, "기계적인 말투를 제거하기 위해 1차 번역 공정을 진행하고 있습니다. 🚿");
             String translatedEn = translationService.translateToEnglish(draft);
 
             paceProcessing();
@@ -363,7 +366,7 @@ public class WorkspaceService {
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_PATCH, "Running human-patch analysis on washed draft quality.");
+            sendProgress(emitter, STAGE_PATCH, "더욱 사람 냄새 나는 글을 위해 '휴먼패치' 분석을 진행하고 있어요. 👤");
             int maxLengthFinal = initialQuestion.getMaxLength();
             int findingTarget = calculateFindingTarget(washedKr);
             DraftAnalysisResult analysis = analyzePatchSafely(
@@ -439,15 +442,15 @@ public class WorkspaceService {
             String context = buildFilteredContext(question, questionId, allExperiences);
 
             sendComment(emitter, "flush buffer");
-            sendProgress(emitter, STAGE_DRAFT, "Restarting wash pipeline from the current draft.");
+            sendProgress(emitter, STAGE_DRAFT, "현재 초안을 바탕으로 세탁 파이프라인을 다시 시작합니다. 🔄");
             sendSse(emitter, "draft_intermediate", draft);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_WASH, "Translating current draft to English intermediate text.");
+            sendProgress(emitter, STAGE_WASH, "초안 고도화를 위해 중간 번역 과정을 거치고 있습니다. 🚿");
             String translatedEn = translationService.translateToEnglish(draft);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_WASH, "Back-translating to Korean and recalibrating length.");
+            sendProgress(emitter, STAGE_WASH, "한국어로 다시 번역하며 글자 수를 최적화하고 있습니다. 📏");
 
             int maxLength = question.getMaxLength();
             String rawDirective = question.getUserDirective();
@@ -490,7 +493,7 @@ public class WorkspaceService {
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_PATCH, "Re-running patch analysis on the refreshed washed draft.");
+            sendProgress(emitter, STAGE_PATCH, "정제된 문장을 바탕으로 휴먼패치 분석을 다시 실행합니다. 💫");
             finalizePatchAnalysis(
                     emitter,
                     questionId,
@@ -542,12 +545,12 @@ public class WorkspaceService {
             String others = buildOthersContext(question, questionId, allExperiences);
 
             sendComment(emitter, "flush buffer");
-            sendProgress(emitter, STAGE_PATCH, "Reloading current draft and washed draft for repatch.");
+            sendProgress(emitter, STAGE_PATCH, "재분석을 위해 초안과 세탁본을 불러오고 있습니다. 📂");
             sendSse(emitter, "draft_intermediate", draft);
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_PATCH, "Re-analyzing washed draft for critical patch points.");
+            sendProgress(emitter, STAGE_PATCH, "더 완벽한 문장을 위해 핵심 패치 포인트를 다시 분석합니다. 🔍");
             finalizePatchAnalysis(
                     emitter,
                     questionId,
@@ -666,9 +669,9 @@ public class WorkspaceService {
     private String resolveUserFacingErrorMessage(Exception e) {
         if (e instanceof IllegalStateException && e.getMessage() != null
                 && e.getMessage().contains("minimum length requirement")) {
-            return "The minimum length requirement was not met. Relax the directive or raise the hard limit and try again.";
+            return "최소 글자 수 요구사항을 충족하지 못했습니다. 요청사항을 완화하거나 최대 글자 수를 늘려보세요. ⚠️";
         }
-        return "An error occurred while generating the draft. Please try again shortly.";
+        return "초안 작성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. 🛠️";
     }
 
     private int[] resolveTargetRange(
@@ -1262,7 +1265,8 @@ public class WorkspaceService {
         } catch (Exception e) {
             if (isQuotaError(e) || isPatchAnalysisRequestError(e) || isTimeoutError(e)) {
                 log.warn("Patch analysis skipped due to upstream OpenAI issue", e);
-                sendProgress(emitter, STAGE_PATCH, "Patch analysis response was unstable; returning washed draft only.");
+                sendProgress(emitter, STAGE_PATCH, "휴먼패치 분석 결과가 불안정하여 세탁본만 반환합니다. ⚠️");
+
                 return DraftAnalysisResult.builder()
                         .humanPatchedText(washedKr)
                         .mistranslations(new ArrayList<>())
