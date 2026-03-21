@@ -28,8 +28,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Start with a bracketed title like [Title].
             The title must be short, memorable, and must not summarize the question or repeat the company name, position name, or question wording.
             The first sentence must answer the question directly in a conclusion-first way.
-            Use only facts and technologies supported by the supplied experience context. Do not invent experience, metrics, or unlisted tools.
+            Use only facts and technologies supported by the supplied experience context or explicit user directive. Do not invent experience, metrics, or unlisted tools.
             Treat company context as optional sharpening material and use it only when it makes job fit more concrete.
+            If the explicit user directive says to foreground, suppress, or avoid certain experiences, roles, or technologies, follow that directive over retrieved-context emphasis.
             Prefer wording that can survive detailed interview follow-up.
             Each core example should show role, judgment, action, and result.
             If problem, cause, action, or result is missing, rewrite until the story is complete.
@@ -52,8 +53,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Keep the bracketed title format.
             The title must be short, memorable, and must not turn into a generic question summary or repeat the company name or position name.
             The first sentence must answer the question directly in a conclusion-first way.
-            Use only facts and technologies supported by the supplied experience context. Do not invent experience, metrics, or unlisted tools.
+            Use only facts and technologies supported by the supplied experience context, current draft, or explicit user directive. Do not invent experience, metrics, or unlisted tools.
             Treat company context as optional sharpening material and use it only when it makes job fit more concrete.
+            If the explicit user directive says to foreground, suppress, or avoid certain experiences, roles, or technologies, follow that directive over retrieved-context emphasis.
             Prefer wording that can survive detailed interview follow-up.
             Each core example should show role, judgment, action, and result.
             If problem, cause, action, or result is missing, rewrite until the story is complete.
@@ -78,8 +80,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Keep the bracketed title format.
             The title must stay concise and must not turn into a generic question summary or repeat the company name or position name.
             The first sentence must answer the question directly in a conclusion-first way.
-            Use only facts and technologies supported by the supplied experience context. Do not invent experience, metrics, or unlisted tools.
+            Use only facts and technologies supported by the supplied experience context, current draft, or explicit user directive. Do not invent experience, metrics, or unlisted tools.
             Treat company context as optional sharpening material and use it only when it makes job fit more concrete.
+            If the explicit user directive says to foreground, suppress, or avoid certain experiences, roles, or technologies, follow that directive over retrieved-context emphasis.
             Prefer wording that can survive detailed interview follow-up.
             Each core example should show role, judgment, action, and result.
             If problem, cause, action, or result is missing, rewrite until the story is complete.
@@ -111,15 +114,17 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Other questions to avoid overlapping with:
             %s
 
-            User directive:
+            Priority user directive:
             %s
 
             Requirements:
+            - Treat the user directive as the highest-priority writing instruction
+            - If the user directive conflicts with retrieved-context emphasis, follow the user directive unless it would require inventing facts beyond the directive
             - Start with [Title]
             - The title must not summarize the question or repeat the company, position, or question wording
             - Answer directly in the first sentence
             - Follow the requested paragraph structure or technical depth if provided
-            - Use only facts and technologies supported by the experience context
+            - Use only facts and technologies supported by the experience context or explicit user directive
             - Use company context only when it sharpens job fit
             - Keep each main example concrete: role, judgment, action, and result
             - Avoid ceremonial openings, report-style labels, and list formatting unless explicitly requested
@@ -148,15 +153,17 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Other questions to avoid overlapping with:
             %s
 
-            User directive:
+            Priority user directive:
             %s
 
             Requirements:
+            - Treat the user directive as the highest-priority revision instruction
+            - If the user directive conflicts with retrieved-context emphasis, follow the user directive unless it would require inventing facts beyond the directive
             - Start with [Title]
             - Keep the title concise and non-generic
             - Answer directly in the first sentence
             - Follow the requested paragraph structure or technical depth if provided
-            - Use only facts and technologies supported by the experience context
+            - Use only facts and technologies supported by the experience context, current draft, or explicit user directive
             - Use company context only when it sharpens job fit
             - Keep each main example concrete: role, judgment, action, and result
             - Avoid ceremonial openings, report-style labels, and list formatting unless explicitly requested
@@ -189,11 +196,13 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             %s
 
             Requirements:
+            - Treat the retry feedback and embedded user directive as the highest-priority revision instruction
+            - If the user directive conflicts with retrieved-context emphasis, follow the user directive unless it would require inventing facts beyond the directive
             - The previous output was under the minimum length target. Fix this in this retry.
             - Preserve all strong facts already present
             - Expand only missing depth; do not summarize or compress existing strong content
             - Keep [Title] and a direct first sentence
-            - Use only facts and technologies supported by the experience context
+            - Use only facts and technologies supported by the experience context, current draft, or explicit user directive
             - Use company context only when it sharpens job fit
             - Keep each main example concrete: role, judgment, action, and result
             - Avoid ceremonial openings, report-style labels, and list formatting unless explicitly requested
@@ -342,6 +351,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             return fallbackCall.invoke();
         }
 
+        JsonNode response = null;
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -349,7 +359,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
 
             Map<String, Object> requestBody = buildRequestBody(systemPrompt, userPrompt, maxLength, minTarget, maxTarget, stage);
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-            JsonNode response = restTemplate.postForObject(RESPONSES_API_URL, entity, JsonNode.class);
+            response = restTemplate.postForObject(RESPONSES_API_URL, entity, JsonNode.class);
 
             if (response == null) {
                 throw new IllegalStateException("Responses API returned no body");
@@ -363,6 +373,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
                     stage, maxLength, minTarget, maxTarget, actualChars, underMin, overHard);
             return draftResponse;
         } catch (Exception e) {
+            logResponseFailureDetails(stage, response, e);
             log.warn("Responses API draft call failed. Falling back to legacy chat model. model={}", modelName, e);
             return fallbackCall.invoke();
         }
@@ -389,6 +400,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
                 "min_target", String.valueOf(minTarget),
                 "preferred_target", String.valueOf(maxTarget)
         ));
+        if ("refine".equalsIgnoreCase(stage) || "expand".equalsIgnoreCase(stage)) {
+            requestBody.put("reasoning", Map.of("effort", "low"));
+        }
         requestBody.put("text", buildTextConfig());
         return requestBody;
     }
@@ -523,6 +537,56 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             return text == null ? "" : text;
         }
         return text.substring(0, maxLength) + "...";
+    }
+
+    private void logResponseFailureDetails(String stage, JsonNode response, Exception error) {
+        if (response == null) {
+            return;
+        }
+
+        String status = response.path("status").asText("");
+        String incompleteReason = response.path("incomplete_details").path("reason").asText("");
+        int outputTokens = response.path("usage").path("output_tokens").asInt(-1);
+        int reasoningTokens = response.path("usage").path("output_tokens_details").path("reasoning_tokens").asInt(-1);
+
+        if ("incomplete".equalsIgnoreCase(status) && !incompleteReason.isBlank()) {
+            log.warn(
+                    "Responses API incomplete response stage={} model={} reason={} outputTokens={} reasoningTokens={} outputTypes={}",
+                    stage,
+                    response.path("model").asText(modelName),
+                    incompleteReason,
+                    outputTokens,
+                    reasoningTokens,
+                    summarizeOutputTypes(response.path("output"))
+            );
+        }
+
+        if (error instanceof IllegalStateException) {
+            log.warn(
+                    "Responses API parse failure stage={} model={} status={} outputTypes={} body={}",
+                    stage,
+                    response.path("model").asText(modelName),
+                    status.isBlank() ? "unknown" : status,
+                    summarizeOutputTypes(response.path("output")),
+                    abbreviateForLog(response.toString(), 2000)
+            );
+        }
+    }
+
+    private String summarizeOutputTypes(JsonNode outputs) {
+        if (!outputs.isArray() || outputs.isEmpty()) {
+            return "[]";
+        }
+
+        StringBuilder summary = new StringBuilder("[");
+        for (int i = 0; i < outputs.size(); i++) {
+            if (i > 0) {
+                summary.append(", ");
+            }
+            summary.append(outputs.get(i).path("type").asText("unknown"));
+        }
+        summary.append(']');
+        return summary.toString();
     }
 
     private static RestTemplate buildRestTemplate(Duration timeout) {

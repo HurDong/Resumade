@@ -203,7 +203,7 @@ public class WorkspaceService {
                     context);
 
             paceProcessing();
-            normalizeAnalysis(analysis, refinedDraft, washedKr, findingTarget);
+            normalizeAnalysis(analysis);
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
@@ -378,7 +378,7 @@ public class WorkspaceService {
                     context);
 
             paceProcessing();
-            normalizeAnalysis(analysis, draft, washedKr, findingTarget);
+            normalizeAnalysis(analysis);
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
@@ -599,7 +599,7 @@ public class WorkspaceService {
                 context);
 
         paceProcessing();
-        normalizeAnalysis(analysis, originalDraft, washedKr, findingTarget);
+        normalizeAnalysis(analysis);
 
         WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
         question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
@@ -722,13 +722,19 @@ public class WorkspaceService {
         } else {
             requestedLength = extractRequestedLengthDirective(directive, maxLength);
         }
-        if (requestedLength == null) {
-            return normalized;
-        }
-
         StringBuilder builder = new StringBuilder();
         if (!NO_EXTRA_USER_DIRECTIVE.equals(normalized)) {
+            builder.append("Priority rules for this answer:\n");
+            builder.append("- Treat the following user directive as the highest-priority writing instruction.\n");
+            builder.append("- If it conflicts with retrieved experience emphasis, follow the user directive unless it would invent facts not present in the directive or current draft.\n");
+            builder.append("- If the user directive says not to emphasize a role, technology, or project angle, suppress that emphasis even if it appears in retrieved context.\n");
+            builder.append("- If the user directive names a specific project, role, or frontend/backend angle to emphasize, prioritize that framing.\n");
+            builder.append("User directive details:\n");
             builder.append(normalized).append("\n");
+        }
+
+        if (requestedLength == null) {
+            return builder.length() == 0 ? normalized : builder.toString().trim();
         }
 
         builder.append("Length guidance: minimum required length is ")
@@ -1164,24 +1170,6 @@ public class WorkspaceService {
         return normalized;
     }
 
-    private String prepareDraftForTranslation(String text, int maxLength) {
-        if (text == null) {
-            return null;
-        }
-
-        String normalized = normalizeLengthText(normalizeTitleSpacing(text)).trim();
-        if (maxLength > 0 && countResumeCharacters(normalized) > maxLength) {
-            int[] defaultRange = resolveTargetRange(maxLength, null, null, 0.80, 0.95);
-            logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], normalized, 0);
-            log.warn("Draft exceeded max length. current={}, limit={}", countResumeCharacters(normalized), maxLength);
-            String trimmed = hardTrimToLimit(normalized, maxLength);
-            logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], trimmed, 1);
-            return trimmed;
-        }
-
-        return normalized;
-    }
-
     private String normalizeLengthText(String text) {
         if (text == null) {
             return null;
@@ -1365,85 +1353,7 @@ public class WorkspaceService {
         return false;
     }
 
-    private String enforceAcceptedTitleStyle(
-            String text,
-            String company,
-            String position,
-            String question,
-            String companyContext,
-            String context) {
-        if (text == null || text.isBlank()) {
-            return text;
-        }
-
-        String normalized = normalizeTitleSpacing(text).trim();
-        if (!needsTitleRewrite(normalized, company, position, question)) {
-            return normalized;
-        }
-
-        try {
-            WorkspaceDraftAiService.DraftResponse rewritten = workspaceDraftAiService.rewriteTitle(
-                    company,
-                    position,
-                    question,
-                    companyContext,
-                    normalized,
-                    context);
-
-            String candidate = normalizeTitleSpacing(rewritten.text).trim();
-            return candidate.isBlank() ? normalized : candidate;
-        } catch (Exception e) {
-            log.warn("Title rewrite failed. Keeping original title.", e);
-            return normalized;
-        }
-    }
-
-    private boolean needsTitleRewrite(String text, String company, String position, String question) {
-        if (text == null || text.isBlank()) {
-            return false;
-        }
-
-        int closingIndex = text.indexOf(']');
-        if (!text.startsWith("[") || closingIndex <= 1) {
-            return true;
-        }
-
-        String title = text.substring(1, closingIndex).trim();
-        if (title.isBlank()) {
-            return true;
-        }
-
-        String normalizedTitle = title.replaceAll("\\s+", "");
-        String normalizedQuestion = question == null ? "" : question.replaceAll("\\s+", "");
-        String normalizedCompany = company == null ? "" : company.replaceAll("\\s+", "");
-        String normalizedPosition = position == null ? "" : position.replaceAll("\\s+", "");
-
-        if (!normalizedCompany.isBlank() && normalizedTitle.contains(normalizedCompany)) {
-            return true;
-        }
-
-        if (!normalizedPosition.isBlank() && normalizedTitle.contains(normalizedPosition)) {
-            return true;
-        }
-
-        if (!normalizedQuestion.isBlank() && normalizedQuestion.contains(normalizedTitle)) {
-            return true;
-        }
-
-        String lowered = title.toLowerCase();
-        return lowered.contains("\uC9C0\uC6D0\uB3D9\uAE30")
-                || lowered.contains("\uC785\uC0AC \uD6C4")
-                || lowered.contains("\uC785\uC0AC\uD6C4")
-                || lowered.contains("\uBAA9\uD45C")
-                || lowered.contains("\uC5ED\uB7C9")
-                || lowered.contains("\uD3EC\uBD80")
-                || lowered.contains("\uC131\uC7A5\uACFC\uC815")
-                || lowered.contains("\uC9C1\uBB34")
-                || title.length() > 18;
-    }
-
-    private void normalizeAnalysis(DraftAnalysisResult analysis, String originalDraft, String washedKr,
-            int findingTarget) {
+    private void normalizeAnalysis(DraftAnalysisResult analysis) {
         if (analysis == null) {
             return;
         }
@@ -1470,7 +1380,6 @@ public class WorkspaceService {
         }
 
         analysis.setMistranslations(normalized);
-        supplementMistranslations(analysis, originalDraft, washedKr, findingTarget);
     }
 
     private int calculateFindingTarget(String washedKr) {
@@ -1481,213 +1390,8 @@ public class WorkspaceService {
         return Math.max(5, Math.min(15, (washedKr.length() / 200) + 3));
     }
 
-    private void supplementMistranslations(
-            DraftAnalysisResult analysis,
-            String originalDraft,
-            String washedKr,
-            int findingTarget) {
-        if (analysis == null || washedKr == null || washedKr.isBlank()) {
-            return;
-        }
-
-        List<DraftAnalysisResult.Mistranslation> mistranslations = analysis.getMistranslations();
-        if (mistranslations == null) {
-            mistranslations = new ArrayList<>();
-            analysis.setMistranslations(mistranslations);
-        }
-
-        // Do not auto-add sentence-level fallback findings.
-        // Broad sentence highlights look noisy in the UI and often obscure the real
-        // phrase-level issue.
-    }
-
-    private List<String> splitSentences(String text) {
-        if (text == null || text.isBlank()) {
-            return List.of();
-        }
-
-        return java.util.Arrays.stream(text.split("(?<=[.!?])\\s+|\\n+"))
-                .map(String::trim)
-                .filter(sentence -> !sentence.isBlank())
-                .toList();
-    }
-
-    private boolean containsTranslatedSpan(List<DraftAnalysisResult.Mistranslation> mistranslations,
-            String translated) {
-        return mistranslations.stream()
-                .map(DraftAnalysisResult.Mistranslation::getTranslated)
-                .anyMatch(existing -> translated.equals(safeTrim(existing)));
-    }
-
-    private double calculateSentenceSimilarity(String originalSentence, String washedSentence) {
-        List<String> originalTokens = tokenizeSentence(originalSentence);
-        List<String> washedTokens = tokenizeSentence(washedSentence);
-
-        if (originalTokens.isEmpty() || washedTokens.isEmpty()) {
-            return 0.0;
-        }
-
-        Set<String> overlap = new LinkedHashSet<>(originalTokens);
-        overlap.retainAll(washedTokens);
-
-        Set<String> union = new LinkedHashSet<>(originalTokens);
-        union.addAll(washedTokens);
-
-        return union.isEmpty() ? 0.0 : (double) overlap.size() / union.size();
-    }
-
-    private List<String> tokenizeSentence(String sentence) {
-        if (sentence == null || sentence.isBlank()) {
-            return List.of();
-        }
-
-        return java.util.Arrays.stream(sentence.toLowerCase().split("\\s+"))
-                .map(token -> token.replaceAll("[^\\p{L}\\p{N}-]", ""))
-                .filter(token -> token.length() > 1)
-                .toList();
-    }
-
     private String safeTrim(String value) {
         return value == null ? "" : value.trim();
-    }
-
-    private List<Integer> findExactMatchIndexes(String source, String target) {
-        if (source == null || target == null || target.isBlank()) {
-            return List.of();
-        }
-
-        List<Integer> matches = new ArrayList<>();
-        int fromIndex = 0;
-        while (fromIndex < source.length()) {
-            int matchIndex = source.indexOf(target, fromIndex);
-            if (matchIndex < 0) {
-                break;
-            }
-            matches.add(matchIndex);
-            fromIndex = matchIndex + 1;
-        }
-        return matches;
-    }
-
-
-    private boolean isReasonableHighlightSpan(String source, int start, int end) {
-        if (source == null || start < 0 || end <= start || end > source.length()) {
-            return false;
-        }
-
-        String span = source.substring(start, end).trim();
-        if (span.isBlank()) {
-            return false;
-        }
-
-        if (span.length() > 80) {
-            return false;
-        }
-
-        int sentenceStart = start;
-        while (sentenceStart > 0 && !isSentenceBoundary(source.charAt(sentenceStart - 1))) {
-            sentenceStart--;
-        }
-
-        int sentenceEnd = end;
-        while (sentenceEnd < source.length() && !isSentenceBoundary(source.charAt(sentenceEnd))) {
-            sentenceEnd++;
-        }
-
-        String sentence = source.substring(sentenceStart, sentenceEnd).trim();
-        if (sentence.isBlank()) {
-            return true;
-        }
-
-        return span.length() < Math.max(20, (int) Math.ceil(sentence.length() * 0.7));
-    }
-
-    private boolean isSentenceBoundary(char ch) {
-        return ch == '.' || ch == '!' || ch == '?' || ch == '\n';
-    }
-
-    private HighlightSpan findCompactEquivalentSpan(String source, String target) {
-        if (source == null || target == null || target.isBlank()) {
-            return null;
-        }
-
-        String compactSource = stripWhitespace(source);
-        String compactTarget = stripWhitespace(target);
-        if (compactTarget.isBlank()) {
-            return null;
-        }
-
-        List<Integer> compactMatches = findExactMatchIndexes(compactSource, compactTarget);
-        if (compactMatches.size() != 1) {
-            return null;
-        }
-
-        int compactStart = compactMatches.get(0);
-        int compactEndExclusive = compactStart + compactTarget.length();
-
-        Integer start = mapCompactOffsetToSourceIndex(source, compactStart);
-        Integer end = mapCompactExclusiveOffsetToSourceIndex(source, compactEndExclusive);
-        if (start == null || end == null || end <= start) {
-            return null;
-        }
-
-        if (!isCompactEquivalentSpan(source, start, end, target)) {
-            return null;
-        }
-
-        return new HighlightSpan(start, end);
-    }
-
-    private Integer mapCompactOffsetToSourceIndex(String source, int compactOffset) {
-        if (source == null || compactOffset < 0) {
-            return null;
-        }
-
-        int count = 0;
-        for (int i = 0; i < source.length(); i++) {
-            if (!Character.isWhitespace(source.charAt(i))) {
-                if (count == compactOffset) {
-                    return i;
-                }
-                count++;
-            }
-        }
-
-        return null;
-    }
-
-    private Integer mapCompactExclusiveOffsetToSourceIndex(String source, int compactOffsetExclusive) {
-        if (source == null || compactOffsetExclusive <= 0) {
-            return null;
-        }
-
-        int count = 0;
-        for (int i = 0; i < source.length(); i++) {
-            if (!Character.isWhitespace(source.charAt(i))) {
-                count++;
-                if (count == compactOffsetExclusive) {
-                    return i + 1;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private boolean isCompactEquivalentSpan(String source, int start, int end, String target) {
-        if (source == null || target == null || start < 0 || end <= start || end > source.length()) {
-            return false;
-        }
-
-        return stripWhitespace(source.substring(start, end)).equals(stripWhitespace(target));
-    }
-
-    private String stripWhitespace(String value) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-
-        return value.replaceAll("\\s+", "");
     }
 
     private void paceProcessing() {
@@ -1733,9 +1437,6 @@ public class WorkspaceService {
         } catch (Exception ignored) {
             // ignore
         }
-    }
-
-    private record HighlightSpan(int start, int end) {
     }
 
     private record HeartbeatHandle(ScheduledExecutorService scheduler, ScheduledFuture<?> future) {
