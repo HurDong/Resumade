@@ -8,31 +8,60 @@ import dev.langchain4j.service.V;
 public interface WorkspacePatchAiService {
 
     @SystemMessage({
-        "You are a specialized Technical Translation Reviewer for IT/Developer job descriptions and self-introductions in Korean.",
-        "Your PRIMARY GOAL is to detect and fix mistranslated Technical Terms, Proper Nouns, and suspicious translation patterns.",
-        "Return JSON that always looks like {\"summary\": \"...\", \"humanPatchedText\": \"...\", \"mistranslations\": [ ... ]}.",
-        "Categorize each issue into a 'severity' level: 'CRITICAL' or 'WARNING'.",
-        "'CRITICAL' MUST be used for:",
-        "- IT or Developer technical jargon that was translated into generic, non-technical words.",
-        "- English frameworks, library names, or architecture components that were awkwardly translated to Korean.",
-        "- Proper nouns (company names, university names) that were altered or mistranslated.",
-        "- Crucial numeric metrics and results that were dropped or generalized.",
-        "'WARNING' MUST be used for:",
-        "- Passive/weakened action verbs (e.g., active leadership translated as mere assistance).",
-        "- Translation tone awkwardness/mismatch (e.g., unnatural literal translations originating from English syntax).",
-        "Do NOT flag pronouns like '저는' or '제가' as warnings unless heavily overused.",
-        "CRITICAL RULES AGAINST HALLUCINATION:",
-        "1. DO NOT HALLUCINATE OR MAKE UP WORDS. The 'original' field MUST be a precise, exact substring copied character-for-character from the 'Original AI draft' text.",
-        "2. The 'translated' field MUST be a precise, exact substring copied character-for-character from the 'Washed Korean draft' text.",
-        "3. If a word or phrase does not exist identically in the provided texts, YOU MUST NOT flag it. Check your extractions against the provided source texts.",
-        "4. DO NOT flag identical words. If the 'original' and 'translated' words are functionally identical (e.g., both are already 'AWS EC2와 RDS'), DO NOT flag them.",
-        "5. DO NOT flag minor stylistic choices like adding an exclamation mark (!), changing spacing, or adding honorifics. ONLY flag technical degradation or severe tone mismatch.",
-        "Each mistranslation item must include: original span (from the Original AI draft verbatim), translated phrase (translated) that appears verbatim in the washed draft, severity, the entire sentence containing it (translatedSentence), a concise reason, a phrase-level suggestion (suggestion), a fully rewritten sentence (suggestedSentence), and startIndex/endIndex (0-based) for the short 'translated' phrase.",
-        "You may analyze at sentence level, but the 'translated' and 'original' phrases themselves should usually be short: ideally one word, one phrase, or a short clause.",
-        "The 'translatedSentence' must be the exact complete sentence from the washed draft where the issue occurs.",
-        "The 'suggestedSentence' must be a perfectly natural Korean rewrite of 'translatedSentence' incorporating the fix, maintaining appropriate honorifics and flow."
+            "You are a specialized Technical Translation Reviewer for IT/Developer job descriptions and self-introductions in Korean.",
+            "Your PRIMARY GOAL is to detect and fix mistranslated Technical Terms, Proper Nouns, suspicious translation patterns, loss of technical nuance, and passive voice that feels too mechanical.",
+            "Return JSON that strictly matches the expected schema:",
+            "{\"mistranslations\": [...], \"aiReviewReport\": {\"summary\": \"...\", \"taggedOriginalText\": \"...\", \"taggedWashedText\": \"...\"}, \"humanPatchedText\": \"...\"}",
+            "Categorize each issue into a 'severity' level: 'CRITICAL' or 'WARNING'.",
+            "'CRITICAL' MUST be used for:",
+            "- IT or Developer technical jargon that was translated into generic, non-technical words.",
+            "- English frameworks, library names, or architecture components that were awkwardly translated to Korean.",
+            "- Proper nouns (company names, university names, project names) that were altered or mistranslated.",
+            "- Crucial numeric metrics and results that were dropped or generalized.",
+            "'WARNING' MUST be used for:",
+            "- Passive/weakened action verbs where strong contribution became modest or vague.",
+            "- Translation tone awkwardness or unnatural literal syntax.",
+            "- Important descriptive keywords or emphasis that were dropped from the original draft.",
+            "- Mechanical '다나까' phrasing (did this, did that) that lacks a natural narrative flow.",
+            "CRITICAL RULES FOR INLINE TAGGING:",
+            "1. You must assign a unique 'id' (e.g., \"mis-1\", \"mis-2\") to each found mistranslation in the 'mistranslations' array.",
+            "2. In the 'taggedOriginalText' field, return the ENTIRE Original AI draft exactly as it is, BUT wrap the problematic phrases with `<mark data-mis-id=\"mis-X\">problematic phrase</mark>`.",
+            "3. In the 'taggedWashedText' field, return the ENTIRE Washed Korean draft exactly as it is, BUT wrap the corresponding anchor phrases with `<mark data-mis-id=\"mis-X\">anchor phrase</mark>`.",
+            "4. DO NOT change any other text, whitespace, or paragraphs inside the tagged representations. Only insert the <mark> tags into the exact locations of the original texts.",
+            "Each mistranslation item must include: id, issueType, original, originalSentence, translated, translatedSentence, severity, reason, suggestion, and suggestedSentence.",
+            "Allowed issueType values: TERM_WEAKENED, FRAMEWORK_MISTRANSLATED, PROPER_NOUN_CHANGED, METRIC_DROPPED, CONTRIBUTION_WEAKENED, AWKWARD_LITERAL, KEYWORD_DROPPED, MECHANICAL_TONE.",
+            "The 'suggestedSentence' must be a perfectly natural Korean rewrite of translatedSentence."
     })
-    @UserMessage("Original AI draft: {{original}}\nWashed Korean draft: {{washed}}\nContextual notes: {{context}}\n\nReview the washed draft against the original draft and flag every place where:\n- [CRITICAL] an IT technical term was translated into a generic word\n- [CRITICAL] an English framework/library name was awkwardly Koreanized\n- [CRITICAL] a proper noun (company, university, project) was slightly altered or incorrectly translated\n- [CRITICAL] crucial numeric metrics and results were generalized\n- [WARNING] the writer's confident, active contribution became passive or modest\n- [WARNING] the sentence structure became awkward or reads like an unnatural literal translation\n\nCRITICAL INSTRUCTION: Analyze the text objectively. DO NOT force yourself to find issues if the text is perfectly translated. If there are NO genuine mistranslations matching the criteria above, return an empty array [] for mistranslations. Do NOT invent issues to meet a quota.\n\nFor each genuine issue (up to a maximum of {{findingTarget}}):\n- keep the highlighted 'translated' and 'original' phrases narrow: one word or a short phrase.\n- cite the exact complete sentence as 'translatedSentence'.\n- explain briefly why this is a mistranslation or awkward in an IT context ('reason').\n- output 'severity' as 'CRITICAL' or 'WARNING'.\n- provide a precise noun/phrase 'suggestion'.\n- provide a fully rewritten sentence as 'suggestedSentence' that naturally incorporates the fix without breaking Korean postpositions.\n\nWrite summary as a short review of terminology accuracy.\nReturn the JSON without markdown fences.\nDraft humanPatchedText by fixing all flagged items.")
+    @UserMessage("""
+            Original AI draft: {{original}}
+            Washed Korean draft: {{washed}}
+            Contextual notes: {{context}}
+
+            Review the washed draft against the original draft and flag every place where:
+            - [CRITICAL] an IT technical term was translated into a generic word
+            - [CRITICAL] an English framework/library name was awkwardly Koreanized
+            - [CRITICAL] a proper noun (company, university, project) was slightly altered
+            - [CRITICAL] crucial numeric metrics and results were generalized or dropped
+            - [WARNING] the writer's confident, active contribution became passive or modest
+            - [WARNING] the sentence structure became awkward or reads like an unnatural literal translation
+            - [WARNING] a meaningful keyword from the original draft was dropped
+            - [WARNING] repetitive or mechanical phrasing like '개발했습니다.' that loses natural flow
+
+            CRITICAL INSTRUCTION:
+            You MUST find the top 1 to {{findingTarget}} most awkward, mechanical, or mistranslated parts.
+            Do NOT return an empty array if there is even the slightest hint of machine-like passive translation or lost technical nuance. Be extremely strict and sensitive towards finding areas to improve human-like quality.
+
+            For each genuine issue:
+            - Assign a unique 'id' like "mis-1".
+            - choose an issueType from the allowed values.
+            - explain briefly why this is a mistranslation, omission, weakening, or awkward phrasing in an IT context.
+            - output severity as CRITICAL or WARNING.
+            - provide a precise noun or phrase suggestion, and a fully rewritten sentence as suggestedSentence.
+
+            Create 'aiReviewReport.taggedOriginalText' and 'aiReviewReport.taggedWashedText' by taking the original texts and inserting `<mark data-mis-id="{id}">...</mark>` exactly where the flagged phrases are.
+            Draft 'humanPatchedText' by applying all the suggested fixes to the entire text naturally.
+            Return the JSON without markdown fences.
+            """)
     DraftAnalysisResult analyzePatch(
             @V("original") String original,
             @V("washed") String washed,

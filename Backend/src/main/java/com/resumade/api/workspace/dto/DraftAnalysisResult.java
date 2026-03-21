@@ -17,15 +17,16 @@ public class DraftAnalysisResult {
     @Setter
     @Builder
     public static class Mistranslation {
+        private String id;
+        private String issueType;
         private String original;
+        private String originalSentence;
         private String translated;
         private String suggestion;
         private String severity;
         private String translatedSentence;
         private String suggestedSentence;
         private String reason;
-        private Integer startIndex;
-        private Integer endIndex;
     }
 
     @Getter
@@ -33,5 +34,7 @@ public class DraftAnalysisResult {
     @Builder
     public static class AiReviewReport {
         private String summary;
+        private String taggedOriginalText;
+        private String taggedWashedText;
     }
 }

@@ -1463,18 +1463,8 @@ public class WorkspaceService {
             mistranslation.setTranslated(translated);
             mistranslation.setSuggestion(normalizeTitleSpacing(safeTrim(mistranslation.getSuggestion())));
             mistranslation.setReason(safeTrim(mistranslation.getReason()));
+            // (Note: startIndex/endIndex manual calculation is removed as AI now provides tagged text)
 
-            if (washedKr != null) {
-                HighlightSpan highlightSpan = resolveHighlightSpan(washedKr, mistranslation);
-                if (highlightSpan != null
-                        && isReasonableHighlightSpan(washedKr, highlightSpan.start(), highlightSpan.end())) {
-                    mistranslation.setStartIndex(highlightSpan.start());
-                    mistranslation.setEndIndex(highlightSpan.end());
-                } else {
-                    mistranslation.setStartIndex(null);
-                    mistranslation.setEndIndex(null);
-                }
-            }
 
             normalized.add(mistranslation);
         }
@@ -1561,42 +1551,6 @@ public class WorkspaceService {
         return value == null ? "" : value.trim();
     }
 
-    private HighlightSpan resolveHighlightSpan(String source, DraftAnalysisResult.Mistranslation mistranslation) {
-        if (source == null || mistranslation == null) {
-            return null;
-        }
-
-        String translated = safeTrim(mistranslation.getTranslated());
-        if (translated.isEmpty()) {
-            return null;
-        }
-
-        Integer providedStart = mistranslation.getStartIndex();
-        Integer providedEnd = mistranslation.getEndIndex();
-        if (isExactSpan(source, providedStart, providedEnd, translated)) {
-            return new HighlightSpan(providedStart, providedEnd);
-        }
-
-        HighlightSpan uniqueExactSpan = findUniqueExactSpan(source, translated);
-        if (uniqueExactSpan != null) {
-            return uniqueExactSpan;
-        }
-
-        return findCompactEquivalentSpan(source, translated);
-    }
-
-    private boolean isExactSpan(String source, Integer start, Integer end, String translated) {
-        if (source == null || translated == null || start == null || end == null) {
-            return false;
-        }
-
-        if (start < 0 || end <= start || end > source.length()) {
-            return false;
-        }
-
-        return source.substring(start, end).equals(translated);
-    }
-
     private List<Integer> findExactMatchIndexes(String source, String target) {
         if (source == null || target == null || target.isBlank()) {
             return List.of();
@@ -1615,15 +1569,6 @@ public class WorkspaceService {
         return matches;
     }
 
-    private HighlightSpan findUniqueExactSpan(String source, String target) {
-        List<Integer> exactMatches = findExactMatchIndexes(source, target);
-        if (exactMatches.size() != 1) {
-            return null;
-        }
-
-        int start = exactMatches.get(0);
-        return new HighlightSpan(start, start + target.length());
-    }
 
     private boolean isReasonableHighlightSpan(String source, int start, int end) {
         if (source == null || start < 0 || end <= start || end > source.length()) {

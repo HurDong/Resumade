@@ -11,7 +11,6 @@ import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,69 +22,76 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
     private static final String LENGTH_RETRY_MARKER = "[LENGTH_RETRY]";
 
     private static final String GENERATE_SYSTEM_PROMPT = """
-            You are a senior Korean self-introduction writing assistant.
+            You write Korean self-introduction answers.
             Return JSON only with exactly this shape: {"text":"..."}.
             Write in Korean.
             Start with a bracketed title like [Title].
-            The first sentence must answer the question directly.
-            After the title, write natural prose in 3 to 4 paragraphs when length allows.
-            If the hard limit is very small, use fewer paragraphs but keep paragraph breaks natural.
-            Keep polished self-introduction narrative style, not report or memo style.
-            Do not use explicit section labels or colon-led headers such as Problem:, Action:, Result:, Summary:, 문제:, 원인:, 분석:, 조치:, 결과:, 요약:.
-            Do not use numbering, bullets, or list markers such as (1), 1., -, *, first/second.
-            Use only supplied facts and context. Do not invent experience.
+            The title must be short, memorable, and must not summarize the question or repeat the company name, position name, or question wording.
+            The first sentence must answer the question directly in a conclusion-first way.
+            Use only facts and technologies supported by the supplied experience context. Do not invent experience, metrics, or unlisted tools.
+            Treat company context as optional sharpening material and use it only when it makes job fit more concrete.
+            Prefer wording that can survive detailed interview follow-up.
+            Each core example should show role, judgment, action, and result.
+            If problem, cause, action, or result is missing, rewrite until the story is complete.
             When a project is first mentioned, include its origin or provenance if the context provides it.
-            Never exceed the hard character limit.
-            Count characters the same way Korean resume forms do: spaces, punctuation, brackets, English letters, numbers, and line breaks all count as one visible character.
-            Treat the preferred target as an operational goal, not a recommendation.
-            Meeting only the minimum is not enough when the preferred target is reachable inside the hard limit.
-            If a preferred target window is provided, land inside that window on the first pass whenever possible.
-            If the draft is short, expand in this order: background/context -> role/responsibility -> judgment criteria -> execution details -> measurable outcome -> job connection.
-            Expand with factual detail, not generic filler.
-            Before returning, silently recount characters and revise until the answer stays within the preferred target window and under the hard limit.
+            Avoid ceremonial openings, report-style labels, and list formatting unless the user explicitly asks for them.
+            Do not drift into a promise-heavy future essay without enough evidence from past actions.
+            For shorter answers, focus on one or two role-critical strengths rather than sounding broad.
+            Avoid repeating the same project story already used in other questions unless necessary.
+            Never exceed the hard character limit. Count every visible character, including spaces, punctuation, brackets, English letters, numbers, and line breaks, as 1.
+            If the prompt asks for a minimum length, anything below that minimum is a failed draft unless blocked by the hard limit.
+            If the user specifies paragraph roles, structure, or technical depth, follow that instruction unless it conflicts with the hard limit or supplied facts.
+            If the draft is short, add factual detail, reasoning, and impact rather than generic filler.
             """;
 
     private static final String REFINE_SYSTEM_PROMPT = """
-            You are a senior Korean self-introduction writing assistant.
+            You write Korean self-introduction answers.
             Return JSON only with exactly this shape: {"text":"..."}.
             Write in Korean.
             Preserve the strong facts from the current draft while improving structure, specificity, and job fit.
             Keep the bracketed title format.
-            The first sentence must answer directly.
-            Keep polished self-introduction narrative style, not report or memo style.
-            Body paragraphs may be split into 3 to 4 natural paragraphs when length allows.
-            Do not use explicit section labels or colon-led headers such as Problem:, Action:, Result:, Summary:, 문제:, 원인:, 분석:, 조치:, 결과:, 요약:.
-            Do not use numbering, bullets, or list markers such as (1), 1., -, *, first/second.
-            Preserve factual grounding. Do not invent unsupported claims.
-            Never exceed the hard character limit.
-            Count characters the same way Korean resume forms do: spaces, punctuation, brackets, English letters, numbers, and line breaks all count as one visible character.
-            Treat the preferred target as an operational goal, not a recommendation.
-            Meeting only the minimum is not enough when the preferred target is reachable inside the hard limit.
-            If a preferred target window is provided, land inside that window on the first pass whenever possible.
-            If the draft is short, expand in this order: background/context -> role/responsibility -> judgment criteria -> execution details -> measurable outcome -> job connection.
-            Expand only weak or missing parts with factual detail; do not add generic filler.
-            Before returning, silently recount characters and revise until the answer stays within the preferred target window and under the hard limit.
+            The title must be short, memorable, and must not turn into a generic question summary or repeat the company name or position name.
+            The first sentence must answer the question directly in a conclusion-first way.
+            Use only facts and technologies supported by the supplied experience context. Do not invent experience, metrics, or unlisted tools.
+            Treat company context as optional sharpening material and use it only when it makes job fit more concrete.
+            Prefer wording that can survive detailed interview follow-up.
+            Each core example should show role, judgment, action, and result.
+            If problem, cause, action, or result is missing, rewrite until the story is complete.
+            When a project is first mentioned, include its origin or provenance if the context provides it.
+            Avoid ceremonial openings, report-style labels, and list formatting unless the user explicitly asks for them.
+            Do not drift into a promise-heavy future essay without enough evidence from past actions.
+            For shorter answers, focus on one or two role-critical strengths rather than sounding broad.
+            Avoid repeating the same project story already used in other questions unless necessary.
+            Never exceed the hard character limit. Count every visible character, including spaces, punctuation, brackets, English letters, numbers, and line breaks, as 1.
+            If the prompt asks for a minimum length, anything below that minimum is a failed draft unless blocked by the hard limit.
+            If the user specifies paragraph roles, structure, or technical depth, follow that instruction unless it conflicts with the hard limit or supplied facts.
+            Treat paragraph-level feedback as targeted revision instructions for the current draft.
+            If the draft is short, add factual detail, reasoning, and impact rather than generic filler.
             """;
 
     private static final String REFINE_RETRY_SYSTEM_PROMPT = """
-            You are a senior Korean self-introduction writing assistant.
+            You write Korean self-introduction answers.
             Return JSON only with exactly this shape: {"text":"..."}.
             Write in Korean.
-            The previous result failed because it was below the minimum target.
+            The previous result was below the minimum length target.
             Keep all strong facts from the current draft and expand only the missing depth.
-            Keep the bracketed title format and keep the first sentence directly answering the question.
-            Body paragraphs may be split into 3 to 4 natural paragraphs when length allows.
-            Keep polished self-introduction narrative style, not report or memo style.
-            Do not use explicit section labels or colon-led headers such as Problem:, Action:, Result:, Summary:, 문제:, 원인:, 분석:, 조치:, 결과:, 요약:.
-            Do not use numbering, bullets, or list markers such as (1), 1., -, *, first/second.
+            Keep the bracketed title format.
+            The title must stay concise and must not turn into a generic question summary or repeat the company name or position name.
+            The first sentence must answer the question directly in a conclusion-first way.
+            Use only facts and technologies supported by the supplied experience context. Do not invent experience, metrics, or unlisted tools.
+            Treat company context as optional sharpening material and use it only when it makes job fit more concrete.
+            Prefer wording that can survive detailed interview follow-up.
+            Each core example should show role, judgment, action, and result.
+            If problem, cause, action, or result is missing, rewrite until the story is complete.
+            When a project is first mentioned, include its origin or provenance if the context provides it.
+            Avoid ceremonial openings, report-style labels, and list formatting unless the user explicitly asks for them.
+            Do not drift into a promise-heavy future essay without enough evidence from past actions.
             Never summarize, compress, or weaken already strong factual sentences.
-            Never exceed the hard character limit.
-            Count characters the same way Korean resume forms do: spaces, punctuation, brackets, English letters, numbers, and line breaks all count as one visible character.
-            Treat the preferred target as an operational goal, not a recommendation.
-            Meeting only the minimum is not enough when the preferred target is reachable inside the hard limit.
-            Expand in this order: background/context -> role/responsibility -> judgment criteria -> execution details -> measurable outcome -> job connection.
-            Use factual detail only and avoid generic filler.
-            Before returning, silently recount characters and revise until the answer stays within the preferred target window and under the hard limit.
+            Never exceed the hard character limit. Count every visible character, including spaces, punctuation, brackets, English letters, numbers, and line breaks, as 1.
+            If the prompt asks for a minimum length, anything below that minimum is a failed draft unless blocked by the hard limit.
+            If the user specifies paragraph roles, structure, or technical depth, follow that instruction unless it conflicts with the hard limit or supplied facts.
+            Treat paragraph-level feedback as targeted revision instructions for the current draft.
+            Add factual detail, reasoning, and impact rather than generic filler.
             """;
 
     private static final String GENERATE_USER_PROMPT_TEMPLATE = """
@@ -93,9 +99,8 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Position: %s
             Question: %s
             Hard limit: %d characters
-            Minimum target (must meet): %d characters
-            Preferred target (must aim): %d characters
-            Preferred target window: %d to %d characters
+            Minimum acceptable length: %d characters
+            Target length: around %d characters
 
             Company context:
             %s
@@ -110,25 +115,26 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             %s
 
             Requirements:
-            - Keep [Title] format with a concise, memorable, non-generic headline.
-            - The title must not repeat the company name, position name, or question wording.
-            - The first sentence must answer the question directly in conclusion-first style.
-            - Write the body in 3 to 4 natural paragraphs when length allows.
-            - Never use explicit section labels, numbering, bullets, or list formatting.
-            - Use one or two strongest experiences, not a broad list.
-            - Tie actions and outcomes to the target role.
-            - Treat the preferred target as the practical goal for this pass.
-            - If short, expand in this order: background -> role -> judgment -> execution detail -> outcome -> job connection.
-            - Return JSON only with shape {"text":"..."}.
+            - Start with [Title]
+            - The title must not summarize the question or repeat the company, position, or question wording
+            - Answer directly in the first sentence
+            - Follow the requested paragraph structure or technical depth if provided
+            - Use only facts and technologies supported by the experience context
+            - Use company context only when it sharpens job fit
+            - Keep each main example concrete: role, judgment, action, and result
+            - Avoid ceremonial openings, report-style labels, and list formatting unless explicitly requested
+            - Avoid future-heavy promises without past evidence
+            - Prefer interview-verifiable wording
+            - Never exceed the hard limit
+            - Return only the final answer in the required JSON shape
             """;
 
     private static final String REFINE_USER_PROMPT_TEMPLATE = """
             Company: %s
             Position: %s
             Hard limit: %d characters
-            Minimum target (must meet): %d characters
-            Preferred target (must aim): %d characters
-            Preferred target window: %d to %d characters
+            Minimum acceptable length: %d characters
+            Target length: around %d characters
 
             Company context:
             %s
@@ -146,24 +152,26 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             %s
 
             Requirements:
-            - Preserve the strongest facts and claims from the current draft.
-            - Improve specificity, job fit, and narrative coherence.
-            - Keep [Title] format with a concise, memorable, non-generic headline.
-            - The first sentence must answer directly.
-            - Body paragraphs may be split into 3 to 4 natural paragraphs when length allows.
-            - Never use explicit section labels, numbering, bullets, or list formatting.
-            - Treat the preferred target as the practical goal for this pass.
-            - If short, expand in this order: background -> role -> judgment -> execution detail -> outcome -> job connection.
-            - Return JSON only with shape {"text":"..."}.
+            - Start with [Title]
+            - Keep the title concise and non-generic
+            - Answer directly in the first sentence
+            - Follow the requested paragraph structure or technical depth if provided
+            - Use only facts and technologies supported by the experience context
+            - Use company context only when it sharpens job fit
+            - Keep each main example concrete: role, judgment, action, and result
+            - Avoid ceremonial openings, report-style labels, and list formatting unless explicitly requested
+            - Avoid future-heavy promises without past evidence
+            - Prefer interview-verifiable wording
+            - Never exceed the hard limit
+            - Return only the final answer in the required JSON shape
             """;
 
     private static final String REFINE_RETRY_USER_PROMPT_TEMPLATE = """
             Company: %s
             Position: %s
             Hard limit: %d characters
-            Minimum target (must meet): %d characters
-            Preferred target (must aim): %d characters
-            Preferred target window: %d to %d characters
+            Minimum acceptable length: %d characters
+            Target length: around %d characters
 
             Company context:
             %s
@@ -181,15 +189,18 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             %s
 
             Requirements:
-            - The previous output was under the minimum target. Fix this in this retry.
-            - Preserve all strong facts already present.
-            - Expand only missing parts; do not summarize or compress existing strong content.
-            - Keep [Title] and direct first sentence.
-            - Body paragraphs may be split into 3 to 4 natural paragraphs when length allows.
-            - Never use explicit section labels, numbering, bullets, or list formatting.
-            - Treat the preferred target as the practical goal for this retry.
-            - If short, expand in this order: background -> role -> judgment -> execution detail -> outcome -> job connection.
-            - Return JSON only with shape {"text":"..."}.
+            - The previous output was under the minimum length target. Fix this in this retry.
+            - Preserve all strong facts already present
+            - Expand only missing depth; do not summarize or compress existing strong content
+            - Keep [Title] and a direct first sentence
+            - Use only facts and technologies supported by the experience context
+            - Use company context only when it sharpens job fit
+            - Keep each main example concrete: role, judgment, action, and result
+            - Avoid ceremonial openings, report-style labels, and list formatting unless explicitly requested
+            - Avoid future-heavy promises without past evidence
+            - Prefer interview-verifiable wording
+            - Never exceed the hard limit
+            - Return only the final answer in the required JSON shape
             """;
 
     private static final Map<String, Object> DRAFT_RESPONSE_SCHEMA = createDraftResponseSchema();
@@ -229,8 +240,6 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             String others,
             String directive
     ) {
-        int targetWindowMin = resolveTargetWindowMin(minTarget, maxTarget);
-        int targetWindowMax = resolveTargetWindowMax(maxLength, maxTarget);
         String userPrompt = GENERATE_USER_PROMPT_TEMPLATE.formatted(
                 safe(company),
                 safe(position),
@@ -238,8 +247,6 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
                 maxLength,
                 minTarget,
                 maxTarget,
-                targetWindowMin,
-                targetWindowMax,
                 safe(companyContext),
                 safe(context),
                 safe(others),
@@ -270,8 +277,6 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             String others,
             String directive
     ) {
-        int targetWindowMin = resolveTargetWindowMin(minTarget, maxTarget);
-        int targetWindowMax = resolveTargetWindowMax(maxLength, maxTarget);
         boolean isLengthRetry = isLengthRetryDirective(directive);
         String userPromptTemplate = isLengthRetry ? REFINE_RETRY_USER_PROMPT_TEMPLATE : REFINE_USER_PROMPT_TEMPLATE;
         String userPrompt = userPromptTemplate.formatted(
@@ -280,8 +285,6 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
                 maxLength,
                 minTarget,
                 maxTarget,
-                targetWindowMin,
-                targetWindowMax,
                 safe(companyContext),
                 safe(input),
                 safe(context),
@@ -415,16 +418,6 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
         return message;
     }
 
-    private int resolveTargetWindowMin(int minTarget, int preferredTarget) {
-        int margin = Math.max(80, (int) Math.round(preferredTarget * 0.04));
-        return Math.max(minTarget, preferredTarget - margin);
-    }
-
-    private int resolveTargetWindowMax(int maxLength, int preferredTarget) {
-        int margin = Math.max(80, (int) Math.round(preferredTarget * 0.04));
-        return Math.min(maxLength, preferredTarget + margin);
-    }
-
     private int resolveMaxOutputTokens(int maxLength, int maxTarget) {
         int draftChars = Math.max(Math.max(maxLength, maxTarget), 1);
         int generousCap = Math.max(4096, draftChars * 3);
@@ -449,39 +442,87 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
 
     private String extractOutputText(JsonNode response) {
         JsonNode direct = response.get("output_text");
-        if (direct != null && direct.isTextual() && !direct.asText().isBlank()) {
-            return direct.asText();
+        if (direct != null) {
+            String directText = extractNodeText(direct);
+            if (!directText.isBlank()) {
+                return directText;
+            }
         }
 
         StringBuilder builder = new StringBuilder();
         JsonNode outputs = response.path("output");
         if (outputs.isArray()) {
             outputs.forEach(item -> {
+                appendIfPresent(builder, item.get("arguments"));
+                appendIfPresent(builder, item.get("json"));
+                appendIfPresent(builder, item.get("parsed"));
+
                 JsonNode content = item.path("content");
                 if (!content.isArray()) {
                     return;
                 }
                 content.forEach(part -> {
-                    String type = part.path("type").asText("");
-                    if (!"output_text".equals(type) && !"text".equals(type)) {
-                        return;
-                    }
-                    String text = part.path("text").asText("");
-                    if (text.isBlank()) {
-                        return;
-                    }
-                    if (builder.length() > 0) {
-                        builder.append('\n');
-                    }
-                    builder.append(text);
+                    appendIfPresent(builder, part.get("text"));
+                    appendIfPresent(builder, part.get("output_text"));
+                    appendIfPresent(builder, part.get("json"));
+                    appendIfPresent(builder, part.get("parsed"));
+                    appendIfPresent(builder, part.get("arguments"));
                 });
             });
         }
 
         if (builder.length() == 0) {
-            throw new IllegalStateException("Responses API returned no output_text content");
+            throw new IllegalStateException("Responses API returned no parseable output content. body="
+                    + abbreviateForLog(response.toString(), 2000));
         }
         return builder.toString();
+    }
+
+    private void appendIfPresent(StringBuilder builder, JsonNode node) {
+        String extracted = extractNodeText(node);
+        if (extracted.isBlank()) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append('\n');
+        }
+        builder.append(extracted);
+    }
+
+    private String extractNodeText(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return "";
+        }
+
+        if (node.isTextual()) {
+            return node.asText("");
+        }
+
+        JsonNode value = node.get("value");
+        if (value != null && value.isTextual()) {
+            return value.asText("");
+        }
+
+        JsonNode text = node.get("text");
+        if (text != null && text != node) {
+            String nestedText = extractNodeText(text);
+            if (!nestedText.isBlank()) {
+                return nestedText;
+            }
+        }
+
+        if (node.isObject() || node.isArray()) {
+            return node.toString();
+        }
+
+        return node.asText("");
+    }
+
+    private String abbreviateForLog(String text, int maxLength) {
+        if (text == null || text.length() <= maxLength) {
+            return text == null ? "" : text;
+        }
+        return text.substring(0, maxLength) + "...";
     }
 
     private static RestTemplate buildRestTemplate(Duration timeout) {
@@ -536,4 +577,3 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
         DraftResponse invoke();
     }
 }
-
