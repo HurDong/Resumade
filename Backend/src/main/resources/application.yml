@@ -38,10 +38,10 @@ openai:
     timeout: ${OPENAI_API_TIMEOUT:PT5M}
   models:
     experience: ${OPENAI_EXPERIENCE_MODEL:gpt-4o-mini}
-    workspace-draft: ${OPENAI_WORKSPACE_DRAFT_MODEL:gpt-4o-mini}
+    workspace-draft: ${OPENAI_WORKSPACE_DRAFT_MODEL:gpt-5-mini}
     workspace-patch: ${OPENAI_WORKSPACE_PATCH_MODEL:gpt-4o-mini}
     jd-text: ${OPENAI_JD_TEXT_MODEL:gpt-4o-mini}
-    jd-vision: ${OPENAI_JD_VISION_MODEL:gpt-4o}
+    jd-vision: ${OPENAI_JD_VISION_MODEL:gpt-5.4-mini}
 
 gemini:
   api:
