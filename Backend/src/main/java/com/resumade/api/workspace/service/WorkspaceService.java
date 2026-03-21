@@ -156,7 +156,7 @@ public class WorkspaceService {
             String translatedEn = translationService.translateToEnglish(refinedDraft);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_WASH, "Back-translating to Korean to produce the washed draft.");
+            sendProgress(emitter, STAGE_WASH, "자연스러운 한국어 문장으로 컴파일하여 세탁본을 완성 중입니다. 🧺");
             String washedKr = prepareDraftForTranslation(
                     normalizeTitleSpacing(translationService.translateToKorean(translatedEn)),
                     maxLength,
@@ -331,7 +331,7 @@ public class WorkspaceService {
             String translatedEn = translationService.translateToEnglish(draft);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_WASH, "Back-translating to Korean to produce the washed draft.");
+            sendProgress(emitter, STAGE_WASH, "자연스러운 한국어 문장으로 컴파일하여 세탁본을 완성 중입니다. 🧺");
             String washedKr = prepareDraftForTranslation(
                     normalizeTitleSpacing(translationService.translateToKorean(translatedEn)),
                     maxLengthGen,

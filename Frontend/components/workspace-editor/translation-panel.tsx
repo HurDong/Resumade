@@ -101,6 +101,107 @@ export function TranslationPanel() {
     return { start: startIndex as number, end: endIndex as number }
   }
 
+  const findFuzzyRange = (source: string, target: string) => {
+    if (!target) return null
+    
+    // 1. Try strict squashed match first
+    const map: number[] = []
+    let squashedSource = ""
+    for (let i = 0; i < source.length; i++) {
+        const char = source[i]
+        if (!/[\s.,!?'"(){}\[\]]/u.test(char)) {
+            squashedSource += char
+            map.push(i)
+        }
+    }
+    const squashedTarget = target.replace(/[\s.,!?'"(){}\[\]]/gu, '')
+    if (squashedTarget) {
+      const index = squashedSource.indexOf(squashedTarget)
+      if (index !== -1) {
+          return { start: map[index], end: map[index + squashedTarget.length - 1] + 1 }
+      }
+    }
+
+    // 2. Fallback to advanced Hybrid (Bi-gram + Hangul Uni-gram) Jaccard Similarity sliding window
+    const getGrams = (str: string) => {
+      const s = str.replace(/[\s.,!?'"(){}\[\]]/gu, '');
+      const grams = new Set<string>();
+      for (let i = 0; i < s.length - 1; i++) grams.add(s.substring(i, i + 2));
+      for (let i = 0; i < s.length; i++) {
+        if (/[가-힣]/.test(s[i])) grams.add(s[i]);
+      }
+      return grams;
+    };
+
+    const targetGrams = getGrams(target);
+    if (targetGrams.size === 0) return null;
+
+    let bestScore = 0;
+    let bestStart = -1;
+    let bestEnd = -1;
+    let searchStart = 0;
+
+    while (searchStart < source.length) {
+      let remaining = source.substring(searchStart);
+      let dotIdx = remaining.search(/[.!?\n]/);
+      let sEnd = searchStart + (dotIdx === -1 ? remaining.length : dotIdx + 1);
+      
+      while (sEnd < source.length && /[\s]/.test(source[sEnd])) {
+        sEnd++;
+      }
+      
+      const sentence = source.substring(searchStart, sEnd);
+      const sGrams = getGrams(sentence);
+      
+      if (targetGrams.size > 0 && sGrams.size > 0) {
+          let intersection = 0;
+          targetGrams.forEach(g => { if (sGrams.has(g)) intersection++; });
+          const score = intersection / targetGrams.size;
+
+          if (score > bestScore) {
+            bestScore = score;
+            
+            let firstMatchIdx = sentence.length;
+            let lastMatchIdx = -1;
+            
+            for (let i = 0; i < sentence.length - 1; i++) {
+              if (/[\s.,!?'"(){}\[\]]/.test(sentence[i])) continue;
+              let j = i + 1;
+              while(j < sentence.length && /[\s.,!?'"(){}\[\]]/.test(sentence[j])) j++;
+              if (j < sentence.length) {
+                  const bigram = sentence[i] + sentence[j];
+                  if (targetGrams.has(bigram)) {
+                      if (i < firstMatchIdx) firstMatchIdx = i;
+                      if (j + 1 > lastMatchIdx) lastMatchIdx = j + 1;
+                  }
+              }
+            }
+
+            if (lastMatchIdx !== -1) {
+              while (firstMatchIdx > 0 && !/[\s.,!?'"(){}\[\]]/.test(sentence[firstMatchIdx - 1])) {
+                firstMatchIdx--;
+              }
+              while (lastMatchIdx < sentence.length && !/[\s.,!?'"(){}\[\]]/.test(sentence[lastMatchIdx])) {
+                lastMatchIdx++;
+              }
+              bestStart = searchStart + firstMatchIdx;
+              bestEnd = searchStart + lastMatchIdx;
+            } else {
+              bestStart = searchStart;
+              bestEnd = sEnd;
+            }
+          }
+      }
+      searchStart = sEnd;
+    }
+
+    if (bestScore >= 0.20 && bestStart !== -1) {
+      return { start: bestStart, end: bestEnd };
+    }
+
+    return null;
+  }
+
   const highlightText = (text: string) => {
     if (!text || !mistranslations.length) return text
 
@@ -123,6 +224,11 @@ export function TranslationPanel() {
       const uniqueRange = findUniqueExactRange(normalizedText, target)
       if (uniqueRange) {
         matches.push({ ...uniqueRange, mis })
+      } else {
+        const fuzzyRange = findFuzzyRange(normalizedText, target)
+        if (fuzzyRange) {
+          matches.push({ ...fuzzyRange, mis })
+        }
       }
     })
 
@@ -153,7 +259,13 @@ export function TranslationPanel() {
           ? "opacity-20 grayscale scale-95 blur-[0.5px]"
           : "opacity-100"
       const reasonLabel = mis.reason ? ` [${mis.reason}]` : ""
-      result += `<mark data-mis-id="${mis.id}" title="검토 이유${reasonLabel}" class="bg-highlight-warning text-foreground ${hoverEffect} px-0.5 rounded cursor-help transition-all duration-300 inline-block origin-center">${normalizedText.substring(match.start, match.end)}</mark>`
+      
+      const isCritical = mis.severity === "CRITICAL"
+      const severityClass = isCritical 
+        ? "bg-red-500/15 text-red-600 dark:text-red-400 ring-1 ring-red-500/40" 
+        : "bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/40"
+      
+      result += `<mark data-mis-id="${mis.id}" title="${isCritical ? '🚨 필수 교정 : ' : '🚧 검토 권장 : '}${reasonLabel}" class="${severityClass} ${hoverEffect} px-0.5 rounded cursor-help transition-all duration-300 inline-block origin-center font-semibold">${normalizedText.substring(match.start, match.end)}</mark>`
       lastIndex = match.end
     })
 
@@ -162,26 +274,58 @@ export function TranslationPanel() {
   }
 
   const highlightOriginalText = (text: string) => {
-    if (!text) return ""
+    if (!text || !mistranslations.length) return text
 
     const normalizedText = text.normalize("NFC")
-    let result = normalizedText
+    const matches: { start: number; end: number; mis: any }[] = []
 
     mistranslations.forEach((mis) => {
-      if (!mis.original) return
-      const normalizedOriginal = mis.original.normalize("NFC")
-      const escaped = escapeRegExp(normalizedOriginal)
-      const regex = new RegExp(escaped, "g")
-      const isHovered = hoveredMistranslationId === mis.id
-
-      if (isHovered) {
-        result = result.replace(
-          regex,
-          `<span class="bg-primary/20 text-primary ring-1 ring-primary/50 px-0.5 rounded transition-all duration-300 font-bold">${normalizedOriginal}</span>`
-        )
+      const target = mis.original?.normalize("NFC").trim()
+      if (!target) return
+      
+      const uniqueRange = findUniqueExactRange(normalizedText, target)
+      if (uniqueRange) {
+        matches.push({ ...uniqueRange, mis })
+      } else {
+        const fuzzyRange = findFuzzyRange(normalizedText, target)
+        if (fuzzyRange) {
+          matches.push({ ...fuzzyRange, mis })
+        }
       }
     })
 
+    if (matches.length === 0) return normalizedText
+
+    matches.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start))
+
+    const finalMatches: typeof matches = []
+    let lastEnd = -1
+    for (const match of matches) {
+      if (match.start >= lastEnd) {
+        finalMatches.push(match)
+        lastEnd = match.end
+      }
+    }
+
+    let result = ""
+    let lastIndex = 0
+    const hasAnyHover = hoveredMistranslationId !== null
+
+    finalMatches.forEach((match) => {
+      result += normalizedText.substring(lastIndex, match.start)
+      const mis = match.mis
+      const isHovered = hoveredMistranslationId === mis.id
+      const hoverEffect = isHovered
+        ? "ring-2 ring-primary scale-110 shadow-2xl z-[50] opacity-100 bg-primary/30"
+        : hasAnyHover
+          ? "opacity-20 grayscale scale-95 blur-[0.5px] bg-primary/10"
+          : "opacity-100 bg-primary/20 text-primary"
+          
+      result += `<mark data-mis-id="${mis.id}" class="text-primary hover:text-primary ring-1 ring-primary/50 px-1 rounded transition-all duration-300 font-bold inline-block origin-center ${hoverEffect}">${normalizedText.substring(match.start, match.end)}</mark>`
+      lastIndex = match.end
+    })
+
+    result += normalizedText.substring(lastIndex)
     return result
   }
 

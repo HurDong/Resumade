@@ -11,6 +11,9 @@ export interface Mistranslation {
   original: string;
   translated: string;
   suggestion: string;
+  severity?: "CRITICAL" | "WARNING";
+  translatedSentence?: string;
+  suggestedSentence?: string;
   reason?: string;
   startIndex?: number | null;
   endIndex?: number | null;
@@ -301,27 +304,46 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     
     // If suggestion is identical to the one that was flagged (user didn't change it),
     // it means the user wants to revert to the original draft version.
-    const finalSuggestion = normalizedSuggestion === normalizedTranslated
+    const isReverting = normalizedSuggestion === normalizedTranslated;
+    const finalSuggestion = isReverting
       ? mistranslation.original 
       : normalizedSuggestion;
-    
-    // Replace the translated text with the final suggestion
-    let searchTerms = [mistranslation.translated];
-    
-    // Also try variant without spaces for robustness in matching
-    if (mistranslation.translated.includes(" ")) {
-       searchTerms.push(mistranslation.translated.replace(/\s+/g, ""));
-    }
     
     let newWashedKr = activeQ.washedKr;
     let found = false;
 
-    // Try each search term variant
-    for (const term of searchTerms) {
-      if (newWashedKr.includes(term)) {
-        newWashedKr = newWashedKr.split(term).join(finalSuggestion);
+    // First attempt: Sentence-level replacement
+    if (mistranslation.translatedSentence && mistranslation.suggestedSentence) {
+      const targetSentence = mistranslation.translatedSentence;
+      // If reverting, we put the original English word inside the suggested sentence.
+      // If not reverting, we use the perfectly rewritten Korean suggested sentence.
+      const finalReplacement = isReverting
+        ? mistranslation.suggestedSentence.replace(mistranslation.translated, mistranslation.original)
+        : mistranslation.suggestedSentence;
+
+      if (newWashedKr.includes(targetSentence)) {
+        newWashedKr = newWashedKr.replace(targetSentence, finalReplacement);
         found = true;
-        break;
+      }
+    }
+
+    // Fallback: Phrase-level replacement
+    if (!found) {
+      // Replace the translated text with the final suggestion
+      let searchTerms = [mistranslation.translated];
+      
+      // Also try variant without spaces for robustness in matching
+      if (mistranslation.translated.includes(" ")) {
+         searchTerms.push(mistranslation.translated.replace(/\s+/g, ""));
+      }
+      
+      // Try each search term variant
+      for (const term of searchTerms) {
+        if (newWashedKr.includes(term)) {
+          newWashedKr = newWashedKr.split(term).join(finalSuggestion);
+          found = true;
+          break;
+        }
       }
     }
     
@@ -781,7 +803,7 @@ async function runWorkspaceSse({
   errorFallbackMessage,
 }: {
   url: string;
-  set: Parameters<typeof useWorkspaceStore.setState>[0];
+  set: typeof useWorkspaceStore.setState;
   get: () => WorkspaceState;
   errorFallbackMessage: string;
 }) {

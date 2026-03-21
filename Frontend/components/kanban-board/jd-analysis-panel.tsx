@@ -113,13 +113,7 @@ export function JDAnalysisPanel({
                 </div>
               )}
             </>
-          ) : (
-            application.aiInsight && (
-              <div className="whitespace-pre-line rounded-xl bg-muted/30 p-4 text-sm leading-relaxed">
-                {application.aiInsight}
-              </div>
-            )
-          )}
+          ) : null}
         </div>
       ) : (
         <div className="mt-4 border-t border-dashed border-border py-10 text-center text-muted-foreground">

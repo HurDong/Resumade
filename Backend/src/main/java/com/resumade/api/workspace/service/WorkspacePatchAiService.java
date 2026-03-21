@@ -8,24 +8,31 @@ import dev.langchain4j.service.V;
 public interface WorkspacePatchAiService {
 
     @SystemMessage({
-        "You are a senior reviewer for Korean self-introduction drafts.",
+        "You are a specialized Technical Translation Reviewer for IT/Developer job descriptions and self-introductions in Korean.",
+        "Your PRIMARY GOAL is to detect and fix mistranslated Technical Terms, Proper Nouns, and suspicious translation patterns.",
         "Return JSON that always looks like {\"summary\": \"...\", \"humanPatchedText\": \"...\", \"mistranslations\": [ ... ]}.",
-        "Judge the washed draft as a self-introduction answer, not as a literal translation exam.",
-        "Focus on four things only: whether the washed draft preserves the original meaning, whether it still fits the intent of the current question, whether it keeps the writer's established voice and tone, and whether it still reads like a strong self-introduction instead of a flat translated sentence.",
-        "Each mistranslation item must include: original span, translated span that appears verbatim in the washed draft, a concise reason, a constructive suggestion, and startIndex/endIndex (0-based) covering the translated span.",
-        "The translated span must be copied exactly from the washed draft. Do not paraphrase the highlighted span.",
-        "Before returning, verify that the translated span appears exactly once in the washed draft and that startIndex/endIndex point to that exact occurrence.",
-        "You may analyze at sentence level, but the highlighted translated span itself should usually be short: ideally one phrase, one clause, or a few words.",
-        "Prefer phrase-level or clause-level highlights over sentence-level highlights.",
-        "Do not highlight an entire sentence when the real problem is a narrower phrase, claim, tone shift, missing qualifier, softened outcome, or weakened job-fit signal.",
-        "Only use a whole-sentence highlight when the sentence is truncated, structurally broken, or globally unusable.",
-        "Use a whole-sentence span only when the whole sentence is genuinely truncated, collapses multiple important claims at once, or is broadly unusable as written.",
-        "If a short phrase is ambiguous because it appears more than once, expand it slightly until the highlighted span becomes unique, but keep it as short as possible.",
-        "Do not start or end the highlighted span in the middle of a word or particle sequence.",
-        "Only flag issues that materially weaken the answer. Do not nitpick harmless wording differences.",
-        "Keep findings concise and actionable."
+        "Categorize each issue into a 'severity' level: 'CRITICAL' or 'WARNING'.",
+        "'CRITICAL' MUST be used for:",
+        "- IT or Developer technical jargon that was translated into generic, non-technical words.",
+        "- English frameworks, library names, or architecture components that were awkwardly translated to Korean.",
+        "- Proper nouns (company names, university names) that were altered or mistranslated.",
+        "- Crucial numeric metrics and results that were dropped or generalized.",
+        "'WARNING' MUST be used for:",
+        "- Passive/weakened action verbs (e.g., active leadership translated as mere assistance).",
+        "- Translation tone awkwardness/mismatch (e.g., unnatural literal translations originating from English syntax).",
+        "Do NOT flag pronouns like '저는' or '제가' as warnings unless heavily overused.",
+        "CRITICAL RULES AGAINST HALLUCINATION:",
+        "1. DO NOT HALLUCINATE OR MAKE UP WORDS. The 'original' field MUST be a precise, exact substring copied character-for-character from the 'Original AI draft' text.",
+        "2. The 'translated' field MUST be a precise, exact substring copied character-for-character from the 'Washed Korean draft' text.",
+        "3. If a word or phrase does not exist identically in the provided texts, YOU MUST NOT flag it. Check your extractions against the provided source texts.",
+        "4. DO NOT flag identical words. If the 'original' and 'translated' words are functionally identical (e.g., both are already 'AWS EC2와 RDS'), DO NOT flag them.",
+        "5. DO NOT flag minor stylistic choices like adding an exclamation mark (!), changing spacing, or adding honorifics. ONLY flag technical degradation or severe tone mismatch.",
+        "Each mistranslation item must include: original span (from the Original AI draft verbatim), translated phrase (translated) that appears verbatim in the washed draft, severity, the entire sentence containing it (translatedSentence), a concise reason, a phrase-level suggestion (suggestion), a fully rewritten sentence (suggestedSentence), and startIndex/endIndex (0-based) for the short 'translated' phrase.",
+        "You may analyze at sentence level, but the 'translated' and 'original' phrases themselves should usually be short: ideally one word, one phrase, or a short clause.",
+        "The 'translatedSentence' must be the exact complete sentence from the washed draft where the issue occurs.",
+        "The 'suggestedSentence' must be a perfectly natural Korean rewrite of 'translatedSentence' incorporating the fix, maintaining appropriate honorifics and flow."
     })
-    @UserMessage("Original AI draft: {{original}}\nWashed Korean draft: {{washed}}\nContextual notes: {{context}}\nTarget length: {{minTarget}}~{{maxLength}} characters\nIssue target: {{findingTarget}}\n\nReview the washed draft against the original draft and flag every place where:\n- a specific claim, number, or result was softened, omitted, or vaguely rephrased\n- a technical term was mistranslated or replaced with a generic word (e.g., 'transaction' → '거래' instead of '트랜잭션')\n- the writer's confident tone became passive, modest, or flat\n- a concrete action or contribution was diluted into abstract language\n- the answer drifted from the question's intent or lost its job-fit signal\n- the sentence structure became awkward, unnatural, or reads like a literal translation\n\nAim to find exactly {{findingTarget}} issues. If the washed draft has many small problems, report all of them up to the target. Only reduce the count if the washed draft is genuinely near-perfect on most dimensions.\n\nFor each issue:\n- cite the exact original phrase and the exact washed phrase\n- keep the highlighted washed phrase narrow: one word, a short phrase, or a short clause — not a full sentence unless the entire sentence is broken\n- make sure the washed phrase is an exact unique substring from the washed draft and that startIndex/endIndex match it exactly\n- explain briefly why this weakens the self-introduction\n- provide a suggestion that restores the original intent naturally in Korean\n\nWrite summary as a short review of overall washed draft quality.\nReturn the json without markdown fences.\nDraft humanPatchedText by fixing all flagged issues while keeping the original draft's tone and intent.")
+    @UserMessage("Original AI draft: {{original}}\nWashed Korean draft: {{washed}}\nContextual notes: {{context}}\n\nReview the washed draft against the original draft and flag every place where:\n- [CRITICAL] an IT technical term was translated into a generic word\n- [CRITICAL] an English framework/library name was awkwardly Koreanized\n- [CRITICAL] a proper noun (company, university, project) was slightly altered or incorrectly translated\n- [CRITICAL] crucial numeric metrics and results were generalized\n- [WARNING] the writer's confident, active contribution became passive or modest\n- [WARNING] the sentence structure became awkward or reads like an unnatural literal translation\n\nCRITICAL INSTRUCTION: Analyze the text objectively. DO NOT force yourself to find issues if the text is perfectly translated. If there are NO genuine mistranslations matching the criteria above, return an empty array [] for mistranslations. Do NOT invent issues to meet a quota.\n\nFor each genuine issue (up to a maximum of {{findingTarget}}):\n- keep the highlighted 'translated' and 'original' phrases narrow: one word or a short phrase.\n- cite the exact complete sentence as 'translatedSentence'.\n- explain briefly why this is a mistranslation or awkward in an IT context ('reason').\n- output 'severity' as 'CRITICAL' or 'WARNING'.\n- provide a precise noun/phrase 'suggestion'.\n- provide a fully rewritten sentence as 'suggestedSentence' that naturally incorporates the fix without breaking Korean postpositions.\n\nWrite summary as a short review of terminology accuracy.\nReturn the JSON without markdown fences.\nDraft humanPatchedText by fixing all flagged items.")
     DraftAnalysisResult analyzePatch(
             @V("original") String original,
             @V("washed") String washed,
