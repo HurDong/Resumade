@@ -1,14 +1,19 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { DragDropContext, Droppable, type DropResult } from "@hello-pangea/dnd"
+import { ArchiveX, ChevronRight, ChevronsUp, Loader2, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, Plus, Loader2, Eye, EyeOff } from "lucide-react"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { type Application, type ApplicationStatus } from "@/lib/mock-data"
 import { getCompanyLogo } from "@/lib/logo-utils"
 import { countResumeCharacters } from "@/lib/text/resume-character-count"
 import { KanbanColumn, type ColumnDefinition } from "./kanban-column"
+import { ApplicationCard } from "./application-card"
 import { ApplicationDetailSheet } from "./application-detail-sheet"
-import { DragDropContext, DropResult } from "@hello-pangea/dnd"
+import { AddApplicationDialog } from "./add-application-dialog"
+
+const FAILED_BIN_ID = "failed-bin"
 
 export const columns: ColumnDefinition[] = [
   { id: "document", title: "서류 전형", color: "bg-primary" },
@@ -17,9 +22,6 @@ export const columns: ColumnDefinition[] = [
   { id: "interview2", title: "2차 면접", color: "bg-chart-4" },
   { id: "passed", title: "최종 합격", color: "bg-emerald-500" },
 ]
-
-import { AddApplicationDialog } from "./add-application-dialog"
-import { useEffect } from "react"
 
 function mapApplicationFromApi(app: any): Application {
   return {
@@ -34,16 +36,53 @@ function mapApplicationFromApi(app: any): Application {
     rawJd: app.rawJd || "",
     aiInsight: app.aiInsight || "",
     companyResearch: app.companyResearch || "",
-    questions: (app.questions || []).map((q: any) => ({
-      id: q.id.toString(),
-      title: q.title,
-      maxLength: q.maxLength || 1000,
-      currentLength: countResumeCharacters(q.content),
-      content: q.content || "",
-      isCompleted: !!q.isCompleted || !!q.completed
+    questions: (app.questions || []).map((question: any) => ({
+      id: question.id.toString(),
+      title: question.title,
+      maxLength: question.maxLength || 1000,
+      currentLength: countResumeCharacters(question.content),
+      content: question.content || "",
+      isCompleted: !!question.isCompleted || !!question.completed,
     })),
-    result: (app.result?.toLowerCase() || "pending") as any
+    result: (app.result?.toLowerCase() || "pending") as Application["result"],
   }
+}
+
+function getApplicationProgress(application: Application) {
+  const questions = application.questions || []
+  if (questions.length === 0) return 0
+
+  const totalMaxLength = questions.reduce(
+    (sum, question) => sum + Math.max(question.maxLength || 0, 0),
+    0
+  )
+
+  if (totalMaxLength === 0) {
+    const completedCount = questions.filter((question) => question.isCompleted).length
+    return Math.round((completedCount / questions.length) * 100)
+  }
+
+  const totalCurrentLength = questions.reduce(
+    (sum, question) =>
+      sum + Math.min(question.currentLength || 0, question.maxLength || 0),
+    0
+  )
+
+  return Math.round((totalCurrentLength / totalMaxLength) * 100)
+}
+
+function getDropUpdates(destinationId: string): Partial<Application> | null {
+  if (destinationId === FAILED_BIN_ID || destinationId === `${FAILED_BIN_ID}-list`) {
+    return { result: "fail" }
+  }
+
+  const nextStatus = destinationId as ApplicationStatus
+
+  if (nextStatus === "passed") {
+    return { status: "passed", result: "pass" }
+  }
+
+  return { status: nextStatus, result: "pending" }
 }
 
 export function KanbanBoard() {
@@ -52,23 +91,31 @@ export function KanbanBoard() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [localApplications, setLocalApplications] = useState<Application[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [showFailed, setShowFailed] = useState(true)
+  const [isFailedDrawerOpen, setIsFailedDrawerOpen] = useState(false)
 
-  // Sort applications: 1. Pass > Pending > Fail, 2. Deadline (Urgent first), 3. Stable ID
   const sortedApplications = [...localApplications].sort((a, b) => {
-    const resultPriority = { pass: 0, pending: 1, fail: 2 };
-    const pA = resultPriority[a.result || "pending"];
-    const pB = resultPriority[b.result || "pending"];
-    
-    if (pA !== pB) return pA - pB;
-    
-    const timeA = a.deadline ? new Date(a.deadline).getTime() : Infinity;
-    const timeB = b.deadline ? new Date(b.deadline).getTime() : Infinity;
-    
-    if (timeA !== timeB) return timeA - timeB;
-    
-    return a.id.localeCompare(b.id);
-  });
+    const resultPriority = { pending: 0, pass: 1, fail: 2 }
+    const priorityA = resultPriority[a.result || "pending"]
+    const priorityB = resultPriority[b.result || "pending"]
+
+    if (priorityA !== priorityB) return priorityA - priorityB
+
+    const timeA = a.deadline ? new Date(a.deadline).getTime() : Number.POSITIVE_INFINITY
+    const timeB = b.deadline ? new Date(b.deadline).getTime() : Number.POSITIVE_INFINITY
+
+    if (timeA !== timeB) return timeA - timeB
+
+    const progressA = getApplicationProgress(a)
+    const progressB = getApplicationProgress(b)
+
+    if (progressA !== progressB) return progressA - progressB
+
+    return a.id.localeCompare(b.id)
+  })
+
+  const failedApplications = sortedApplications.filter(
+    (application) => application.result === "fail"
+  )
 
   const fetchApplications = async () => {
     setIsLoading(true)
@@ -79,10 +126,9 @@ export function KanbanBoard() {
         console.error("Expected array from /api/applications, but got:", data)
         return
       }
-      const mapped = data.map(mapApplicationFromApi)
-      setLocalApplications(mapped)
-    } catch (err) {
-      console.error("Failed to fetch applications:", err)
+      setLocalApplications(data.map(mapApplicationFromApi))
+    } catch (error) {
+      console.error("Failed to fetch applications:", error)
     } finally {
       setIsLoading(false)
     }
@@ -92,44 +138,63 @@ export function KanbanBoard() {
     fetchApplications()
   }, [])
 
-  // Auto-fetch and save logos for applications missing them
   useEffect(() => {
-    if (localApplications.length > 0) {
-      const fetchMissingLogos = async () => {
-        let hasUpdates = false
-        const updatedApps = [...localApplications]
+    if (localApplications.length === 0) return
 
-        for (let i = 0; i < updatedApps.length; i++) {
-          const app = updatedApps[i]
-          if (!app.logoUrl) {
-            const logoUrl = getCompanyLogo(app.company)
-            try {
-              const response = await fetch(`/api/applications/${app.id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ logoUrl })
-              })
-              if (response.ok) {
-                updatedApps[i] = { ...app, logoUrl }
-                hasUpdates = true
-              }
-            } catch (err) {
-              console.error(`Failed to auto-update logo for ${app.company}`, err)
-            }
+    const fetchMissingLogos = async () => {
+      let hasUpdates = false
+      const updatedApplications = [...localApplications]
+
+      for (let index = 0; index < updatedApplications.length; index += 1) {
+        const application = updatedApplications[index]
+        if (application.logoUrl) continue
+
+        const logoUrl = getCompanyLogo(application.company)
+
+        try {
+          const response = await fetch(`/api/applications/${application.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ logoUrl }),
+          })
+
+          if (response.ok) {
+            updatedApplications[index] = { ...application, logoUrl }
+            hasUpdates = true
           }
-        }
-
-        if (hasUpdates) {
-          setLocalApplications(updatedApps)
+        } catch (error) {
+          console.error(`Failed to auto-update logo for ${application.company}`, error)
         }
       }
 
-      fetchMissingLogos()
+      if (hasUpdates) {
+        setLocalApplications(updatedApplications)
+      }
     }
-  }, [localApplications.length > 0]) // Run when we have applications
 
-  const handleCardClick = (app: Application) => {
-    setSelectedApplication(app)
+    fetchMissingLogos()
+  }, [localApplications.length])
+
+  useEffect(() => {
+    if (!selectedApplication) return
+
+    const updatedApplication = localApplications.find(
+      (application) => application.id === selectedApplication.id
+    )
+
+    if (updatedApplication) {
+      setSelectedApplication(updatedApplication)
+      return
+    }
+
+    if (isSheetOpen) {
+      setIsSheetOpen(false)
+      setSelectedApplication(null)
+    }
+  }, [isSheetOpen, localApplications, selectedApplication])
+
+  const handleCardClick = (application: Application) => {
+    setSelectedApplication(application)
     setIsSheetOpen(true)
   }
 
@@ -139,169 +204,249 @@ export function KanbanBoard() {
     void fetchApplications()
   }
 
-  // 데이터 변경 시 선택된 공고 정보 동기화 (실시간 반영)
-  useEffect(() => {
-    if (selectedApplication) {
-      const updated = localApplications.find(app => app.id === selectedApplication.id)
-      if (updated) {
-        // ID는 같지만 내용이 변경된 경우 업데이트
-        setSelectedApplication(updated)
-      } else if (isSheetOpen) {
-        // 목록에서 사라진 경우 (삭제 등) 시트 닫기
-        handleCloseSheet()
-      }
-    }
-  }, [localApplications])
-
   const handleDeleteApplication = async (id: string) => {
-    if (!confirm("정말 이 공고를 삭제하시겠습니까?\n연관된 모든 자소서 문항과 데이터가 영구적으로 삭제됩니다.")) return
+    if (!confirm("정말 이 공고를 삭제하시겠습니까?\n연관된 모든 자소서 문항과 데이터가 영구적으로 삭제됩니다.")) {
+      return
+    }
+
     try {
-      const response = await fetch(`/api/applications/${id}`, {
-        method: "DELETE"
-      })
-      if (!response.ok) throw new Error("공고 삭제 실패")
+      const response = await fetch(`/api/applications/${id}`, { method: "DELETE" })
+      if (!response.ok) throw new Error("Failed to delete application")
       await fetchApplications()
-    } catch (err) {
-      console.error(err)
+    } catch (error) {
+      console.error(error)
       alert("공고 삭제에 실패했습니다.")
     }
   }
 
-  const handleAddApplication = async (newApp: { company: string; position: string; rawJd: string; aiInsight: string; questions: { title: string; maxLength: number }[] }) => {
+  const handleAddApplication = async (newApplication: {
+    company: string
+    position: string
+    rawJd: string
+    aiInsight: string
+    questions: { title: string; maxLength: number }[]
+  }) => {
     try {
       const response = await fetch("/api/applications/full", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          companyName: newApp.company,
-          position: newApp.position,
-          rawJd: newApp.rawJd,
-          aiInsight: newApp.aiInsight,
-          questions: newApp.questions
-        })
+          companyName: newApplication.company,
+          position: newApplication.position,
+          rawJd: newApplication.rawJd,
+          aiInsight: newApplication.aiInsight,
+          questions: newApplication.questions,
+        }),
       })
 
-      if (!response.ok) throw new Error("공고 등록 실패")
-      
-      const savedApp = await response.json()
-      
-      const application = mapApplicationFromApi(savedApp)
-      setLocalApplications([application, ...localApplications])
-    } catch (err) {
-      console.error(err)
+      if (!response.ok) throw new Error("Failed to create application")
+
+      const savedApplication = await response.json()
+      setLocalApplications((current) => [mapApplicationFromApi(savedApplication), ...current])
+    } catch (error) {
+      console.error(error)
       alert("공고 등록에 실패했습니다.")
     }
   }
 
   const handleUpdateApplication = async (id: string, updates: Partial<Application>) => {
     const previousApplications = localApplications
+
     try {
-      setLocalApplications(prev => prev.map(app => 
-        app.id === id ? { ...app, ...updates } : app
-      ))
+      setLocalApplications((current) =>
+        current.map((application) =>
+          application.id === id ? { ...application, ...updates } : application
+        )
+      )
 
       const response = await fetch(`/api/applications/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates)
+        body: JSON.stringify(updates),
       })
-      if (!response.ok) throw new Error("Update failed")
-      const savedApp = mapApplicationFromApi(await response.json())
-      setLocalApplications(prev => prev.map(app => (
-        app.id === id ? { ...app, ...savedApp } : app
-      )))
-    } catch (err) {
-      console.error(err)
+
+      if (!response.ok) throw new Error("Failed to update application")
+
+      const savedApplication = mapApplicationFromApi(await response.json())
+      setLocalApplications((current) =>
+        current.map((application) =>
+          application.id === id ? { ...application, ...savedApplication } : application
+        )
+      )
+    } catch (error) {
+      console.error(error)
       setLocalApplications(previousApplications)
       await fetchApplications()
     }
   }
 
-  const handleStatusChange = async (id: string, newStatus: ApplicationStatus) => {
-    handleUpdateApplication(id, { status: newStatus })
-    try {
-      const response = await fetch(`/api/applications/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus.toUpperCase() })
-      })
-      if (!response.ok) throw new Error("Status update failed")
-    } catch (err) {
-      console.error(err)
-      fetchApplications()
-    }
-  }
-
   const onDragEnd = (result: DropResult) => {
     const { destination, source, draggableId } = result
+
     if (!destination) return
-    if (destination.droppableId === source.droppableId && destination.index === source.index) return
-    const newStatus = destination.droppableId as ApplicationStatus
-    handleStatusChange(draggableId, newStatus)
+    if (
+      destination.droppableId === source.droppableId &&
+      destination.index === source.index
+    ) {
+      return
+    }
+
+    const updates = getDropUpdates(destination.droppableId)
+    if (!updates) return
+
+    if (
+      destination.droppableId === FAILED_BIN_ID ||
+      destination.droppableId === `${FAILED_BIN_ID}-list`
+    ) {
+      setIsFailedDrawerOpen(true)
+    }
+
+    void handleUpdateApplication(draggableId, updates)
   }
 
   if (isLoading) {
     return (
-      <div className="flex h-[400px] w-full items-center justify-center backdrop-blur-sm bg-background/50 rounded-3xl border border-border/50 shadow-inner">
+      <div className="flex h-[400px] w-full items-center justify-center rounded-3xl border border-border/50 bg-background/50 shadow-inner backdrop-blur-sm">
         <div className="flex flex-col items-center gap-4">
           <div className="relative">
-            <div className="absolute inset-0 bg-primary/20 rounded-full animate-ping scale-150" />
-            <Loader2 className="size-10 text-primary animate-spin relative" />
+            <div className="absolute inset-0 scale-150 animate-ping rounded-full bg-primary/20" />
+            <Loader2 className="relative size-10 animate-spin text-primary" />
           </div>
-          <p className="text-sm font-medium text-muted-foreground animate-pulse">공고 목록을 불러오는 중...</p>
+          <p className="animate-pulse text-sm font-medium text-muted-foreground">
+            공고 목록을 불러오는 중...
+          </p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          {columns.map((col, idx) => (
-            <div key={col.id} className="flex items-center">
-              <span className="text-xs text-muted-foreground px-2 py-1 rounded bg-muted/50">
-                {col.title}
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {columns.map((column, index) => (
+            <div key={column.id} className="flex items-center">
+              <span className="rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
+                {column.title}
               </span>
-              {idx < columns.length - 1 && (
-                <ChevronRight className="size-3 text-muted-foreground/50 mx-1" />
+              {index < columns.length - 1 && (
+                <ChevronRight className="mx-1 size-3 text-muted-foreground/50" />
               )}
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-4">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => setShowFailed(!showFailed)}
-            className={`gap-2 text-[10px] uppercase font-bold tracking-tighter transition-all ${showFailed ? "text-muted-foreground" : "text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-950/20"}`}
-          >
-            {showFailed ? (
-              <><Eye className="size-3.5" /> 불합격 공고 표시 중</>
-            ) : (
-              <><EyeOff className="size-3.5" /> 불합격 공고 숨김</>
-            )}
-          </Button>
-          <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2 shadow-md">
-            <Plus className="size-4" />
-            새 공고 추가
-          </Button>
-        </div>
+
+        <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2 shadow-md">
+          <Plus className="size-4" />
+          새 공고 추가
+        </Button>
       </div>
 
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="flex gap-4 pb-4 flex-1 min-h-0 w-full">
+        <div className="flex min-h-0 flex-1 gap-4 pb-4">
           {columns.map((column) => (
-            <div key={column.id} className="flex-1 min-w-0 h-full">
+            <div key={column.id} className="h-full min-w-0 flex-1">
               <KanbanColumn
                 column={column}
-                applications={sortedApplications.filter((app) => 
-                  app.status === column.id && (showFailed || app.result !== "fail")
+                applications={sortedApplications.filter(
+                  (application) =>
+                    application.status === column.id && application.result !== "fail"
                 )}
                 onCardClick={handleCardClick}
               />
             </div>
           ))}
+        </div>
+
+        <div className="shrink-0">
+          <Droppable droppableId={FAILED_BIN_ID}>
+            {(provided, snapshot) => (
+              <div
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className={`overflow-hidden rounded-t-2xl border border-b-0 transition-all ${
+                  snapshot.isDraggingOver
+                    ? "border-red-300 bg-red-50/90 shadow-lg shadow-red-100"
+                    : "border-border/70 bg-background/90"
+                }`}
+              >
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                  onClick={() => setIsFailedDrawerOpen((current) => !current)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`flex size-9 items-center justify-center rounded-xl ${
+                        snapshot.isDraggingOver
+                          ? "bg-red-500 text-white"
+                          : "bg-red-50 text-red-500"
+                      }`}
+                    >
+                      <ArchiveX className="size-4" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">불합격 보관함</p>
+                      <p className="text-xs text-muted-foreground">
+                        아래 서랍을 열어 확인하고, 카드 드롭으로 탈락 처리합니다.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600">
+                      {failedApplications.length}개
+                    </span>
+                    <div className="flex items-center gap-1 text-xs font-semibold text-muted-foreground">
+                      <ChevronsUp
+                        className={`size-4 transition-transform ${
+                          isFailedDrawerOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                      {isFailedDrawerOpen ? "숨기기" : "위로 펼치기"}
+                    </div>
+                  </div>
+                </button>
+
+                {isFailedDrawerOpen && (
+                  <div className="border-t border-border/70 px-4 pb-4 pt-3">
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      전형 컬럼으로 다시 드래그하면 진행 중으로 복구됩니다.
+                    </p>
+
+                    <ScrollArea className="max-h-[220px] rounded-2xl border border-border/70 bg-background">
+                      <Droppable droppableId={`${FAILED_BIN_ID}-list`} direction="horizontal">
+                        {(listProvided) => (
+                          <div
+                            ref={listProvided.innerRef}
+                            {...listProvided.droppableProps}
+                            className="flex min-h-[140px] gap-3 p-3"
+                          >
+                            {failedApplications.map((application, index) => (
+                              <div key={application.id} className="w-[260px] shrink-0">
+                                <ApplicationCard
+                                  application={application}
+                                  index={index}
+                                  onClick={() => handleCardClick(application)}
+                                />
+                              </div>
+                            ))}
+                            {listProvided.placeholder}
+                            {failedApplications.length === 0 && (
+                              <div className="flex h-[120px] w-full items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
+                                아직 보관된 불합격 공고가 없습니다.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </Droppable>
+                    </ScrollArea>
+                  </div>
+                )}
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
         </div>
       </DragDropContext>
 

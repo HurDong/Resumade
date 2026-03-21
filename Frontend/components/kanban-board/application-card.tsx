@@ -1,18 +1,17 @@
 "use client"
 
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { GripVertical, PartyPopper, Trophy, XCircle, CheckCircle2 } from "lucide-react"
+import { PartyPopper, Trophy, XCircle, CheckCircle2 } from "lucide-react"
 import { getDDay, calculateProgress, type Application } from "@/lib/mock-data"
 import { Draggable } from "@hello-pangea/dnd"
 
-export function ApplicationCard({ 
-  application, 
+export function ApplicationCard({
+  application,
   isPassed = false,
   onClick,
-  index
-}: { 
+  index,
+}: {
   application: Application
   isPassed?: boolean
   onClick: () => void
@@ -20,116 +19,123 @@ export function ApplicationCard({
 }) {
   const dDay = getDDay(application.deadline)
   const progress = calculateProgress(application.questions)
-  const isUrgent = dDay === "D-Day" || 
-                  dDay.startsWith("오늘") || 
-                  (dDay.startsWith("D-") && !isNaN(parseInt(dDay.slice(2))) && parseInt(dDay.slice(2)) <= 3)
-  const isDayPast = dDay.startsWith("D+") || dDay === "마감됨"
-  
+  const isUrgent =
+    dDay === "D-Day" ||
+    dDay.startsWith("오늘") ||
+    (dDay.startsWith("D-") &&
+      !Number.isNaN(Number.parseInt(dDay.slice(2), 10)) &&
+      Number.parseInt(dDay.slice(2), 10) <= 3)
+  const isDayPast = dDay.startsWith("D+") || dDay === "마감"
+
   const isFailed = application.result === "fail"
   const isStagePassed = application.result === "pass" && !isPassed
-  const isFinalPassed = isPassed // 'isPassed' prop comes from the 'passed' column status
+  const isFinalPassed = isPassed
 
   return (
     <Draggable draggableId={application.id} index={index}>
       {(provided, snapshot) => (
-        <Card 
+        <Card
           ref={provided.innerRef}
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           className={`group cursor-pointer transition-all hover:shadow-md ${
-            snapshot.isDragging ? "shadow-2xl ring-2 ring-primary/20 rotate-1 scale-[1.02] z-50" : ""
+            snapshot.isDragging ? "z-50 rotate-1 scale-[1.02] shadow-2xl ring-2 ring-primary/20" : ""
           } ${
-            isFailed 
-              ? "grayscale opacity-70 border-dashed border-red-200 bg-red-50/10" 
+            isFailed
+              ? "border-dashed border-red-200 bg-red-50/10 grayscale opacity-70"
               : isFinalPassed
-                ? "border-2 border-amber-400 bg-gradient-to-br from-amber-50/80 to-yellow-50/50 dark:from-amber-950/30 dark:to-yellow-950/20 shadow-lg shadow-amber-200/50 dark:shadow-amber-900/30" 
+                ? "border-2 border-amber-400 bg-gradient-to-br from-amber-50/80 to-yellow-50/50 shadow-lg shadow-amber-200/50 dark:from-amber-950/30 dark:to-yellow-950/20 dark:shadow-amber-900/30"
                 : isStagePassed || progress === 100
-                  ? "border border-emerald-500/30 bg-emerald-50/10 dark:bg-emerald-950/10 shadow-sm shadow-emerald-500/10"
+                  ? "border border-emerald-500/30 bg-emerald-50/10 shadow-sm shadow-emerald-500/10 dark:bg-emerald-950/10"
                   : "hover:border-primary/30"
           }`}
           onClick={onClick}
         >
           <div className="p-3">
-            <div className="flex items-center gap-3 min-w-0">
-              {/* Logo Section */}
-              <div className={`shrink-0 size-9 rounded-md ${isFailed ? 'bg-muted' : application.logoColor} flex items-center justify-center relative shadow-sm overflow-hidden border border-border/40`}>
+            <div className="flex min-w-0 items-center gap-3">
+              <div
+                className={`relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/40 shadow-sm ${
+                  isFailed ? "bg-muted" : application.logoColor
+                }`}
+              >
                 {application.logoUrl ? (
                   <>
-                    <img 
-                      src={application.logoUrl} 
+                    <img
+                      src={application.logoUrl}
                       alt={application.company}
-                      className="size-full object-cover transition-opacity duration-500 opacity-0"
-                      onLoad={(e) => {
-                        (e.target as HTMLImageElement).classList.remove('opacity-0');
-                        if (e.currentTarget.nextElementSibling) {
-                          (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'none';
+                      className="size-full object-cover opacity-0 transition-opacity duration-500"
+                      onLoad={(event) => {
+                        event.currentTarget.classList.remove("opacity-0")
+                        if (event.currentTarget.nextElementSibling) {
+                          ;(event.currentTarget.nextElementSibling as HTMLElement).style.display = "none"
                         }
                       }}
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.display = 'none';
-                        if (e.currentTarget.nextElementSibling) {
-                          (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'flex';
+                      onError={(event) => {
+                        event.currentTarget.style.display = "none"
+                        if (event.currentTarget.nextElementSibling) {
+                          ;(event.currentTarget.nextElementSibling as HTMLElement).style.display = "flex"
                         }
                       }}
                     />
-                    <span className="text-[13px] font-bold text-white uppercase flex items-center justify-center size-full">
+                    <span className="flex size-full items-center justify-center text-[13px] font-bold uppercase text-white">
                       {application.company.charAt(0)}
                     </span>
                   </>
                 ) : (
-                  <span className="text-[13px] font-bold text-white uppercase">
+                  <span className="text-[13px] font-bold uppercase text-white">
                     {application.company.charAt(0)}
                   </span>
                 )}
-                
-                {/* Status indicator on logo */}
+
                 {isFinalPassed && (
-                  <div className="absolute -top-0.5 -right-0.5 size-3.5 bg-amber-400 rounded-full flex items-center justify-center shadow-xs border border-white dark:border-zinc-900 scale-in-center animate-in duration-300">
+                  <div className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full border border-white bg-amber-400 shadow-xs animate-in scale-in-center duration-300 dark:border-zinc-900">
                     <Trophy className="size-2 text-white" />
                   </div>
                 )}
                 {isStagePassed && (
-                  <div className="absolute -top-0.5 -right-0.5 size-3.5 bg-emerald-500 rounded-full flex items-center justify-center shadow-xs border border-white dark:border-zinc-900 scale-in-center animate-in duration-300">
+                  <div className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full border border-white bg-emerald-500 shadow-xs animate-in scale-in-center duration-300 dark:border-zinc-900">
                     <CheckCircle2 className="size-2 text-white" />
                   </div>
                 )}
                 {isFailed && (
-                  <div className="absolute -top-0.5 -right-0.5 size-3.5 bg-red-400 rounded-full flex items-center justify-center shadow-xs border border-white dark:border-zinc-900 scale-in-center animate-in duration-300">
+                  <div className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full border border-white bg-red-400 shadow-xs animate-in scale-in-center duration-300 dark:border-zinc-900">
                     <XCircle className="size-2 text-white" />
                   </div>
                 )}
               </div>
 
-              {/* Info Section */}
-              <div className="min-w-0 flex-1 flex flex-col justify-center">
+              <div className="flex min-w-0 flex-1 flex-col justify-center">
                 <div className="flex items-center justify-between gap-2">
-                  <h3 className={`font-bold text-[13px] tracking-tight truncate ${isFailed ? 'text-muted-foreground/60 line-through' : 'text-foreground'}`}>
+                  <h3
+                    className={`truncate text-[13px] font-bold tracking-tight ${
+                      isFailed ? "text-muted-foreground/60 line-through" : "text-foreground"
+                    }`}
+                  >
                     {application.company}
                   </h3>
-                  
-                  {/* Status Badge */}
+
                   <div className="shrink-0">
                     {isFinalPassed ? (
-                      <Badge className="bg-amber-100 text-[9px] text-amber-700 border-amber-200 hover:bg-amber-100 px-1 h-4 font-bold animate-in fade-in zoom-in duration-300">
-                        최종합격
+                      <Badge className="h-4 border-amber-200 bg-amber-100 px-1 text-[9px] font-bold text-amber-700 hover:bg-amber-100 animate-in fade-in zoom-in duration-300">
+                        최종 합격
                       </Badge>
                     ) : isStagePassed ? (
-                      <Badge className="bg-emerald-50 text-[9px] text-emerald-600 border-emerald-100 hover:bg-emerald-50 px-1 h-4 font-bold animate-in fade-in zoom-in duration-300">
-                        전형통과
+                      <Badge className="h-4 border-emerald-100 bg-emerald-50 px-1 text-[9px] font-bold text-emerald-600 hover:bg-emerald-50 animate-in fade-in zoom-in duration-300">
+                        전형 통과
                       </Badge>
                     ) : isFailed ? (
-                      <Badge className="bg-red-50 text-[9px] text-red-500 border-red-100 px-1 h-4 font-bold">
-                        탈락
+                      <Badge className="h-4 border-red-100 bg-red-50 px-1 text-[9px] font-bold text-red-500">
+                        불합격
                       </Badge>
                     ) : (
                       <Badge
                         variant="outline"
-                        className={`text-[9px] px-1 h-4 font-bold ${
-                          isUrgent 
-                            ? "bg-red-50 text-red-600 border-red-200" 
-                            : isDayPast 
-                              ? "bg-zinc-50 text-zinc-400 border-zinc-200" 
-                              : "bg-blue-50/50 text-primary border-blue-100"
+                        className={`h-4 px-1 text-[9px] font-bold ${
+                          isUrgent
+                            ? "border-red-200 bg-red-50 text-red-600"
+                            : isDayPast
+                              ? "border-zinc-200 bg-zinc-50 text-zinc-400"
+                              : "border-blue-100 bg-blue-50/50 text-primary"
                         }`}
                       >
                         {dDay}
@@ -137,24 +143,33 @@ export function ApplicationCard({
                     )}
                   </div>
                 </div>
-                <p className="text-[11px] text-muted-foreground truncate leading-none mt-0.5">
+                <p className="mt-0.5 truncate text-[11px] leading-none text-muted-foreground">
                   {application.position}
                 </p>
               </div>
             </div>
 
-            {/* Progress Bar */}
             {!isFinalPassed && !isFailed && (
-              <div className="mt-2 pt-1 border-t border-border/30">
-                <div className="flex items-center justify-between mb-1">
-                   <div className="flex gap-1 flex-1 h-[3px] mr-3">
-                    {(application.questions || []).map((q) => {
-                      const qProgress = q.maxLength ? Math.round(((q.currentLength || 0) / q.maxLength) * 100) : 0
+              <div className="mt-2 border-t border-border/30 pt-1">
+                <div className="mb-1 flex items-center justify-between">
+                  <div className="mr-3 flex h-[3px] flex-1 gap-1">
+                    {(application.questions || []).map((question) => {
+                      const questionProgress = question.maxLength
+                        ? Math.round(((question.currentLength || 0) / question.maxLength) * 100)
+                        : 0
+
                       return (
-                        <div key={q.id} className="flex-1 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                        <div
+                          key={question.id}
+                          className="flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+                        >
                           <div
-                            className={`h-full transition-all ${q.isCompleted || progress === 100 || isStagePassed ? 'bg-emerald-400' : 'bg-primary/60'}`}
-                            style={{ width: `${progress === 100 || isStagePassed ? 100 : qProgress}%` }}
+                            className={`h-full transition-all ${
+                              question.isCompleted || progress === 100 || isStagePassed
+                                ? "bg-emerald-400"
+                                : "bg-primary/60"
+                            }`}
+                            style={{ width: `${progress === 100 || isStagePassed ? 100 : questionProgress}%` }}
                           />
                         </div>
                       )
@@ -163,19 +178,23 @@ export function ApplicationCard({
                   {progress === 100 || isStagePassed ? (
                     <div className="flex items-center gap-0.5 text-emerald-500 animate-in fade-in zoom-in duration-300">
                       <CheckCircle2 className="size-3" strokeWidth={3} />
-                      <span className="text-[9px] font-black tracking-tighter">{isStagePassed ? "통과" : "완료"}</span>
+                      <span className="text-[9px] font-black tracking-tighter">
+                        {isStagePassed ? "통과" : "완료"}
+                      </span>
                     </div>
                   ) : (
-                    <span className="text-[9px] font-bold text-muted-foreground/70 shrink-0">{progress}%</span>
+                    <span className="shrink-0 text-[9px] font-bold text-muted-foreground/70">
+                      {progress}%
+                    </span>
                   )}
                 </div>
               </div>
             )}
-            
+
             {isFinalPassed && (
               <div className="mt-1.5 flex items-center gap-1 text-[9px] font-bold text-amber-600/80 animate-in slide-in-from-left duration-500">
                 <PartyPopper className="size-2.5" />
-                <span>성공적인 도전을 축하합니다!</span>
+                <span>최종 합격 상태입니다.</span>
               </div>
             )}
           </div>
