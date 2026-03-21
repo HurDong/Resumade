@@ -5,55 +5,29 @@ import {
   playCompletionSound,
   prepareCompletionSound,
 } from "@/lib/audio/completion-sound";
+import type {
+  ContextItem,
+  PipelineStage,
+  WorkspaceQuestion,
+} from "@/lib/workspace/types";
+import {
+  applySuggestionToQuestion,
+  createQuestionRequestBody,
+  mapStoredQuestion,
+  normalizeCompletionMistranslations,
+  normalizeLengthTarget,
+  shouldSyncQuestion,
+} from "@/lib/workspace/store-helpers";
 
-export interface Mistranslation {
-  id: string;
-  issueType?: string;
-  original: string;
-  originalSentence?: string;
-  translated: string;
-  suggestion: string;
-  severity?: "CRITICAL" | "WARNING";
-  translatedSentence?: string;
-  suggestedSentence?: string;
-  reason?: string;
-  originalStartIndex?: number | null;
-  originalEndIndex?: number | null;
-  startIndex?: number | null;
-  endIndex?: number | null;
-}
+export type {
+  AiReviewReport,
+  ContextItem,
+  Mistranslation,
+  PipelineStage,
+  WorkspaceQuestion,
+} from "@/lib/workspace/types";
 
-export interface AiReviewReport {
-  summary: string;
-  taggedOriginalText?: string;
-  taggedWashedText?: string;
-  overallScore?: number;
-  technicalAccuracy?: number;
-  readability?: number;
-}
-
-export interface WorkspaceQuestion {
-  id: string;
-  dbId?: number; // Backend DB ID
-  title: string;
-  maxLength: number;
-  lengthTarget?: number | null;
-  userDirective: string;
-  content: string;
-  washedKr: string;
-  mistranslations: Mistranslation[];
-  aiReviewReport: AiReviewReport | null;
-  isCompleted: boolean;
-}
-
-export interface ContextItem {
-  id: string;
-  experienceTitle: string;
-  relevantPart: string;
-  relevanceScore: number;
-}
-
-export type PipelineStage = "IDLE" | "RAG" | "DRAFT" | "WASH" | "PATCH" | "DONE";
+type SaveTimeoutHandle = ReturnType<typeof setTimeout> | null;
 
 interface WorkspaceState {
   // Global context
@@ -79,7 +53,7 @@ interface WorkspaceState {
   progressHistory: string[];
   processingError: string | null;
   activeStreamController: AbortController | null;
-  saveTimeout: any;
+  saveTimeout: SaveTimeoutHandle;
 
   // Actions
   setCompany: (company: string) => void;
@@ -152,6 +126,22 @@ async function ensureQuestionPersisted(state: WorkspaceState) {
   }));
 
   return persistedQuestion;
+}
+
+function findActiveQuestion(state: WorkspaceState) {
+  return state.questions.find((question) => question.id === state.activeQuestionId) ?? null;
+}
+
+async function persistQuestionUpdate(question: WorkspaceQuestion) {
+  const response = await fetch(`/api/applications/questions/${question.dbId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(createQuestionRequestBody(question)),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to persist question update");
+  }
 }
 
 const defaultQuestion: WorkspaceQuestion = {
@@ -253,46 +243,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     );
     set({ questions: updatedQuestions });
 
-    // Sync to backend if dbId exists and relevant fields changed
     const activeQuestion = updatedQuestions.find(q => q.id === state.activeQuestionId);
-    
-    if (activeQuestion?.dbId && (
-      updates.title !== undefined || 
-      updates.maxLength !== undefined ||
-      updates.content !== undefined || 
-      updates.washedKr !== undefined || 
-      updates.mistranslations !== undefined || 
-      updates.userDirective !== undefined ||
-      updates.isCompleted !== undefined
-    )) {
-      // Debounce sync and RAG fetch
+
+    if (activeQuestion?.dbId && shouldSyncQuestion(updates)) {
       if (get().saveTimeout) {
         clearTimeout(get().saveTimeout);
       }
 
       const timeout = setTimeout(() => {
-        fetch(`/api/applications/questions/${activeQuestion.dbId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: activeQuestion.title,
-            maxLength: activeQuestion.maxLength,
-            userDirective: activeQuestion.userDirective,
-            content: activeQuestion.content,
-            washedKr: activeQuestion.washedKr,
-            mistranslations: JSON.stringify(activeQuestion.mistranslations),
-            aiReview: JSON.stringify(activeQuestion.aiReviewReport),
-            isCompleted: activeQuestion.isCompleted
-          })
-        })
+        persistQuestionUpdate(activeQuestion)
         .then(() => {
-          // If title was updated, refresh RAG context using the NEW title for real-time relevance
           if (updates.title !== undefined) {
              get().fetchRAGContext(activeQuestion.dbId!, activeQuestion.title);
           }
         })
         .catch(err => console.error("Auto-save failed", err));
-      }, 300); // 300ms debounce for title/RAG sync
+      }, 300);
 
       set({ saveTimeout: timeout });
     }
@@ -300,141 +266,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   
   applySuggestion: (mistranslationId) => {
     const state = get();
-    const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
+    const activeQ = findActiveQuestion(state);
     if (!activeQ) return;
-    const mistranslation = activeQ.mistranslations.find(m => m.id === mistranslationId);
-    if (!mistranslation) return;
+    const nextQuestionState = applySuggestionToQuestion(activeQ, mistranslationId);
+    if (!nextQuestionState) return;
 
-    const normalizedSuggestion = mistranslation.suggestion?.trim() || "";
-    const normalizedTranslated = mistranslation.translated?.trim() || "";
-    
-    // If suggestion is identical to the one that was flagged (user didn't change it),
-    // it means the user wants to revert to the original draft version.
-    const isReverting = normalizedSuggestion === normalizedTranslated;
-    const finalSuggestion = isReverting
-      ? mistranslation.original 
-      : normalizedSuggestion;
-    
-    let newWashedKr = activeQ.washedKr;
-    let found = false;
-
-    const replaceOnce = (source: string, searchValue: string, replacement: string) => {
-      const index = source.indexOf(searchValue);
-      if (index < 0) {
-        return null;
-      }
-      return source.slice(0, index) + replacement + source.slice(index + searchValue.length);
-    };
-
-    const findSentenceFallback = (source: string, targetSentence: string) => {
-      if (!targetSentence) {
-        return null;
-      }
-
-      const normalizedTarget = targetSentence.normalize("NFC").trim();
-      if (!normalizedTarget) {
-        return null;
-      }
-
-      const exactIndex = source.indexOf(normalizedTarget);
-      if (exactIndex >= 0) {
-        return { start: exactIndex, end: exactIndex + normalizedTarget.length };
-      }
-
-      const sentences = source.match(/[^\n.!?]+[.!?\n]?/g) ?? [];
-      let cursor = 0;
-      let best: { start: number; end: number; score: number } | null = null;
-
-      const tokenize = (value: string) =>
-        value
-          .toLowerCase()
-          .split(/\s+/)
-          .map((token) => token.replace(/[^\p{L}\p{N}-]/gu, ""))
-          .filter((token) => token.length > 1);
-
-      const targetTokens = new Set(tokenize(normalizedTarget));
-      for (const sentence of sentences) {
-        const start = source.indexOf(sentence, cursor);
-        if (start < 0) {
-          continue;
-        }
-        const end = start + sentence.length;
-        cursor = end;
-
-        const sentenceTokens = new Set(tokenize(sentence));
-        if (!targetTokens.size || !sentenceTokens.size) {
-          continue;
-        }
-
-        const overlap = [...targetTokens].filter((token) => sentenceTokens.has(token)).length;
-        const union = new Set([...targetTokens, ...sentenceTokens]).size;
-        const score = union === 0 ? 0 : overlap / union;
-        if (!best || score > best.score) {
-          best = { start, end, score };
-        }
-      }
-
-      return best && best.score >= 0.45 ? { start: best.start, end: best.end } : null;
-    };
-
-    // First attempt: Sentence-level replacement
-    if (mistranslation.translatedSentence && mistranslation.suggestedSentence) {
-      const targetSentence = mistranslation.translatedSentence;
-      // If reverting, we put the original English word inside the suggested sentence.
-      // If not reverting, we use the perfectly rewritten Korean suggested sentence.
-      const finalReplacement = isReverting
-        ? mistranslation.suggestedSentence.replace(mistranslation.translated, mistranslation.original)
-        : mistranslation.suggestedSentence;
-
-      const exactSentenceReplace = replaceOnce(newWashedKr, targetSentence, finalReplacement);
-      if (exactSentenceReplace !== null) {
-        newWashedKr = exactSentenceReplace;
-        found = true;
-      } else {
-        const sentenceRange = findSentenceFallback(newWashedKr, targetSentence);
-        if (sentenceRange) {
-          newWashedKr =
-            newWashedKr.slice(0, sentenceRange.start) +
-            finalReplacement +
-            newWashedKr.slice(sentenceRange.end);
-          found = true;
-        }
-      }
-    }
-
-    // Fallback: Phrase-level replacement
-    if (!found) {
-      // Replace the translated text with the final suggestion
-      let searchTerms = [mistranslation.translated];
-      
-      // Also try variant without spaces for robustness in matching
-      if (mistranslation.translated.includes(" ")) {
-         searchTerms.push(mistranslation.translated.replace(/\s+/g, ""));
-      }
-      
-      // Try each search term variant
-      for (const term of searchTerms) {
-        const replaced = replaceOnce(newWashedKr, term, finalSuggestion);
-        if (replaced !== null) {
-          newWashedKr = replaced;
-          found = true;
-          break;
-        }
-      }
-    }
-    
-    // Remove the mistranslation from the list after applying
-    const newMistranslations = activeQ.mistranslations.filter(m => m.id !== mistranslationId);
-    
-    state.updateActiveQuestion({ 
-      washedKr: newWashedKr,
-      mistranslations: newMistranslations
-    });
+    state.updateActiveQuestion(nextQuestionState);
   },
 
   updateMistranslationSuggestion: (mistranslationId, suggestion) => {
     const state = get();
-    const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
+    const activeQ = findActiveQuestion(state);
     if (!activeQ) return;
 
     const updatedMistranslations = activeQ.mistranslations.map(m => 
@@ -446,7 +288,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   dismissMistranslation: (mistranslationId) => {
     const state = get();
-    const activeQ = state.questions.find(q => q.id === state.activeQuestionId);
+    const activeQ = findActiveQuestion(state);
     if (!activeQ) return;
     
     const newMistranslations = activeQ.mistranslations.filter(m => m.id !== mistranslationId);
@@ -468,24 +310,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       if (!response.ok) throw new Error("Failed to fetch application");
       const data = await response.json();
 
-      const mappedQuestions: WorkspaceQuestion[] = data.questions.map((q: any) => ({
-        id: `q-${q.id}`,
-        dbId: q.id,
-        title: q.title,
-        maxLength: q.maxLength,
-        lengthTarget: null,
-        userDirective: q.userDirective || "",
-        content: q.content || "",
-        washedKr: q.washedKr || "",
-        mistranslations: q.mistranslations
-          ? JSON.parse(q.mistranslations).map((m: any, idx: number) => ({
-              ...m,
-              id: m.id || `mis-${idx}`,
-            }))
-          : [],
-        aiReviewReport: q.aiReview ? JSON.parse(q.aiReview) : null,
-        isCompleted: !!q.completed || !!q.isCompleted,
-      }));
+      const mappedQuestions: WorkspaceQuestion[] = data.questions.map(mapStoredQuestion);
 
       set({
         applicationId: id,
@@ -545,7 +370,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   toggleActiveQuestionCompletion: async () => {
     const state = get();
-    const activeQ = state.questions.find((q) => q.id === state.activeQuestionId);
+    const activeQ = findActiveQuestion(state);
     if (!activeQ) return;
 
     const newStatus = !activeQ.isCompleted;
@@ -610,14 +435,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   completeProcessing: (data) => {
     const state = get();
-    const activeQ = state.questions.find((q) => q.id === state.activeQuestionId);
+    const activeQ = findActiveQuestion(state);
     if (!activeQ) return;
 
-    const updatedMistranslations = data.mistranslations.map((m: any, idx: number) => ({
-      ...m,
-      id: `mis-${idx}`,
-      suggestion: m.translated,
-    }));
+    const updatedMistranslations = normalizeCompletionMistranslations(data.mistranslations);
 
     set((state) => ({
       isProcessing: false,
@@ -642,18 +463,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     void playCompletionSound();
 
     if (activeQ.dbId) {
-      fetch(`/api/applications/questions/${activeQ.dbId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: activeQ.title,
-          maxLength: activeQ.maxLength,
-          userDirective: activeQ.userDirective,
-          content: activeQ.content,
-          washedKr: data.draft,
-          mistranslations: JSON.stringify(updatedMistranslations),
-          aiReview: JSON.stringify(data.aiReviewReport),
-        }),
+      persistQuestionUpdate({
+        ...activeQ,
+        washedKr: data.draft,
+        mistranslations: updatedMistranslations,
+        aiReviewReport: data.aiReviewReport,
       }).catch((err) => console.error("Initial wash save failed", err));
     }
   },
@@ -691,13 +505,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     state.startProcessing();
     const useDirective = options?.useDirective ?? true;
     const requestedLengthTarget = options?.lengthTarget ?? activeQ.lengthTarget;
-    const normalizedTarget =
-      requestedLengthTarget && requestedLengthTarget > 0
-        ? Math.min(
-            Math.max(1, Math.floor(requestedLengthTarget)),
-            Math.max(1, activeQ.maxLength || requestedLengthTarget)
-          )
-        : null;
+    const normalizedTarget = normalizeLengthTarget(requestedLengthTarget, activeQ.maxLength);
     const targetQuery = normalizedTarget ? `&targetChars=${normalizedTarget}` : "";
 
     await runWorkspaceSse({
@@ -729,13 +537,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     state.startProcessing();
     state.updateActiveQuestion({ userDirective: directive });
     const requestedLengthTarget = options?.lengthTarget ?? activeQ.lengthTarget;
-    const normalizedTarget =
-      requestedLengthTarget && requestedLengthTarget > 0
-        ? Math.min(
-            Math.max(1, Math.floor(requestedLengthTarget)),
-            Math.max(1, activeQ.maxLength || requestedLengthTarget)
-          )
-        : null;
+    const normalizedTarget = normalizeLengthTarget(requestedLengthTarget, activeQ.maxLength);
     const targetQuery = normalizedTarget ? `&targetChars=${normalizedTarget}` : "";
 
     await runWorkspaceSse({
@@ -752,7 +554,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   rerunWash: async () => {
     const state = get();
-    const activeQ = state.questions.find((q) => q.id === state.activeQuestionId);
+    const activeQ = findActiveQuestion(state);
     if (!activeQ?.dbId) {
       state.setError("Could not find a valid question ID.");
       return;
@@ -771,7 +573,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   rerunPatch: async () => {
     const state = get();
-    const activeQ = state.questions.find((q) => q.id === state.activeQuestionId);
+    const activeQ = findActiveQuestion(state);
     if (!activeQ?.dbId) {
       state.setError("Could not find a valid question ID.");
       return;
