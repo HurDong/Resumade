@@ -16,13 +16,18 @@ import java.util.Map;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class DeepLTranslationService implements TranslationService {
+public class DeepLTranslationService implements TranslationProvider {
 
     @Value("${deepl.api.key:demo}")
     private String authKey;
 
     private final RestTemplate restTemplate = new RestTemplate();
     private static final String DEEPL_API_URL = "https://api-free.deepl.com/v2/translate";
+
+    @Override
+    public String getProviderKey() {
+        return "deepl";
+    }
 
     @Override
     public String translateToEnglish(String text) {

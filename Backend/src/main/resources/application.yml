@@ -50,6 +50,12 @@ gemini:
   models:
     company-research: ${GEMINI_COMPANY_RESEARCH_MODEL:gemini-2.5-flash-lite}
 
+translation:
+  provider: ${TRANSLATION_PROVIDER:google-cloud}
+  fallback-provider: ${TRANSLATION_FALLBACK_PROVIDER:deepl}
+  google-cloud:
+    api-key: ${GOOGLE_CLOUD_TRANSLATE_API_KEY:${GEMINI_API_KEY:}}
+
 deepl:
   api:
     key: ${DEEPL_API_KEY:demo}
