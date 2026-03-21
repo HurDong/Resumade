@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect, useRef } from "react"
 import {
@@ -556,7 +556,7 @@ export function ContextPanel() {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              onClick={hasDraft ? handleRegenerate : handleInitialGenerate}
+              onClick={handleInitialGenerate}
               disabled={isProcessing}
               className="gap-2 rounded-full px-4 font-bold shadow-sm"
             >
@@ -565,7 +565,21 @@ export function ContextPanel() {
               ) : (
                 <Sparkles className="size-3.5" />
               )}
-              {hasDraft ? "\ub2e4\uc2dc \uc0dd\uc131" : "\ucd08\uc548 \uc0dd\uc131"}
+              {"\uc0c8\ub85c \uc0dd\uc131"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRegenerate}
+              disabled={isProcessing || !hasDraft}
+              className="gap-2 rounded-full px-4 font-bold shadow-sm"
+            >
+              {isProcessing ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Wand2 className="size-3.5" />
+              )}
+              {"\ub2e4\ub4ec\uae30"}
             </Button>
           </div>
         </div>
@@ -781,20 +795,36 @@ export function ContextPanel() {
                   <Wand2 className="size-4 text-primary" />
                   <h3 className="text-sm font-black uppercase tracking-wider text-primary">AI 초안 작업장</h3>
                 </div>
-              <Button 
-                size="sm" 
-                variant="default" 
-                onClick={hasDraft ? handleRegenerate : handleInitialGenerate}
-                disabled={isProcessing}
-                className="gap-2 shadow-sm rounded-full px-4 font-bold"
-              >
-                {isProcessing ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  <Sparkles className="size-3" />
-                )}
-                {activeQuestion.content ? "다시 생성" : "초안 생성"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button 
+                  size="sm" 
+                  variant="default" 
+                  onClick={handleInitialGenerate}
+                  disabled={isProcessing}
+                  className="gap-2 shadow-sm rounded-full px-4 font-bold"
+                >
+                  {isProcessing ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="size-3" />
+                  )}
+                  {"새로 생성"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRegenerate}
+                  disabled={isProcessing || !hasDraft}
+                  className="gap-2 shadow-sm rounded-full px-4 font-bold"
+                >
+                  {isProcessing ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Wand2 className="size-3" />
+                  )}
+                  {"다듬기"}
+                </Button>
+              </div>
             </div>
 
             {/* AI 작성 가이드 (Directives) */}

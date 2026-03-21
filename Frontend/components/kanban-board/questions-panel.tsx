@@ -361,7 +361,7 @@ export function QuestionsPanel({
       </div>
 
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="rounded-3xl sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">자소서 문항 추가</DialogTitle>
             <DialogDescription className="text-muted-foreground/80">
@@ -376,7 +376,7 @@ export function QuestionsPanel({
               <Textarea
                 id="title"
                 placeholder="예: 지원동기와 입사 후 목표를 작성해 주세요."
-                className="min-h-[120px] resize-none border-primary/20 focus-visible:ring-primary"
+                className="min-h-[160px] resize-y border-primary/20 focus-visible:ring-primary"
                 value={newQuestion.title}
                 onChange={(event) =>
                   setNewQuestion({ ...newQuestion, title: event.target.value })
@@ -446,7 +446,7 @@ export function QuestionsPanel({
       </Dialog>
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="rounded-3xl sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">문항 정보 수정</DialogTitle>
           </DialogHeader>
@@ -457,7 +457,7 @@ export function QuestionsPanel({
               </Label>
               <Textarea
                 id="edit-title"
-                className="min-h-[120px] resize-none border-primary/20 focus-visible:ring-primary"
+                className="min-h-[160px] resize-y border-primary/20 focus-visible:ring-primary"
                 value={editingQuestion?.title || ""}
                 onChange={(event) =>
                   setEditingQuestion((current) =>
