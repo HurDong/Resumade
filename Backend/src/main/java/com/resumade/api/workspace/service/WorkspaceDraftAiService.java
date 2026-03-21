@@ -18,7 +18,13 @@ public interface WorkspaceDraftAiService {
             "The title must be short, memorable, and must not summarize the question or repeat the company name, position name, or question wording.",
             "The first sentence must answer the question directly in a conclusion-first way.",
             "Use only facts and technologies supported by the supplied experience context. Do not invent experience, metrics, or unlisted tools.",
-            "Treat company context as optional sharpening material and use it only when it makes job fit more concrete.",
+            "Read the Question Intent block first and obey its weighting rule.",
+            "Treat company context, JD insight, and raw JD as the primary role-fit rubric only when the Question Intent block indicates job-fit or motivation is primary.",
+            "If the Question Intent block indicates collaboration, growth, value-fit, or problem-solving is primary, prioritize that question intent first and use JD only as a secondary alignment layer.",
+            "Identify the most relevant 1-2 competencies, attitudes, or collaboration signals implied by the combined Question Intent and JD context and make the answer prove them with evidence.",
+            "Treat the supplied other-questions context as a hard anti-overlap constraint, not a soft suggestion.",
+            "Do not reuse the same main project, same first-sentence claim, same bracket title, or the same action-result arc already used in another question when another credible angle exists.",
+            "If another question already uses a project, prefer a different project or a clearly different sub-problem, role, and evidence for this question.",
             "Prefer wording that can survive detailed interview follow-up.",
             "Each core example should show role, judgment, action, and result.",
             "If problem, cause, action, or result is missing, rewrite until the story is complete.",
@@ -54,11 +60,19 @@ public interface WorkspaceDraftAiService {
 
             Requirements:
             - Start with [Title]
+            - Read the Question Intent block first and obey its weighting rule
+            - Use company context, JD insight, and raw JD as the primary rubric only when the Question Intent block indicates job-fit or motivation is primary
+            - If the Question Intent block indicates collaboration, growth, value-fit, or problem-solving is primary, prioritize that intent first and use JD as a secondary tie-back
+            - Infer the most relevant 1-2 competencies, attitudes, or collaboration signals from the combined Question Intent and JD context and center the answer on proving them
+            - If the retrieved experience is weakly related to those priorities, reshape the answer toward stronger evidence rather than writing a generic story
+            - Treat the "other questions" block as a hard anti-overlap constraint
+            - Do not reuse the same main project, title, opening claim, or action-result storyline already used in another question unless explicitly required
+            - If another question already uses a project, prefer a different project or a clearly different sub-problem, role, and evidence
             - The title must not summarize the question or repeat the company, position, or question wording
             - Answer directly in the first sentence
             - Follow the requested paragraph structure or technical depth if provided
             - Use only facts and technologies supported by the experience context
-            - Use company context only when it sharpens job fit
+            - Use company context, JD insight, and raw JD according to the Question Intent weighting rule
             - Keep each main example concrete: role, judgment, action, and result
             - Avoid ceremonial openings, report-style labels, and list formatting unless explicitly requested
             - Avoid future-heavy promises without past evidence
@@ -87,7 +101,13 @@ public interface WorkspaceDraftAiService {
             "The title must be short, memorable, and must not summarize the question or repeat the company name, position name, or question wording.",
             "The first sentence must answer the question directly in a conclusion-first way.",
             "Use only facts and technologies supported by the supplied experience context. Do not invent experience, metrics, or unlisted tools.",
-            "Treat company context as optional sharpening material and use it only when it makes job fit more concrete.",
+            "Read the Question Intent block first and obey its weighting rule.",
+            "Treat company context, JD insight, and raw JD as the primary role-fit rubric only when the Question Intent block indicates job-fit or motivation is primary.",
+            "If the Question Intent block indicates collaboration, growth, value-fit, or problem-solving is primary, prioritize that question intent first and use JD only as a secondary alignment layer.",
+            "Identify the most relevant 1-2 competencies, attitudes, or collaboration signals implied by the combined Question Intent and JD context and make the answer prove them with evidence.",
+            "Treat the supplied other-questions context as a hard anti-overlap constraint, not a soft suggestion.",
+            "Do not reuse the same main project, same first-sentence claim, same bracket title, or the same action-result arc already used in another question when another credible angle exists.",
+            "If another question already uses a project, prefer a different project or a clearly different sub-problem, role, and evidence for this question.",
             "Prefer wording that can survive detailed interview follow-up.",
             "Each core example should show role, judgment, action, and result.",
             "If problem, cause, action, or result is missing, rewrite until the story is complete.",
@@ -126,11 +146,18 @@ public interface WorkspaceDraftAiService {
 
             Requirements:
             - Start with [Title]
+            - Read the Question Intent block first and obey its weighting rule
+            - Use company context, JD insight, and raw JD as the primary rubric only when the Question Intent block indicates job-fit or motivation is primary
+            - If the Question Intent block indicates collaboration, growth, value-fit, or problem-solving is primary, prioritize that intent first and use JD as a secondary tie-back
+            - Infer the most relevant 1-2 competencies, attitudes, or collaboration signals from the combined Question Intent and JD context and revise the current draft to prove them more clearly
+            - Treat the "other questions" block as a hard anti-overlap constraint
+            - Do not reuse the same main project, title, opening claim, or action-result storyline already used in another question unless explicitly required
+            - If another question already uses a project, prefer a different project or a clearly different sub-problem, role, and evidence
             - The title must not summarize the question or repeat the company, position, or question wording
             - Answer directly in the first sentence
             - Follow the requested paragraph structure or technical depth if provided
             - Use only facts and technologies supported by the experience context
-            - Use company context only when it sharpens job fit
+            - Use company context, JD insight, and raw JD according to the Question Intent weighting rule
             - Keep each main example concrete: role, judgment, action, and result
             - Avoid ceremonial openings, report-style labels, and list formatting unless explicitly requested
             - Avoid future-heavy promises without past evidence

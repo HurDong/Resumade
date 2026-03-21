@@ -651,19 +651,86 @@ public class WorkspaceService {
 
     private String buildOthersContext(WorkspaceQuestion initialQuestion, Long questionId,
             List<Experience> allExperiences) {
-        return initialQuestion.getApplication().getQuestions().stream()
+        String others = initialQuestion.getApplication().getQuestions().stream()
                 .filter(q -> !q.getId().equals(questionId))
                 .map(q -> {
-                    String content = q.getContent() != null ? q.getContent() : "";
-                    String usedProject = allExperiences.stream()
-                            .filter(exp -> content.contains(exp.getTitle()))
-                            .map(Experience::getTitle)
-                            .findFirst()
-                            .orElse("None specified");
-                    return String.format("[Other question: %s | Current content: %s | Used experience: %s]",
-                            q.getTitle(), content, usedProject);
+                    String draft = preferredQuestionDraft(q);
+                    String usedProjects = detectUsedProjects(draft, allExperiences);
+                    String titleLine = extractTitleLine(draft);
+                    String bodySnippet = summarizeDraftForOverlap(draft);
+                    return """
+                            [OTHER_QUESTION]
+                            Question: %s
+                            Used projects: %s
+                            Title used: %s
+                            Body snippet: %s
+                            Avoid reusing the same main project, title, first-sentence claim, or action-result arc for the current question unless the user explicitly requires it.
+                            """.formatted(
+                            safeSnippet(q.getTitle(), 180),
+                            safeSnippet(usedProjects, 180),
+                            safeSnippet(titleLine, 120),
+                            safeSnippet(bodySnippet, 320));
                 })
                 .collect(Collectors.joining("\n"));
+
+        return others.isBlank() ? "[OTHER_QUESTION]\nNo other question drafts available." : others;
+    }
+
+    private String preferredQuestionDraft(WorkspaceQuestion question) {
+        if (question.getWashedKr() != null && !question.getWashedKr().isBlank()) {
+            return question.getWashedKr();
+        }
+        if (question.getContent() != null && !question.getContent().isBlank()) {
+            return question.getContent();
+        }
+        return "";
+    }
+
+    private String detectUsedProjects(String draft, List<Experience> allExperiences) {
+        if (draft == null || draft.isBlank()) {
+            return "None detected";
+        }
+
+        String matches = allExperiences.stream()
+                .map(Experience::getTitle)
+                .filter(title -> title != null && !title.isBlank() && draft.contains(title))
+                .distinct()
+                .collect(Collectors.joining(", "));
+
+        return matches.isBlank() ? "None detected" : matches;
+    }
+
+    private String extractTitleLine(String draft) {
+        if (draft == null || draft.isBlank()) {
+            return "No title";
+        }
+
+        String firstLine = draft.lines()
+                .map(String::trim)
+                .filter(line -> !line.isBlank())
+                .findFirst()
+                .orElse("");
+
+        return firstLine.isBlank() ? "No title" : firstLine;
+    }
+
+    private String summarizeDraftForOverlap(String draft) {
+        if (draft == null || draft.isBlank()) {
+            return "No draft content";
+        }
+
+        String normalized = draft.replaceAll("\\s+", " ").trim();
+        return safeSnippet(normalized, 320);
+    }
+
+    private String safeSnippet(String value, int maxLength) {
+        if (value == null || value.isBlank()) {
+            return "None";
+        }
+        if (value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
 
     private String resolveUserFacingErrorMessage(Exception e) {
@@ -961,6 +1028,8 @@ public class WorkspaceService {
     private String buildApplicationResearchContext(WorkspaceQuestion question) {
         List<String> sections = new ArrayList<>();
 
+        sections.add(buildQuestionIntentContext(question));
+
         if (question.getApplication().getCompanyResearch() != null
                 && !question.getApplication().getCompanyResearch().isBlank()) {
             sections.add("[Company Research]\n" + question.getApplication().getCompanyResearch());
@@ -979,6 +1048,67 @@ public class WorkspaceService {
         }
 
         return String.join("\n---\n", sections);
+    }
+
+    private String buildQuestionIntentContext(WorkspaceQuestion question) {
+        String title = safeTrim(question.getTitle());
+        String normalized = title.toLowerCase();
+
+        String type = "JOB_FIT";
+        String primaryFocus = "직무 적합성, 역할 이해, 업무 수행 역량";
+        String weightingRule = "Use JD and company context as the primary rubric. Select evidence that directly proves role fit.";
+
+        if (containsAny(normalized, "협업", "협업할", "팀워크", "함께", "갈등", "소통", "커뮤니케이션",
+                "조율", "의견", "협력", "teamwork", "collaboration", "communication", "conflict")) {
+            type = "COLLABORATION";
+            primaryFocus = "협업 방식, 갈등 조율, 커뮤니케이션, 공동 목표 달성 과정";
+            weightingRule = "Prioritize the question's collaboration intent first, then factual evidence, and use JD only as a secondary tie-back. Do not force a pure job-skill essay when the question is mainly about teamwork or conflict.";
+        } else if (containsAny(normalized, "실패", "극복", "어려움", "힘들", "문제", "해결", "위기", "고민",
+                "실수", "trouble", "challenge", "problem", "failure")) {
+            type = "PROBLEM_SOLVING";
+            primaryFocus = "문제 인식, 원인 파악, 판단, 해결 과정, 회고";
+            weightingRule = "Prioritize the question's problem-solving intent first. Use JD as supporting context only if it sharpens why the response matters for the role.";
+        } else if (containsAny(normalized, "성장", "배운", "배움", "발전", "변화", "계기", "회고",
+                "learn", "growth", "develop")) {
+            type = "GROWTH";
+            primaryFocus = "학습 민첩성, 성장 과정, 피드백 수용, 개선";
+            weightingRule = "Prioritize the growth narrative first. Use JD as a secondary bridge to show why that growth matters for the target role.";
+        } else if (containsAny(normalized, "지원동기", "왜", "이 회사", "우리 회사", "입사 후", "포부",
+                "동기", "motivation", "why our company", "future")) {
+            type = "MOTIVATION";
+            primaryFocus = "회사 선택 이유, 직무 연결성, 입사 후 기여 방향";
+            weightingRule = "Use company context and JD as the primary rubric. Connect concrete past evidence to why the company and role are a logical next step.";
+        } else if (containsAny(normalized, "가치", "핵심가치", "신념", "태도", "원칙", "장점", "강점",
+                "value", "belief", "strength")) {
+            type = "VALUE_FIT";
+            primaryFocus = "가치관, 판단 기준, 일하는 태도, 일관된 행동 원리";
+            weightingRule = "Prioritize the value or attitude asked by the question first. Use JD as a secondary alignment check rather than the main storyline.";
+        }
+
+        return """
+                [Question Intent]
+                Question: %s
+                Intent type: %s
+                Primary focus: %s
+                Weighting rule: %s
+                """.formatted(
+                title.isBlank() ? "No question title provided." : title,
+                type,
+                primaryFocus,
+                weightingRule);
+    }
+
+    private boolean containsAny(String source, String... needles) {
+        if (source == null || source.isBlank()) {
+            return false;
+        }
+
+        for (String needle : needles) {
+            if (needle != null && !needle.isBlank() && source.contains(needle.toLowerCase())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String buildFilteredContext(WorkspaceQuestion initialQuestion, Long questionId,
