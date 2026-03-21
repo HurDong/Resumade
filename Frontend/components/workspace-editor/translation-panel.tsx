@@ -33,7 +33,7 @@ export function TranslationPanel() {
 
   const containerRef = useRef<HTMLDivElement>(null)
   const activeQuestion = questions.find((q) => q.id === activeQuestionId) || questions[0]
-  const { content: draft, washedKr, mistranslations } = activeQuestion
+  const { content: draft, washedKr, mistranslations, aiReviewReport } = activeQuestion
   const hasHighlights = mistranslations.length > 0
 
   const processingTarget = (() => {
@@ -53,280 +53,49 @@ export function TranslationPanel() {
     return "파이프라인 실행 중"
   })()
 
-  const escapeRegExp = (string: string) => {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  }
+  const injectHighlightedTags = (html: string, isOriginal: boolean) => {
+    if (!html || !mistranslations.length) return html
 
-  const findUniqueExactRange = (source: string, target: string) => {
-    const escaped = escapeRegExp(target)
-    const exactRegex = new RegExp(escaped, "g")
-    const matches: number[] = []
-    let exactMatch: RegExpExecArray | null
-
-    while ((exactMatch = exactRegex.exec(source)) !== null) {
-      matches.push(exactMatch.index)
-      if (matches.length > 1) {
-        return null
-      }
-    }
-
-    if (matches.length !== 1) {
-      return null
-    }
-
-    return { start: matches[0], end: matches[0] + target.length }
-  }
-
-  const findVerifiedIndexedRange = (
-    source: string,
-    target: string,
-    startIndex?: number | null,
-    endIndex?: number | null
-  ) => {
-    if (
-      !Number.isInteger(startIndex) ||
-      !Number.isInteger(endIndex) ||
-      (startIndex ?? -1) < 0 ||
-      (endIndex ?? -1) <= (startIndex ?? -1) ||
-      (endIndex ?? 0) > source.length
-    ) {
-      return null
-    }
-
-    const actual = source.slice(startIndex as number, endIndex as number).normalize("NFC").trim()
-    if (actual !== target) {
-      return null
-    }
-
-    return { start: startIndex as number, end: endIndex as number }
-  }
-
-  const findFuzzyRange = (source: string, target: string) => {
-    if (!target) return null
-    
-    // 1. Try strict squashed match first
-    const map: number[] = []
-    let squashedSource = ""
-    for (let i = 0; i < source.length; i++) {
-        const char = source[i]
-        if (!/[\s.,!?'"(){}\[\]]/u.test(char)) {
-            squashedSource += char
-            map.push(i)
-        }
-    }
-    const squashedTarget = target.replace(/[\s.,!?'"(){}\[\]]/gu, '')
-    if (squashedTarget) {
-      const index = squashedSource.indexOf(squashedTarget)
-      if (index !== -1) {
-          return { start: map[index], end: map[index + squashedTarget.length - 1] + 1 }
-      }
-    }
-
-    // 2. Fallback to advanced Hybrid (Bi-gram + Hangul Uni-gram) Jaccard Similarity sliding window
-    const getGrams = (str: string) => {
-      const s = str.replace(/[\s.,!?'"(){}\[\]]/gu, '');
-      const grams = new Set<string>();
-      for (let i = 0; i < s.length - 1; i++) grams.add(s.substring(i, i + 2));
-      for (let i = 0; i < s.length; i++) {
-        if (/[가-힣]/.test(s[i])) grams.add(s[i]);
-      }
-      return grams;
-    };
-
-    const targetGrams = getGrams(target);
-    if (targetGrams.size === 0) return null;
-
-    let bestScore = 0;
-    let bestStart = -1;
-    let bestEnd = -1;
-    let searchStart = 0;
-
-    while (searchStart < source.length) {
-      let remaining = source.substring(searchStart);
-      let dotIdx = remaining.search(/[.!?\n]/);
-      let sEnd = searchStart + (dotIdx === -1 ? remaining.length : dotIdx + 1);
-      
-      while (sEnd < source.length && /[\s]/.test(source[sEnd])) {
-        sEnd++;
-      }
-      
-      const sentence = source.substring(searchStart, sEnd);
-      const sGrams = getGrams(sentence);
-      
-      if (targetGrams.size > 0 && sGrams.size > 0) {
-          let intersection = 0;
-          targetGrams.forEach(g => { if (sGrams.has(g)) intersection++; });
-          const score = intersection / targetGrams.size;
-
-          if (score > bestScore) {
-            bestScore = score;
-            
-            let firstMatchIdx = sentence.length;
-            let lastMatchIdx = -1;
-            
-            for (let i = 0; i < sentence.length - 1; i++) {
-              if (/[\s.,!?'"(){}\[\]]/.test(sentence[i])) continue;
-              let j = i + 1;
-              while(j < sentence.length && /[\s.,!?'"(){}\[\]]/.test(sentence[j])) j++;
-              if (j < sentence.length) {
-                  const bigram = sentence[i] + sentence[j];
-                  if (targetGrams.has(bigram)) {
-                      if (i < firstMatchIdx) firstMatchIdx = i;
-                      if (j + 1 > lastMatchIdx) lastMatchIdx = j + 1;
-                  }
-              }
-            }
-
-            if (lastMatchIdx !== -1) {
-              while (firstMatchIdx > 0 && !/[\s.,!?'"(){}\[\]]/.test(sentence[firstMatchIdx - 1])) {
-                firstMatchIdx--;
-              }
-              while (lastMatchIdx < sentence.length && !/[\s.,!?'"(){}\[\]]/.test(sentence[lastMatchIdx])) {
-                lastMatchIdx++;
-              }
-              bestStart = searchStart + firstMatchIdx;
-              bestEnd = searchStart + lastMatchIdx;
-            } else {
-              bestStart = searchStart;
-              bestEnd = sEnd;
-            }
-          }
-      }
-      searchStart = sEnd;
-    }
-
-    if (bestScore >= 0.20 && bestStart !== -1) {
-      return { start: bestStart, end: bestEnd };
-    }
-
-    return null;
-  }
-
-  const highlightText = (text: string) => {
-    if (!text || !mistranslations.length) return text
-
-    const normalizedText = text.normalize("NFC")
-    const matches: { start: number; end: number; mis: any }[] = []
-
-    mistranslations.forEach((mis) => {
-      const target = mis.translated?.normalize("NFC").trim()
-      if (!target) return
-
-      const indexedRange = findVerifiedIndexedRange(normalizedText, target, mis.startIndex, mis.endIndex)
-      if (indexedRange) {
-        matches.push({
-          ...indexedRange,
-          mis,
-        })
-        return
-      }
-
-      const uniqueRange = findUniqueExactRange(normalizedText, target)
-      if (uniqueRange) {
-        matches.push({ ...uniqueRange, mis })
-      } else {
-        const fuzzyRange = findFuzzyRange(normalizedText, target)
-        if (fuzzyRange) {
-          matches.push({ ...fuzzyRange, mis })
-        }
-      }
-    })
-
-    if (matches.length === 0) return normalizedText
-
-    matches.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start))
-
-    const finalMatches: typeof matches = []
-    let lastEnd = -1
-    for (const match of matches) {
-      if (match.start >= lastEnd) {
-        finalMatches.push(match)
-        lastEnd = match.end
-      }
-    }
-
-    let result = ""
-    let lastIndex = 0
     const hasAnyHover = hoveredMistranslationId !== null
 
-    finalMatches.forEach((match) => {
-      result += normalizedText.substring(lastIndex, match.start)
-      const mis = match.mis
-      const isHovered = hoveredMistranslationId === mis.id
-      const hoverEffect = isHovered
-        ? "ring-2 ring-primary scale-110 shadow-2xl z-[50] opacity-100"
-        : hasAnyHover
-          ? "opacity-20 grayscale scale-95 blur-[0.5px]"
-          : "opacity-100"
-      const reasonLabel = mis.reason ? ` [${mis.reason}]` : ""
-      
+    // 백엔드 AI가 삽입한 <mark data-mis-id="mis-1">어색한 텍스트</mark> 태그들을 찾아서 Tailwind 클래스 주입
+    return html.replace(/<mark data-mis-id="([^"]+)">([\s\S]*?)<\/mark>/g, (match, misId, content) => {
+      const mis = mistranslations.find((m) => m.id === misId)
+      if (!mis) return match // 대응되는 오류가 없으면 원본 그대로 반환
+
+      const isHovered = hoveredMistranslationId === misId
       const isCritical = mis.severity === "CRITICAL"
-      const severityClass = isCritical 
-        ? "bg-red-500/15 text-red-600 dark:text-red-400 ring-1 ring-red-500/40" 
-        : "bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/40"
-      
-      result += `<mark data-mis-id="${mis.id}" title="${isCritical ? '🚨 필수 교정 : ' : '🚧 검토 권장 : '}${reasonLabel}" class="${severityClass} ${hoverEffect} px-0.5 rounded cursor-help transition-all duration-300 inline-block origin-center font-semibold">${normalizedText.substring(match.start, match.end)}</mark>`
-      lastIndex = match.end
-    })
 
-    result += normalizedText.substring(lastIndex)
-    return result
-  }
-
-  const highlightOriginalText = (text: string) => {
-    if (!text || !mistranslations.length) return text
-
-    const normalizedText = text.normalize("NFC")
-    const matches: { start: number; end: number; mis: any }[] = []
-
-    mistranslations.forEach((mis) => {
-      const target = mis.original?.normalize("NFC").trim()
-      if (!target) return
-      
-      const uniqueRange = findUniqueExactRange(normalizedText, target)
-      if (uniqueRange) {
-        matches.push({ ...uniqueRange, mis })
+      let hoverEffect = ""
+      if (isOriginal) {
+        hoverEffect = isHovered
+          ? "ring-2 ring-primary scale-110 shadow-2xl z-[50] opacity-100 bg-primary/30"
+          : hasAnyHover
+            ? "opacity-20 grayscale scale-95 blur-[0.5px] bg-primary/10"
+            : "opacity-100 bg-primary/20 text-primary"
       } else {
-        const fuzzyRange = findFuzzyRange(normalizedText, target)
-        if (fuzzyRange) {
-          matches.push({ ...fuzzyRange, mis })
-        }
+        hoverEffect = isHovered
+          ? "ring-2 ring-primary scale-110 shadow-2xl z-[50] opacity-100"
+          : hasAnyHover
+            ? "opacity-20 grayscale scale-95 blur-[0.5px]"
+            : "opacity-100"
       }
-    })
 
-    if (matches.length === 0) return normalizedText
-
-    matches.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start))
-
-    const finalMatches: typeof matches = []
-    let lastEnd = -1
-    for (const match of matches) {
-      if (match.start >= lastEnd) {
-        finalMatches.push(match)
-        lastEnd = match.end
+      let severityClass = ""
+      if (isOriginal) {
+        severityClass = "text-primary hover:text-primary ring-1 ring-primary/50"
+      } else {
+        severityClass = isCritical
+          ? "bg-red-500/15 text-red-600 dark:text-red-400 ring-1 ring-red-500/40"
+          : "bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/40"
       }
-    }
 
-    let result = ""
-    let lastIndex = 0
-    const hasAnyHover = hoveredMistranslationId !== null
+      const title = !isOriginal && mis
+        ? (isCritical ? "🚨 필수 교정 : " : "🚧 검토 권장 : ") + (mis.reason ? ` [${mis.reason}]` : "")
+        : ""
 
-    finalMatches.forEach((match) => {
-      result += normalizedText.substring(lastIndex, match.start)
-      const mis = match.mis
-      const isHovered = hoveredMistranslationId === mis.id
-      const hoverEffect = isHovered
-        ? "ring-2 ring-primary scale-110 shadow-2xl z-[50] opacity-100 bg-primary/30"
-        : hasAnyHover
-          ? "opacity-20 grayscale scale-95 blur-[0.5px] bg-primary/10"
-          : "opacity-100 bg-primary/20 text-primary"
-          
-      result += `<mark data-mis-id="${mis.id}" class="text-primary hover:text-primary ring-1 ring-primary/50 px-1 rounded transition-all duration-300 font-bold inline-block origin-center ${hoverEffect}">${normalizedText.substring(match.start, match.end)}</mark>`
-      lastIndex = match.end
+      return `<mark data-mis-id="${misId}" title="${title}" class="${severityClass} ${hoverEffect} px-0.5 rounded cursor-help transition-all duration-300 inline-block origin-center font-semibold">${content}</mark>`
     })
-
-    result += normalizedText.substring(lastIndex)
-    return result
   }
 
   useEffect(() => {
@@ -454,7 +223,7 @@ export function TranslationPanel() {
               <CardContent className="relative min-h-[420px]">
                 <div
                   className={`min-h-[200px] whitespace-pre-wrap text-sm font-medium italic leading-relaxed text-muted-foreground transition-all duration-300 ${hoveredMistranslationId ? "opacity-100" : "opacity-70"}`}
-                  dangerouslySetInnerHTML={{ __html: highlightOriginalText(draft) }}
+                  dangerouslySetInnerHTML={{ __html: aiReviewReport?.taggedOriginalText ? injectHighlightedTags(aiReviewReport.taggedOriginalText, true) : (draft || "") }}
                 />
                 {processingTarget === "draft" && (
                   <div className="absolute inset-0 flex items-center justify-center rounded-b-xl bg-background/72 backdrop-blur-[2px]">
@@ -492,7 +261,7 @@ export function TranslationPanel() {
                 {hasHighlights ? (
                   <div
                     className="min-h-[200px] whitespace-pre-wrap text-sm font-medium leading-relaxed text-foreground"
-                    dangerouslySetInnerHTML={{ __html: highlightText(washedKr) }}
+                    dangerouslySetInnerHTML={{ __html: aiReviewReport?.taggedWashedText ? injectHighlightedTags(aiReviewReport.taggedWashedText, false) : (washedKr || "") }}
                   />
                 ) : (
                   <div className="min-h-[200px] whitespace-pre-wrap text-[15px] font-medium leading-8 text-foreground">

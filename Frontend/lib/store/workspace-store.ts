@@ -8,22 +8,28 @@ import {
 
 export interface Mistranslation {
   id: string;
+  issueType?: string;
   original: string;
+  originalSentence?: string;
   translated: string;
   suggestion: string;
   severity?: "CRITICAL" | "WARNING";
   translatedSentence?: string;
   suggestedSentence?: string;
   reason?: string;
+  originalStartIndex?: number | null;
+  originalEndIndex?: number | null;
   startIndex?: number | null;
   endIndex?: number | null;
 }
 
 export interface AiReviewReport {
   summary: string;
-  overallScore: number;
-  technicalAccuracy: number;
-  readability: number;
+  taggedOriginalText?: string;
+  taggedWashedText?: string;
+  overallScore?: number;
+  technicalAccuracy?: number;
+  readability?: number;
 }
 
 export interface WorkspaceQuestion {
@@ -312,6 +318,65 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     let newWashedKr = activeQ.washedKr;
     let found = false;
 
+    const replaceOnce = (source: string, searchValue: string, replacement: string) => {
+      const index = source.indexOf(searchValue);
+      if (index < 0) {
+        return null;
+      }
+      return source.slice(0, index) + replacement + source.slice(index + searchValue.length);
+    };
+
+    const findSentenceFallback = (source: string, targetSentence: string) => {
+      if (!targetSentence) {
+        return null;
+      }
+
+      const normalizedTarget = targetSentence.normalize("NFC").trim();
+      if (!normalizedTarget) {
+        return null;
+      }
+
+      const exactIndex = source.indexOf(normalizedTarget);
+      if (exactIndex >= 0) {
+        return { start: exactIndex, end: exactIndex + normalizedTarget.length };
+      }
+
+      const sentences = source.match(/[^\n.!?]+[.!?\n]?/g) ?? [];
+      let cursor = 0;
+      let best: { start: number; end: number; score: number } | null = null;
+
+      const tokenize = (value: string) =>
+        value
+          .toLowerCase()
+          .split(/\s+/)
+          .map((token) => token.replace(/[^\p{L}\p{N}-]/gu, ""))
+          .filter((token) => token.length > 1);
+
+      const targetTokens = new Set(tokenize(normalizedTarget));
+      for (const sentence of sentences) {
+        const start = source.indexOf(sentence, cursor);
+        if (start < 0) {
+          continue;
+        }
+        const end = start + sentence.length;
+        cursor = end;
+
+        const sentenceTokens = new Set(tokenize(sentence));
+        if (!targetTokens.size || !sentenceTokens.size) {
+          continue;
+        }
+
+        const overlap = [...targetTokens].filter((token) => sentenceTokens.has(token)).length;
+        const union = new Set([...targetTokens, ...sentenceTokens]).size;
+        const score = union === 0 ? 0 : overlap / union;
+        if (!best || score > best.score) {
+          best = { start, end, score };
+        }
+      }
+
+      return best && best.score >= 0.45 ? { start: best.start, end: best.end } : null;
+    };
+
     // First attempt: Sentence-level replacement
     if (mistranslation.translatedSentence && mistranslation.suggestedSentence) {
       const targetSentence = mistranslation.translatedSentence;
@@ -321,9 +386,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         ? mistranslation.suggestedSentence.replace(mistranslation.translated, mistranslation.original)
         : mistranslation.suggestedSentence;
 
-      if (newWashedKr.includes(targetSentence)) {
-        newWashedKr = newWashedKr.replace(targetSentence, finalReplacement);
+      const exactSentenceReplace = replaceOnce(newWashedKr, targetSentence, finalReplacement);
+      if (exactSentenceReplace !== null) {
+        newWashedKr = exactSentenceReplace;
         found = true;
+      } else {
+        const sentenceRange = findSentenceFallback(newWashedKr, targetSentence);
+        if (sentenceRange) {
+          newWashedKr =
+            newWashedKr.slice(0, sentenceRange.start) +
+            finalReplacement +
+            newWashedKr.slice(sentenceRange.end);
+          found = true;
+        }
       }
     }
 
@@ -339,8 +414,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       
       // Try each search term variant
       for (const term of searchTerms) {
-        if (newWashedKr.includes(term)) {
-          newWashedKr = newWashedKr.split(term).join(finalSuggestion);
+        const replaced = replaceOnce(newWashedKr, term, finalSuggestion);
+        if (replaced !== null) {
+          newWashedKr = replaced;
           found = true;
           break;
         }
