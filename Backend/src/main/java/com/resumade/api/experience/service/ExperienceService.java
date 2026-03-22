@@ -70,7 +70,8 @@ public class ExperienceService {
         Experience savedExperience = experienceRepository.save(experience);
 
         // 4. Chunking & Embedding for Elasticsearch - Use structured text for better RAG
-        String narrativeText = buildNarrativeText(savedExperience, aiResult.getTechStack(), aiResult.getMetrics());
+        String narrativeText = buildNarrativeText(savedExperience, aiResult.getTechStack(), aiResult.getMetrics())
+                + "\nStructured raw content:\n" + content;
         indexToElasticsearch(savedExperience.getId(), narrativeText);
 
         return ExperienceResponse.from(savedExperience, aiResult.getTechStack(), aiResult.getMetrics());
@@ -104,7 +105,8 @@ public class ExperienceService {
             experienceRepository.save(experience);
             // Update ES index when reclassifying
             experienceDocumentRepository.deleteByExperienceId(experience.getId());
-            String narrativeText = buildNarrativeText(experience, aiResult.getTechStack(), aiResult.getMetrics());
+            String narrativeText = buildNarrativeText(experience, aiResult.getTechStack(), aiResult.getMetrics())
+                    + "\nStructured raw content:\n" + experience.getRawContent();
             indexToElasticsearch(experience.getId(), narrativeText);
 
             log.info("Reclassified experience id {}", experience.getId());
@@ -222,7 +224,8 @@ public class ExperienceService {
         );
 
         experienceDocumentRepository.deleteByExperienceId(id);
-        String narrativeText = buildNarrativeText(experience, techStack, metrics);
+        String narrativeText = buildNarrativeText(experience, techStack, metrics)
+                + "\nStructured raw content:\n" + normalizedRawContent;
         indexToElasticsearch(id, narrativeText);
 
         Experience saved = experienceRepository.save(experience);
