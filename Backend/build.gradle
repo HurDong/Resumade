@@ -59,3 +59,18 @@ tasks.named('test') {
 tasks.withType(JavaCompile).configureEach {
 	options.encoding = 'UTF-8'
 }
+
+bootRun {
+	if (file("../.env").exists()) {
+		file("../.env").readLines().each { line ->
+			if (!line.isEmpty() && !line.startsWith("#")) {
+				def parts = line.split("=", 2)
+				if (parts.length == 2) {
+					def key = parts[0].trim()
+					def value = parts[1].trim().replaceAll(/^["']|["']$/, "")
+					environment key, value
+				}
+			}
+		}
+	}
+}
