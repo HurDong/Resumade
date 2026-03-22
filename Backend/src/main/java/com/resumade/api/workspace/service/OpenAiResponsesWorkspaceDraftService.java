@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Slf4j
@@ -23,8 +24,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
 
     private static final String GENERATE_SYSTEM_PROMPT = """
             You write Korean self-introduction answers.
+            Length is a hard requirement. Return a draft inside the requested character range, never below the minimum target, and aim for the upper end of the range.
             Return JSON only with exactly this shape: {"text":"..."}.
-            Write in Korean.
+            Before returning, silently count visible characters including spaces and line breaks, and expand with concrete evidence until the draft reaches the range.
             Start with a bracketed title like [Title].
             The title must be short, memorable, and must not summarize the question or repeat the company name, position name, or question wording.
             The first sentence must answer the question directly in a conclusion-first way.
@@ -59,8 +61,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
 
     private static final String REFINE_SYSTEM_PROMPT = """
             You write Korean self-introduction answers.
+            Length is a hard requirement. Return a draft inside the requested character range, never below the minimum target, and aim for the upper end of the range.
             Return JSON only with exactly this shape: {"text":"..."}.
-            Write in Korean.
+            Before returning, silently count visible characters including spaces and line breaks, and expand with concrete evidence until the draft reaches the range.
             Preserve the strong facts from the current draft while improving structure, specificity, and job fit.
             Keep the bracketed title format.
             The title must be short, memorable, and must not turn into a generic question summary or repeat the company name or position name.
@@ -97,8 +100,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
 
     private static final String REFINE_RETRY_SYSTEM_PROMPT = """
             You write Korean self-introduction answers.
+            Length is a hard requirement. Return a draft inside the requested character range, never below the minimum target, and aim for the upper end of the range.
             Return JSON only with exactly this shape: {"text":"..."}.
-            Write in Korean.
+            Before returning, silently count visible characters including spaces and line breaks, and expand with concrete evidence until the draft reaches the range.
             The previous result was below the minimum length target.
             Keep all strong facts from the current draft and expand only the missing depth.
             Keep the bracketed title format.
@@ -138,8 +142,8 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Position: %s
             Question: %s
             Hard limit: %d characters
-            Minimum acceptable length: %d characters
-            Target length: around %d characters
+            Required output range: %d to %d characters
+            Target zone: stay close to the upper end of the range without exceeding the hard limit
 
             Company context:
             %s
@@ -180,7 +184,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             - Do not use commentator phrases like '이 사례는 ~를 보여줍니다' when the point can be stated directly in the applicant's voice
             - Avoid future-heavy promises without past evidence
             - Prefer interview-verifiable wording
+            - If the draft is too short, expand in this order: background -> role -> judgment -> execution detail -> measurable result -> job connection
             - Never exceed the hard limit
+            - Outputs shorter than the required range are invalid
             - Return only the final answer in the required JSON shape
             """;
 
@@ -188,8 +194,8 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Company: %s
             Position: %s
             Hard limit: %d characters
-            Minimum acceptable length: %d characters
-            Target length: around %d characters
+            Required output range: %d to %d characters
+            Target zone: stay close to the upper end of the range without exceeding the hard limit
 
             Company context:
             %s
@@ -232,7 +238,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             - Do not use commentator phrases like '이 사례는 ~를 보여줍니다' when the point can be stated directly in the applicant's voice
             - Avoid future-heavy promises without past evidence
             - Prefer interview-verifiable wording
+            - If the draft is too short, expand in this order: background -> role -> judgment -> execution detail -> measurable result -> job connection
             - Never exceed the hard limit
+            - Outputs shorter than the required range are invalid
             - Return only the final answer in the required JSON shape
             """;
 
@@ -240,8 +248,8 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Company: %s
             Position: %s
             Hard limit: %d characters
-            Minimum acceptable length: %d characters
-            Target length: around %d characters
+            Required output range: %d to %d characters
+            Target zone: stay close to the upper end of the range without exceeding the hard limit
 
             Company context:
             %s
@@ -284,11 +292,41 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             - Do not use commentator phrases like '이 사례는 ~를 보여줍니다' when the point can be stated directly in the applicant's voice
             - Avoid future-heavy promises without past evidence
             - Prefer interview-verifiable wording
+            - If the draft is too short, expand in this order: background -> role -> judgment -> execution detail -> measurable result -> job connection
             - Never exceed the hard limit
+            - Outputs shorter than the required range are invalid
             - Return only the final answer in the required JSON shape
             """;
 
     private static final Map<String, Object> DRAFT_RESPONSE_SCHEMA = createDraftResponseSchema();
+    private static final String COMPACT_BASE_SYSTEM_PROMPT = """
+            You write Korean self-introduction answers in Korean.
+            Return JSON only with exactly this shape: {"text":"..."}.
+            Count only the value of the text field. Do not count braces, quotes, key names, or escape characters.
+            Aim for the requested target window. The server enforces the final hard limit downstream.
+            Start with a bracketed title like [Title].
+            The title must be short and must not repeat the company, position, or question wording.
+            The first sentence must answer the question directly.
+            Use only facts and technologies supported by the supplied experience context or explicit user directive. Do not invent experience, metrics, or unlisted tools.
+            Read the Question Intent block first. Use company context, JD insight, and raw JD as the primary rubric only when the question is mainly about job fit or motivation. Otherwise use them as a secondary alignment layer.
+            Center the answer on 1-2 relevant competencies and prove them with concrete role, judgment, action, and result.
+            Treat the supplied other-questions context as a hard anti-overlap constraint.
+            Write natural Korean cover-letter prose. Do not use report labels, section markers, or mechanical first-second-third enumeration unless explicitly requested.
+            Prefer interview-verifiable wording.
+            If the answer is short, add factual depth and impact instead of filler.
+            """;
+    private static final String COMPACT_GENERATE_NOTE = """
+            Treat the explicit user directive as higher priority than retrieved emphasis unless it would require invented facts.
+            """;
+    private static final String COMPACT_REFINE_NOTE = """
+            Preserve the strong facts from the current draft while improving structure, specificity, and job fit.
+            Treat paragraph-level feedback as targeted revision instructions for the current draft.
+            """;
+    private static final String COMPACT_RETRY_NOTE = """
+            The previous result missed the target window.
+            Preserve all strong facts from the current draft and expand only the missing depth.
+            Treat paragraph-level feedback as targeted revision instructions for the current draft.
+            """;
 
     private final String apiKey;
     private final String modelName;
@@ -325,21 +363,21 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             String others,
             String directive
     ) {
-        String userPrompt = GENERATE_USER_PROMPT_TEMPLATE.formatted(
-                safe(company),
-                safe(position),
-                safe(question),
+        String userPrompt = buildGenerateUserPrompt(
+                company,
+                position,
+                question,
+                companyContext,
                 maxLength,
                 minTarget,
                 maxTarget,
-                safe(companyContext),
-                safe(context),
-                safe(others),
-                safeDirective(directive)
+                context,
+                others,
+                directive
         );
 
         return requestDraft(
-                GENERATE_SYSTEM_PROMPT,
+                buildCompactSystemPrompt("generate", false),
                 userPrompt,
                 maxLength,
                 minTarget,
@@ -363,22 +401,22 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             String directive
     ) {
         boolean isLengthRetry = isLengthRetryDirective(directive);
-        String userPromptTemplate = isLengthRetry ? REFINE_RETRY_USER_PROMPT_TEMPLATE : REFINE_USER_PROMPT_TEMPLATE;
-        String userPrompt = userPromptTemplate.formatted(
-                safe(company),
-                safe(position),
+        String userPrompt = buildRefineUserPrompt(
+                company,
+                position,
+                companyContext,
+                input,
                 maxLength,
                 minTarget,
                 maxTarget,
-                safe(companyContext),
-                safe(input),
-                safe(context),
-                safe(others),
-                safeDirective(directive)
+                context,
+                others,
+                directive,
+                isLengthRetry
         );
 
         return requestDraft(
-                isLengthRetry ? REFINE_RETRY_SYSTEM_PROMPT : REFINE_SYSTEM_PROMPT,
+                buildCompactSystemPrompt("refine", isLengthRetry),
                 userPrompt,
                 maxLength,
                 minTarget,
@@ -413,6 +451,135 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
         return fallback.rewriteTitle(company, position, question, companyContext, input, context);
     }
 
+    private String buildCompactSystemPrompt(String stage, boolean isLengthRetry) {
+        StringBuilder builder = new StringBuilder(COMPACT_BASE_SYSTEM_PROMPT.trim());
+        String stageNote = "generate".equalsIgnoreCase(stage)
+                ? COMPACT_GENERATE_NOTE
+                : (isLengthRetry ? COMPACT_RETRY_NOTE : COMPACT_REFINE_NOTE);
+        if (stageNote != null && !stageNote.isBlank()) {
+            builder.append("\n\n");
+            builder.append(stageNote.trim());
+        }
+        return builder.toString();
+    }
+
+    private String buildGenerateUserPrompt(
+            String company,
+            String position,
+            String question,
+            String companyContext,
+            int maxLength,
+            int minTarget,
+            int maxTarget,
+            String context,
+            String others,
+            String directive
+    ) {
+        return """
+                Company: %s
+                Position: %s
+                Question: %s
+                Hard limit: %d characters
+                Target text-field window: %d to %d visible characters
+                Priority: land inside the target window. The server trims to the hard limit downstream if needed
+
+                Company context:
+                %s
+
+                Experience context:
+                %s
+
+                Other questions to avoid overlapping with:
+                %s
+
+                Priority user directive:
+                %s
+
+                Final checks:
+                - Count only the value of the text field
+                - Do not count JSON braces, quotes, key names, or escape characters
+                - Obey the user directive first unless it would require invented facts
+                - Follow any requested paragraph structure or technical depth if present
+                - Return JSON only in the required shape
+                """.formatted(
+                safe(company),
+                safe(position),
+                safe(question),
+                maxLength,
+                minTarget,
+                maxTarget,
+                safe(companyContext),
+                safe(context),
+                safe(others),
+                safeDirective(directive)
+        );
+    }
+
+    private String buildRefineUserPrompt(
+            String company,
+            String position,
+            String companyContext,
+            String input,
+            int maxLength,
+            int minTarget,
+            int maxTarget,
+            String context,
+            String others,
+            String directive,
+            boolean isLengthRetry
+    ) {
+        String retryBlock = isLengthRetry
+                ? """
+
+                Retry note:
+                - The previous output missed the target window
+                - Preserve strong existing facts and expand only missing depth
+                """
+                : "";
+
+        return """
+                Company: %s
+                Position: %s
+                Hard limit: %d characters
+                Target text-field window: %d to %d visible characters
+                Priority: land inside the target window. The server trims to the hard limit downstream if needed
+
+                Company context:
+                %s
+
+                Current draft:
+                %s
+
+                Experience context:
+                %s
+
+                Other questions to avoid overlapping with:
+                %s
+
+                Priority user directive:
+                %s%s
+
+                Final checks:
+                - Count only the value of the text field
+                - Do not count JSON braces, quotes, key names, or escape characters
+                - Obey the user directive first unless it would require invented facts
+                - Follow any requested paragraph structure or technical depth if present
+                - Return JSON only in the required shape
+                """.formatted(
+                safe(company),
+                safe(position),
+                maxLength,
+                minTarget,
+                maxTarget,
+                safe(companyContext),
+                safe(input),
+                safe(context),
+                safe(others),
+                safeDirective(directive),
+                retryBlock
+        );
+    }
+
     private DraftResponse requestDraft(
             String systemPrompt,
             String userPrompt,
@@ -433,6 +600,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.setBearerAuth(apiKey.trim());
 
+            // logFinalPrompt(stage, systemPrompt, userPrompt, maxLength, minTarget, maxTarget);
             Map<String, Object> requestBody = buildRequestBody(systemPrompt, userPrompt, maxLength, minTarget, maxTarget, stage);
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
             response = restTemplate.postForObject(RESPONSES_API_URL, entity, JsonNode.class);
@@ -469,17 +637,16 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
                 message("system", systemPrompt),
                 message("user", userPrompt)
         ));
-        requestBody.put("max_output_tokens", resolveMaxOutputTokens(maxLength, maxTarget));
+        requestBody.put("max_output_tokens", resolveMaxOutputTokens(maxLength, maxTarget, stage));
         requestBody.put("metadata", Map.of(
                 "pipeline_stage", safe(stage),
                 "hard_limit", String.valueOf(maxLength),
-                "min_target", String.valueOf(minTarget),
-                "preferred_target", String.valueOf(maxTarget)
+                "target_window_start", String.valueOf(minTarget),
+                "target_window_end", String.valueOf(maxTarget)
         ));
-        if ("generate".equalsIgnoreCase(stage)
-                || "refine".equalsIgnoreCase(stage)
-                || "expand".equalsIgnoreCase(stage)) {
-            requestBody.put("reasoning", Map.of("effort", "low"));
+        Map<String, Object> reasoningConfig = buildReasoningConfig(stage);
+        if (reasoningConfig != null && !reasoningConfig.isEmpty()) {
+            requestBody.put("reasoning", reasoningConfig);
         }
         requestBody.put("text", buildTextConfig());
         return requestBody;
@@ -488,7 +655,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
     private Map<String, Object> buildTextConfig() {
         Map<String, Object> textConfig = new LinkedHashMap<>();
         if (supportsVerbosity(modelName)) {
-            textConfig.put("verbosity", "high");
+            textConfig.put("verbosity", "low");
         }
 
         Map<String, Object> format = new LinkedHashMap<>();
@@ -498,6 +665,48 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
         format.put("schema", DRAFT_RESPONSE_SCHEMA);
         textConfig.put("format", format);
         return textConfig;
+    }
+
+    private Map<String, Object> buildReasoningConfig(String stage) {
+        if (!"generate".equalsIgnoreCase(stage)
+                && !"refine".equalsIgnoreCase(stage)
+                && !"expand".equalsIgnoreCase(stage)) {
+            return null;
+        }
+
+        String effort = resolveReasoningEffort(modelName);
+        if (effort == null || effort.isBlank()) {
+            return null;
+        }
+
+        return Map.of("effort", effort);
+    }
+
+    private String resolveReasoningEffort(String currentModelName) {
+        if (currentModelName == null || currentModelName.isBlank()) {
+            return null;
+        }
+
+        String normalized = currentModelName.trim().toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("gpt-5-mini")) {
+            return "medium";
+        }
+        if (normalized.startsWith("gpt-5.4-pro")) {
+            return "medium";
+        }
+        if (normalized.startsWith("gpt-5-pro") || normalized.startsWith("gpt-5.2-pro")) {
+            return "high";
+        }
+        if (normalized.startsWith("gpt-5.1")
+                || normalized.startsWith("gpt-5.2")
+                || normalized.startsWith("gpt-5.3")
+                || normalized.startsWith("gpt-5.4")) {
+            return "none";
+        }
+        if ("gpt-5".equals(normalized) || "gpt-5-2025-08-07".equals(normalized)) {
+            return "minimal";
+        }
+        return null;
     }
 
     private Map<String, Object> message(String role, String text) {
@@ -510,10 +719,16 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
         return message;
     }
 
-    private int resolveMaxOutputTokens(int maxLength, int maxTarget) {
+    private int resolveMaxOutputTokens(int maxLength, int maxTarget, String stage) {
         int draftChars = Math.max(Math.max(maxLength, maxTarget), 1);
-        int generousCap = Math.max(4096, draftChars * 3);
-        return Math.min(generousCap, 8192);
+
+        if ("expand".equalsIgnoreCase(stage)) {
+            int generousCap = Math.max(8192, draftChars * 8);
+            return Math.min(generousCap, 12000);
+        }
+
+        int generousCap = Math.max(6144, draftChars * 6);
+        return Math.min(generousCap, 10000);
     }
 
     private DraftResponse parseDraftResponse(JsonNode response) throws IOException {
@@ -568,6 +783,37 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
                     + abbreviateForLog(response.toString(), 2000));
         }
         return builder.toString();
+    }
+
+    private void logFinalPrompt(
+            String stage,
+            String systemPrompt,
+            String userPrompt,
+            int maxLength,
+            int minTarget,
+            int maxTarget
+    ) {
+        log.warn("""
+                ===== RESPONSES API FINAL PROMPT =====
+                stage: {}
+                model: {}
+                hardLimit: {}
+                minTarget: {}
+                preferredTarget: {}
+                ----- SYSTEM PROMPT -----
+                {}
+                ----- USER PROMPT -----
+                {}
+                ===== END FINAL PROMPT =====
+                """,
+                stage,
+                modelName,
+                maxLength,
+                minTarget,
+                maxTarget,
+                systemPrompt,
+                userPrompt
+        );
     }
 
     private void appendIfPresent(StringBuilder builder, JsonNode node) {

@@ -13,6 +13,7 @@ public interface WorkspaceDraftAiService {
     @SystemMessage({
             "You write Korean self-introduction answers.",
             "Always return a JSON object with the shape {\"text\":\"...\"}.",
+            "Count only the value of the text field. Do not count braces, quotes, key names, or escape characters.",
             "Write in Korean.",
             "Start with a bracketed title like [Title].",
             "The title must be short, memorable, and must not summarize the question or repeat the company name, position name, or question wording.",
@@ -52,8 +53,7 @@ public interface WorkspaceDraftAiService {
             {{companyContext}}
 
             Hard limit: {{maxLength}} characters
-            Minimum acceptable length: {{minTarget}} characters
-            Target length: around {{maxTarget}} characters
+            Target text-field window: {{minTarget}} to {{maxTarget}} visible characters
 
             Experience context:
             {{context}}
@@ -65,6 +65,8 @@ public interface WorkspaceDraftAiService {
             {{directive}}
 
             Requirements:
+            - Count only the value of the text field
+            - Do not count JSON braces, quotes, key names, or escape characters
             - Start with [Title]
             - Read the Question Intent block first and obey its weighting rule
             - Use company context, JD insight, and raw JD as the primary rubric only when the Question Intent block indicates job-fit or motivation is primary
@@ -107,6 +109,7 @@ public interface WorkspaceDraftAiService {
     @SystemMessage({
             "You write Korean self-introduction answers.",
             "Always return a JSON object with the shape {\"text\":\"...\"}.",
+            "Count only the value of the text field. Do not count braces, quotes, key names, or escape characters.",
             "Write in Korean.",
             "Preserve the strong facts from the current draft while improving structure, specificity, and job fit.",
             "Keep the bracketed title format.",
@@ -150,8 +153,7 @@ public interface WorkspaceDraftAiService {
             {{input}}
 
             Hard limit: {{maxLength}} characters
-            Minimum acceptable length: {{minTarget}} characters
-            Target length: around {{maxTarget}} characters
+            Target text-field window: {{minTarget}} to {{maxTarget}} visible characters
 
             Experience context:
             {{context}}
@@ -163,6 +165,8 @@ public interface WorkspaceDraftAiService {
             {{directive}}
 
             Requirements:
+            - Count only the value of the text field
+            - Do not count JSON braces, quotes, key names, or escape characters
             - Start with [Title]
             - Read the Question Intent block first and obey its weighting rule
             - Use company context, JD insight, and raw JD as the primary rubric only when the Question Intent block indicates job-fit or motivation is primary
