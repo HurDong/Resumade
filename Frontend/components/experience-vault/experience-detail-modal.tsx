@@ -14,7 +14,7 @@ const INITIAL_CHAT_MESSAGES: Array<{ role: "user" | "assistant"; content: string
   {
     role: "assistant",
     content:
-      "이 영역은 아직 실제 AI와 연결되지는 않았습니다. 우선 왼쪽 마크다운 편집기 저장부터 안정적으로 동작하도록 맞춰두었습니다.",
+      "이 영역은 아직 실제 AI와 연결되어 있지 않습니다. 우선은 최신 권장 Markdown 구조로 경험을 직접 정리하고 저장하는 용도로 맞춰두었습니다.",
   },
 ]
 
@@ -25,20 +25,39 @@ function buildMarkdownFromExperience(experience: Experience) {
 
   return `# ${experience.title}
 
-## 프로젝트 개요
+## 한 줄 요약
 ${experience.description}
+
+## 출처 / 맥락
+- 미작성
+
+## 문제 상황
+- 미작성
+
+## 내가 맡은 역할
+- ${experience.role}
+
+## 내가 한 판단
+- 미작성
+
+## 내가 실제로 한 행동
+- 미작성
+
+## 결과
+${experience.metrics.map((metric) => `- ${metric}`).join("\n")}
 
 ## 기술 스택
 ${experience.techStack.map((tech) => `- ${tech}`).join("\n")}
 
-## 주요 성과
-${experience.metrics.map((metric) => `- ${metric}`).join("\n")}
-
 ## 프로젝트 기간
 ${experience.period}
 
-## 담당 역할
-${experience.role}`
+## 직무 연결 키워드
+- 미작성
+
+## 활용 가능한 문항 유형
+- 문제 해결
+- 직무 역량`
 }
 
 export function ExperienceDetailModal({
@@ -99,7 +118,7 @@ export function ExperienceDetailModal({
 
       if (!response.ok) {
         const message = (await response.text()).trim()
-        throw new Error(message || "경험 마크다운 저장에 실패했습니다.")
+        throw new Error(message || "경험 Markdown 저장에 실패했습니다.")
       }
 
       const updatedExperience = {
@@ -116,7 +135,7 @@ export function ExperienceDetailModal({
       console.error("Failed to save experience markdown:", error)
       toast.error("저장 실패", {
         description:
-          error instanceof Error ? error.message : "경험 마크다운 저장 중 오류가 발생했습니다.",
+          error instanceof Error ? error.message : "경험 Markdown 저장 중 오류가 발생했습니다.",
       })
     } finally {
       setIsSaving(false)
@@ -137,7 +156,7 @@ export function ExperienceDetailModal({
       {
         role: "assistant",
         content:
-          "이 채팅은 아직 더미 응답입니다. 실제 AI 대화는 별도 API 연결이 필요합니다.",
+          "이 채팅은 아직 데모 응답입니다. 실제 AI 편집 기능을 붙이기 전까지는 오른쪽 Markdown 편집기를 기준으로 경험 구조를 정리해 주세요.",
       },
     ])
     setChatInput("")
@@ -170,14 +189,14 @@ export function ExperienceDetailModal({
             <div className="border-b border-border bg-muted/30 px-4 py-3">
               <h3 className="flex items-center gap-2 text-sm font-medium">
                 <FileText className="size-4" />
-                마크다운 편집기
+                Markdown 편집기
               </h3>
             </div>
             <Textarea
               value={markdownContent}
               onChange={(e) => setMarkdownContent(e.target.value)}
               className="flex-1 resize-none rounded-none border-0 font-mono text-sm focus-visible:ring-0"
-              placeholder="마크다운 형식으로 경험을 작성해 주세요."
+              placeholder="최신 권장 구조에 맞춰 경험 Markdown을 작성해 주세요."
             />
           </div>
 
@@ -215,7 +234,7 @@ export function ExperienceDetailModal({
                 <Input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="AI에게 수정 방향을 물어보세요..."
+                  placeholder="AI에게 구조화 방향을 물어보는 UI 자리입니다."
                   className="flex-1"
                   onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
                 />

@@ -9,6 +9,7 @@ import { type Experience } from "@/lib/mock-data"
 import { DropZone } from "./drop-zone"
 import { ExperienceCard } from "./experience-card"
 import { ExperienceDetailModal } from "./experience-detail-modal"
+import { UploadGuidePanel } from "./upload-guide-panel"
 
 export function ExperienceVault() {
   const [selectedExperience, setSelectedExperience] = useState<Experience | null>(null)
@@ -91,6 +92,7 @@ export function ExperienceVault() {
   return (
     <TooltipProvider>
       <div className="mx-auto max-w-6xl space-y-8">
+        <UploadGuidePanel />
         <DropZone onUploadSuccess={fetchExperiences} />
 
         <div>
