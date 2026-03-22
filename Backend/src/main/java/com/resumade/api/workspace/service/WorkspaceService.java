@@ -73,8 +73,11 @@ public class WorkspaceService {
 
         String query = (customQuery != null && !customQuery.isBlank()) ? customQuery : question.getTitle();
         List<Experience> allExperiences = experienceRepository.findAll();
-        return experienceVectorRetrievalService.search(query, 3,
-                extractUsedExperienceIds(question, questionId, allExperiences));
+        return experienceVectorRetrievalService.search(
+                query,
+                3,
+                extractUsedExperienceIds(question, questionId, allExperiences),
+                buildSupportingQueries(question, query));
     }
 
     @Transactional(readOnly = true)
@@ -1111,11 +1114,70 @@ public class WorkspaceService {
         return false;
     }
 
+    private List<String> buildSupportingQueries(WorkspaceQuestion question, String primaryQuery) {
+        if (question == null || question.getApplication() == null) {
+            return List.of();
+        }
+
+        List<String> queries = new ArrayList<>();
+        String title = safeTrim(question.getTitle());
+        String company = safeTrim(question.getApplication().getCompanyName());
+        String position = safeTrim(question.getApplication().getPosition());
+        String userDirective = compactQueryText(question.getUserDirective(), 180);
+        String jdInsight = compactQueryText(question.getApplication().getAiInsight(), 220);
+        String companyResearch = compactQueryText(question.getApplication().getCompanyResearch(), 220);
+        String rawJd = compactQueryText(question.getApplication().getRawJd(), 220);
+
+        addSupportingQuery(queries, joinQueryParts(title, position));
+        addSupportingQuery(queries, joinQueryParts(title, company, position));
+        addSupportingQuery(queries, joinQueryParts(title, position, userDirective));
+        addSupportingQuery(queries, joinQueryParts(title, position, jdInsight, companyResearch));
+        addSupportingQuery(queries, joinQueryParts(title, position, rawJd));
+
+        String normalizedPrimary = safeTrim(primaryQuery);
+        return queries.stream()
+                .filter(query -> !query.equalsIgnoreCase(normalizedPrimary))
+                .limit(4)
+                .toList();
+    }
+
+    private void addSupportingQuery(List<String> target, String query) {
+        String normalized = safeTrim(query);
+        if (normalized.isBlank()) {
+            return;
+        }
+
+        boolean exists = target.stream().anyMatch(existing -> existing.equalsIgnoreCase(normalized));
+        if (!exists) {
+            target.add(normalized);
+        }
+    }
+
+    private String joinQueryParts(String... parts) {
+        return java.util.Arrays.stream(parts)
+                .map(this::safeTrim)
+                .filter(part -> !part.isBlank())
+                .collect(Collectors.joining(" | "));
+    }
+
+    private String compactQueryText(String text, int maxLength) {
+        String normalized = safeTrim(text)
+                .replaceAll("\\s+", " ");
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, maxLength).trim();
+    }
+
     private String buildFilteredContext(WorkspaceQuestion initialQuestion, Long questionId,
             List<Experience> allExperiences) {
         Set<Long> excludedExperienceIds = extractUsedExperienceIds(initialQuestion, questionId, allExperiences);
         List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> selectedContext = experienceVectorRetrievalService
-                .search(initialQuestion.getTitle(), 4, excludedExperienceIds);
+                .search(
+                        initialQuestion.getTitle(),
+                        4,
+                        excludedExperienceIds,
+                        buildSupportingQueries(initialQuestion, initialQuestion.getTitle()));
 
         if (!selectedContext.isEmpty()) {
             return selectedContext.stream()

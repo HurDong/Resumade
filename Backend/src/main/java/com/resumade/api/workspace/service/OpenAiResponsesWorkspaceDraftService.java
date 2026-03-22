@@ -39,9 +39,15 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             If another question already uses a project, prefer a different project or clearly different sub-problem, role, and evidence for this question.
             Prefer wording that can survive detailed interview follow-up.
             Each core example should show role, judgment, action, and result.
+            Think in STAR or CARE internally, but never expose framework labels or section names in the final answer.
+            Write as a natural Korean cover-letter narrative, not as a report, summary sheet, or presentation note.
+            Do not use parenthetical meta labels or bracketed field labels such as (역할: ...), (결정: ...), (실행: ...), (결과: ...), [배경], [행동], or [성과].
+            Do not write first-second-third style mechanical enumeration unless the user explicitly requests it.
             If problem, cause, action, or result is missing, rewrite until the story is complete.
             When a project is first mentioned, include its origin or provenance if the context provides it.
             Avoid ceremonial openings, report-style labels, and list formatting unless the user explicitly asks for them.
+            Do not narrate the answer like an outside evaluator with phrases equivalent to 'this case shows' or 'this experience demonstrates'; write in the applicant's own reflective voice.
+            Prioritize natural Korean self-introduction prose over visibly neat structure.
             Do not drift into a promise-heavy future essay without enough evidence from past actions.
             For shorter answers, focus on one or two role-critical strengths rather than sounding broad.
             Avoid repeating the same project story already used in other questions unless necessary.
@@ -70,9 +76,15 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             If another question already uses a project, prefer a different project or clearly different sub-problem, role, and evidence for this question.
             Prefer wording that can survive detailed interview follow-up.
             Each core example should show role, judgment, action, and result.
+            Think in STAR or CARE internally, but never expose framework labels or section names in the final answer.
+            Write as a natural Korean cover-letter narrative, not as a report, summary sheet, or presentation note.
+            Do not use parenthetical meta labels or bracketed field labels such as (역할: ...), (결정: ...), (실행: ...), (결과: ...), [배경], [행동], or [성과].
+            Do not write first-second-third style mechanical enumeration unless the user explicitly requests it.
             If problem, cause, action, or result is missing, rewrite until the story is complete.
             When a project is first mentioned, include its origin or provenance if the context provides it.
             Avoid ceremonial openings, report-style labels, and list formatting unless the user explicitly asks for them.
+            Do not narrate the answer like an outside evaluator with phrases equivalent to 'this case shows' or 'this experience demonstrates'; write in the applicant's own reflective voice.
+            Prioritize natural Korean self-introduction prose over visibly neat structure.
             Do not drift into a promise-heavy future essay without enough evidence from past actions.
             For shorter answers, focus on one or two role-critical strengths rather than sounding broad.
             Avoid repeating the same project story already used in other questions unless necessary.
@@ -103,9 +115,15 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             If another question already uses a project, prefer a different project or clearly different sub-problem, role, and evidence for this question.
             Prefer wording that can survive detailed interview follow-up.
             Each core example should show role, judgment, action, and result.
+            Think in STAR or CARE internally, but never expose framework labels or section names in the final answer.
+            Write as a natural Korean cover-letter narrative, not as a report, summary sheet, or presentation note.
+            Do not use parenthetical meta labels or bracketed field labels such as (역할: ...), (결정: ...), (실행: ...), (결과: ...), [배경], [행동], or [성과].
+            Do not write first-second-third style mechanical enumeration unless the user explicitly requests it.
             If problem, cause, action, or result is missing, rewrite until the story is complete.
             When a project is first mentioned, include its origin or provenance if the context provides it.
             Avoid ceremonial openings, report-style labels, and list formatting unless the user explicitly asks for them.
+            Do not narrate the answer like an outside evaluator with phrases equivalent to 'this case shows' or 'this experience demonstrates'; write in the applicant's own reflective voice.
+            Prioritize natural Korean self-introduction prose over visibly neat structure.
             Do not drift into a promise-heavy future essay without enough evidence from past actions.
             Never summarize, compress, or weaken already strong factual sentences.
             Never exceed the hard character limit. Count every visible character, including spaces, punctuation, brackets, English letters, numbers, and line breaks, as 1.
@@ -153,7 +171,13 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             - Use only facts and technologies supported by the experience context or explicit user directive
             - Use company context, JD insight, and raw JD according to the Question Intent weighting rule
             - Keep each main example concrete: role, judgment, action, and result
+            - Think in STAR or CARE internally, but never expose structure labels in the final answer
+            - Write as a natural Korean self-introduction narrative, not a report or 발표문
+            - Do not use parenthetical meta labels like (역할: ...), (결정: ...), (실행: ...), (결과: ...)
+            - Do not expose labels such as [배경], [행동], [성과], or similar section markers
+            - Do not use first-second-third style mechanical enumeration unless explicitly requested
             - Avoid ceremonial openings, report-style labels, and list formatting unless explicitly requested
+            - Do not use commentator phrases like '이 사례는 ~를 보여줍니다' when the point can be stated directly in the applicant's voice
             - Avoid future-heavy promises without past evidence
             - Prefer interview-verifiable wording
             - Never exceed the hard limit
@@ -199,7 +223,13 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             - Use only facts and technologies supported by the experience context, current draft, or explicit user directive
             - Use company context, JD insight, and raw JD according to the Question Intent weighting rule
             - Keep each main example concrete: role, judgment, action, and result
+            - Think in STAR or CARE internally, but never expose structure labels in the final answer
+            - Write as a natural Korean self-introduction narrative, not a report or 발표문
+            - Do not use parenthetical meta labels like (역할: ...), (결정: ...), (실행: ...), (결과: ...)
+            - Do not expose labels such as [배경], [행동], [성과], or similar section markers
+            - Do not use first-second-third style mechanical enumeration unless explicitly requested
             - Avoid ceremonial openings, report-style labels, and list formatting unless explicitly requested
+            - Do not use commentator phrases like '이 사례는 ~를 보여줍니다' when the point can be stated directly in the applicant's voice
             - Avoid future-heavy promises without past evidence
             - Prefer interview-verifiable wording
             - Never exceed the hard limit
@@ -245,7 +275,13 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             - Use only facts and technologies supported by the experience context, current draft, or explicit user directive
             - Use company context, JD insight, and raw JD according to the Question Intent weighting rule
             - Keep each main example concrete: role, judgment, action, and result
+            - Think in STAR or CARE internally, but never expose structure labels in the final answer
+            - Write as a natural Korean self-introduction narrative, not a report or 발표문
+            - Do not use parenthetical meta labels like (역할: ...), (결정: ...), (실행: ...), (결과: ...)
+            - Do not expose labels such as [배경], [행동], [성과], or similar section markers
+            - Do not use first-second-third style mechanical enumeration unless explicitly requested
             - Avoid ceremonial openings, report-style labels, and list formatting unless explicitly requested
+            - Do not use commentator phrases like '이 사례는 ~를 보여줍니다' when the point can be stated directly in the applicant's voice
             - Avoid future-heavy promises without past evidence
             - Prefer interview-verifiable wording
             - Never exceed the hard limit
@@ -440,7 +476,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
                 "min_target", String.valueOf(minTarget),
                 "preferred_target", String.valueOf(maxTarget)
         ));
-        if ("refine".equalsIgnoreCase(stage) || "expand".equalsIgnoreCase(stage)) {
+        if ("generate".equalsIgnoreCase(stage)
+                || "refine".equalsIgnoreCase(stage)
+                || "expand".equalsIgnoreCase(stage)) {
             requestBody.put("reasoning", Map.of("effort", "low"));
         }
         requestBody.put("text", buildTextConfig());
