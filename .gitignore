@@ -29,6 +29,7 @@ Frontend/public/
 # Environment files
 .env
 .env.*
+!.env.example
 
 # Temporary commit message file
 COMMIT_MSG.txt
