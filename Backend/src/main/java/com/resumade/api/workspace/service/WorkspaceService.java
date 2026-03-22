@@ -44,7 +44,6 @@ public class WorkspaceService {
             Pattern.CASE_INSENSITIVE);
     private static final int MINIMUM_LENGTH_EXPANSION_ATTEMPTS = 3;
     private static final String LENGTH_RETRY_MARKER = "[LENGTH_RETRY]";
-    private static final double DEFAULT_MIN_TARGET_FLOOR_RATIO = 0.85;
     private static final String NO_EXTRA_USER_DIRECTIVE = "No extra user directive.";
     private static final String STAGE_RAG = "RAG";
     private static final String STAGE_DRAFT = "DRAFT";
@@ -160,33 +159,8 @@ public class WorkspaceService {
 
             paceProcessing();
             sendProgress(emitter, STAGE_WASH, "자연스러운 한국어 문장으로 컴파일하여 세탁본을 완성 중입니다. 🧺");
-            String washedKr = prepareDraftForTranslation(
-                    normalizeTitleSpacing(translationService.translateToKorean(translatedEn)),
-                    maxLength,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others);
-            washedKr = prepareDraftForTranslation(
-                    expandToMinimumLength(
-                            washedKr,
-                            minTargetChars,
-                            maxTargetChars,
-                            maxLength,
-                            company,
-                            position,
-                            questionTitle,
-                            companyContext,
-                            context,
-                            others,
-                            directiveForPrompt),
-                    maxLength,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others);
+            String washedKr = prepareWashedDraft(
+                    translationService.translateToKorean(translatedEn));
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setWashedKr(washedKr);
@@ -335,33 +309,8 @@ public class WorkspaceService {
 
             paceProcessing();
             sendProgress(emitter, STAGE_WASH, "자연스러운 한국어 문장으로 컴파일하여 세탁본을 완성 중입니다. 🧺");
-            String washedKr = prepareDraftForTranslation(
-                    normalizeTitleSpacing(translationService.translateToKorean(translatedEn)),
-                    maxLengthGen,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others);
-            washedKr = prepareDraftForTranslation(
-                    expandToMinimumLength(
-                            washedKr,
-                            minTargetChars,
-                            preferredTargetChars,
-                            maxLengthGen,
-                            company,
-                            position,
-                            questionTitle,
-                            companyContext,
-                            context,
-                            others,
-                            directiveForPrompt),
-                    maxLengthGen,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others);
+            String washedKr = prepareWashedDraft(
+                    translationService.translateToKorean(translatedEn));
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setWashedKr(washedKr);
@@ -462,33 +411,8 @@ public class WorkspaceService {
             int minTargetChars = targetRange[0];
             int preferredTargetChars = targetRange[1];
 
-            String washedKr = prepareDraftForTranslation(
-                    normalizeTitleSpacing(translationService.translateToKorean(translatedEn)),
-                    maxLength,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others);
-            washedKr = prepareDraftForTranslation(
-                    expandToMinimumLength(
-                            washedKr,
-                            minTargetChars,
-                            preferredTargetChars,
-                            maxLength,
-                            company,
-                            position,
-                            questionTitle,
-                            companyContext,
-                            context,
-                            others,
-                            directiveForPrompt),
-                    maxLength,
-                    company,
-                    position,
-                    companyContext,
-                    context,
-                    others);
+            String washedKr = prepareWashedDraft(
+                    translationService.translateToKorean(translatedEn));
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setWashedKr(washedKr);
@@ -750,48 +674,13 @@ public class WorkspaceService {
             Integer targetChars,
             double defaultMinRatio,
             double defaultMaxRatio) {
-        if (targetChars != null && targetChars > 0) {
-            int preferredTarget = targetChars;
-            if (maxLength > 0) {
-                preferredTarget = Math.min(preferredTarget, maxLength);
-            }
-            preferredTarget = Math.max(1, preferredTarget);
-            int minTarget = Math.max(1, (int) Math.round(preferredTarget * 0.90));
-            return new int[] { minTarget, preferredTarget };
-        }
-
-        RequestedLengthDirective requestedLength = extractRequestedLengthDirective(directive, maxLength);
-        if (requestedLength != null) {
-            return new int[] { requestedLength.minimum(), requestedLength.preferredTarget() };
-        }
-
-        if (maxLength <= 0) {
-            return new int[] { 1, 1 };
-        }
-
-        double effectiveMinRatio = Math.max(defaultMinRatio, DEFAULT_MIN_TARGET_FLOOR_RATIO);
-        int preferredTarget = Math.max(1, (int) Math.round(maxLength * defaultMaxRatio));
-        preferredTarget = Math.min(preferredTarget, maxLength);
-
-        int minTarget = Math.max(1, (int) Math.round(maxLength * effectiveMinRatio));
-        minTarget = Math.min(minTarget, preferredTarget);
-        return new int[] { minTarget, preferredTarget };
+        int targetCenter = resolveTargetCenter(maxLength, directive, targetChars, defaultMaxRatio);
+        return createTightTargetWindow(targetCenter, maxLength);
     }
 
     private String augmentDirectiveForPrompt(String directive, int maxLength, Integer targetChars) {
         String normalized = directive == null || directive.isBlank() ? NO_EXTRA_USER_DIRECTIVE : directive.trim();
-        RequestedLengthDirective requestedLength;
-        if (targetChars != null && targetChars > 0) {
-            int preferred = targetChars;
-            if (maxLength > 0) {
-                preferred = Math.min(preferred, maxLength);
-            }
-            preferred = Math.max(1, preferred);
-            int min = Math.max(1, (int) Math.round(preferred * 0.90));
-            requestedLength = new RequestedLengthDirective(min, preferred);
-        } else {
-            requestedLength = extractRequestedLengthDirective(directive, maxLength);
-        }
+        int[] targetRange = resolveTargetRange(maxLength, directive, targetChars, 0.80, 0.95);
         StringBuilder builder = new StringBuilder();
         if (!NO_EXTRA_USER_DIRECTIVE.equals(normalized)) {
             builder.append("Priority rules for this answer:\n");
@@ -803,27 +692,74 @@ public class WorkspaceService {
             builder.append(normalized).append("\n");
         }
 
-        if (requestedLength == null) {
-            return builder.length() == 0 ? normalized : builder.toString().trim();
-        }
-
-        builder.append("Length guidance: minimum required length is ")
-                .append(requestedLength.minimum())
-                .append(" characters. Count visible characters including spaces and line breaks, and treat each visible character as 1.");
-        builder.append(" Preferred target is ")
-                .append(requestedLength.preferredTarget())
-                .append(" characters.");
-
-        if (requestedLength.preferredTarget() > maxLength) {
-            builder.append(" Current hard limit is ")
+        builder.append("Length guidance:\n");
+        builder.append("- Count only the value of the text field in the JSON output.\n");
+        builder.append("- Do not count braces, quotes, key names, or escape characters.\n");
+        builder.append("- Keep the text field between ")
+                .append(targetRange[0])
+                .append(" and ")
+                .append(targetRange[1])
+                .append(" visible characters.\n");
+        if (maxLength > 0) {
+            builder.append("- The hard limit is ")
                     .append(maxLength)
-                    .append(" characters, so stay within that limit while getting as close as possible.");
+                    .append(" characters and is only a safety cap.\n");
+        }
+        builder.append("- Recount before returning. If the answer is short, add concrete evidence and explanation instead of filler.");
+
+        return builder.toString().trim();
+    }
+
+    private int resolveTargetCenter(int maxLength, String directive, Integer targetChars, double defaultMaxRatio) {
+        if (targetChars != null && targetChars > 0) {
+            return clampLengthTarget(targetChars, maxLength);
         }
 
-        builder.append(
-                " Before returning, recount characters and, if the answer is too short, add concrete evidence and explanation before recounting.");
+        RequestedLengthDirective requestedLength = extractRequestedLengthDirective(directive, maxLength);
+        if (requestedLength != null) {
+            return clampLengthTarget(requestedLength.preferredTarget(), maxLength);
+        }
 
-        return builder.toString();
+        if (maxLength <= 0) {
+            return 1;
+        }
+
+        int ratioTarget = Math.max(1, (int) Math.round(maxLength * defaultMaxRatio));
+        int bufferedTarget = Math.max(1, maxLength - resolveHardLimitHeadroom(maxLength));
+        return clampLengthTarget(Math.max(ratioTarget, bufferedTarget), maxLength);
+    }
+
+    private int[] createTightTargetWindow(int targetCenter, int maxLength) {
+        int halfWidth = resolveTargetWindowHalfWidth(targetCenter, maxLength);
+        int lower = Math.max(1, targetCenter - halfWidth);
+        int upper = targetCenter + halfWidth;
+
+        if (maxLength > 0) {
+            upper = Math.min(upper, maxLength);
+        }
+
+        if (upper < lower) {
+            upper = lower;
+        }
+
+        return new int[] { lower, upper };
+    }
+
+    private int resolveHardLimitHeadroom(int maxLength) {
+        return Math.max(12, Math.min(35, (int) Math.round(maxLength * 0.025)));
+    }
+
+    private int resolveTargetWindowHalfWidth(int targetCenter, int maxLength) {
+        int reference = Math.max(targetCenter, maxLength > 0 ? maxLength : targetCenter);
+        return Math.max(8, Math.min(18, (int) Math.round(reference * 0.01)));
+    }
+
+    private int clampLengthTarget(int target, int maxLength) {
+        int clamped = Math.max(1, target);
+        if (maxLength > 0) {
+            clamped = Math.min(clamped, maxLength);
+        }
+        return clamped;
     }
 
     private RequestedLengthDirective extractRequestedLengthDirective(String directive, int maxLength) {
@@ -878,20 +814,12 @@ public class WorkspaceService {
             return minimum;
         }
 
-        if (mentionedLengths.size() == 1) {
-            return mentionedLengths.get(0);
-        }
-
         int ceiling = mentionedLengths.stream()
                 .mapToInt(Integer::intValue)
                 .max()
                 .orElse(minimum);
 
-        if (ceiling <= minimum) {
-            return minimum;
-        }
-
-        return minimum + (int) Math.round((ceiling - minimum) * 0.8);
+        return Math.max(minimum, ceiling);
     }
 
     private String expandToMinimumLength(
@@ -1004,14 +932,15 @@ public class WorkspaceService {
                 .append(" / ")
                 .append(MINIMUM_LENGTH_EXPANSION_ATTEMPTS)
                 .append(".\n");
-        builder.append("Target range for this retry: ")
+        builder.append("Target text-field window for this retry: ")
                 .append(minTargetChars)
                 .append(" to ")
                 .append(preferredTargetChars)
-                .append(" characters.\n");
+                .append(" visible characters.\n");
         builder.append("Hard limit: ")
                 .append(maxLength)
                 .append(" characters.\n");
+        builder.append("Count only the value of the text field. Do not count braces, quotes, key names, or escape characters.\n");
         builder.append("Preserve all strong facts from the current draft.\n");
         builder.append("Expand only missing depth. Do not summarize, compress, or delete existing strong evidence.\n");
         builder.append(
@@ -1360,6 +1289,13 @@ public class WorkspaceService {
         }
 
         return normalized;
+    }
+
+    private String prepareWashedDraft(String text) {
+        if (text == null) {
+            return null;
+        }
+        return normalizeLengthText(normalizeTitleSpacing(text)).trim();
     }
 
     private String normalizeLengthText(String text) {
