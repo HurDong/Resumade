@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
+  ensureTaggedTitle,
   getTranslationProcessingMeta,
   injectHighlightTags,
 } from "@/lib/workspace/translation-panel-helpers"
@@ -148,7 +149,7 @@ export function TranslationPanel() {
 
   const originalContent = aiReviewReport?.taggedOriginalText
     ? injectHighlightTags(
-        aiReviewReport.taggedOriginalText,
+        ensureTaggedTitle(draft || "", aiReviewReport.taggedOriginalText),
         mistranslations,
         hoveredMistranslationId,
         true
@@ -157,7 +158,7 @@ export function TranslationPanel() {
 
   const washedContent = aiReviewReport?.taggedWashedText
     ? injectHighlightTags(
-        aiReviewReport.taggedWashedText,
+        ensureTaggedTitle(washedKr || "", aiReviewReport.taggedWashedText),
         mistranslations,
         hoveredMistranslationId,
         false

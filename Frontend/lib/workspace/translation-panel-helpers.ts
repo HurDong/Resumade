@@ -63,6 +63,27 @@ export function injectHighlightTags(
   });
 }
 
+export function ensureTaggedTitle(sourceText: string, taggedHtml: string) {
+  if (!sourceText || !taggedHtml) {
+    return taggedHtml;
+  }
+
+  const titleMatch = sourceText.match(/^\s*(\[[^\]\n]+\])/);
+  if (!titleMatch) {
+    return taggedHtml;
+  }
+
+  const title = titleMatch[1];
+  const plainTagged = taggedHtml.replace(/<mark\b[^>]*>/g, "").replace(/<\/mark>/g, "").trimStart();
+
+  if (plainTagged.startsWith(title)) {
+    return taggedHtml;
+  }
+
+  const escapedTitle = escapeHtml(title);
+  return `${escapedTitle}\n\n${taggedHtml.trimStart()}`;
+}
+
 function getPipelineLabel(pipelineStage: PipelineStage) {
   if (pipelineStage === "RAG") return "경험 컨텍스트 준비 중";
   if (pipelineStage === "DRAFT") return "초안 다듬는 중";
@@ -108,6 +129,13 @@ function escapeHtmlAttribute(value: string) {
   return value
     .replace(/&/g, "&amp;")
     .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
