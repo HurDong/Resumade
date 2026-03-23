@@ -84,6 +84,31 @@ export function ensureTaggedTitle(sourceText: string, taggedHtml: string) {
   return `${escapedTitle}\n\n${taggedHtml.trimStart()}`;
 }
 
+export function htmlToPlainText(html: string) {
+  if (!html) {
+    return "";
+  }
+
+  if (typeof window === "undefined") {
+    return html.replace(/<[^>]+>/g, "");
+  }
+
+  const container = window.document.createElement("div");
+  container.innerHTML = html;
+  return container.textContent ?? container.innerText ?? "";
+}
+
+export function getDisplayedWashedText(
+  washedKr: string,
+  taggedWashedText?: string
+) {
+  if (!taggedWashedText) {
+    return washedKr || "";
+  }
+
+  return htmlToPlainText(ensureTaggedTitle(washedKr || "", taggedWashedText));
+}
+
 function getPipelineLabel(pipelineStage: PipelineStage) {
   if (pipelineStage === "RAG") return "경험 컨텍스트 준비 중";
   if (pipelineStage === "DRAFT") return "초안 다듬는 중";

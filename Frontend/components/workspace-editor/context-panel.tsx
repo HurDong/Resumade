@@ -12,6 +12,7 @@ import {
   Wand2,
   AlertTriangle,
   Lightbulb,
+  Copy,
   ArrowRight,
   TrendingUp,
   Check,
@@ -32,6 +33,17 @@ import { type PipelineStage, useWorkspaceStore } from "@/lib/store/workspace-sto
 import { parseCompanyResearch } from "@/lib/application-intelligence"
 import { countResumeCharacters } from "@/lib/text/resume-character-count"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { ApplicationInfoQuickCopyDialog } from "@/components/application-info/application-info-quick-copy-dialog"
+import type { TitleSuggestion } from "@/lib/workspace/types"
+import { getDisplayedWashedText } from "@/lib/workspace/translation-panel-helpers"
 
 // Helper for standard character length (including spaces)
 const getLength = (str: string) => {
@@ -263,9 +275,12 @@ export function ContextPanel() {
     isProcessing,
     pipelineStage,
     progressMessage,
-    processingError,
+    processingIssue,
+    processingIssueSeverity,
     refineDraft,
     generateDraft,
+    fetchTitleSuggestions,
+    applyTitleSuggestion,
     applySuggestion,
     updateMistranslationSuggestion,
     dismissMistranslation,
@@ -283,6 +298,12 @@ export function ContextPanel() {
   const [lengthTargetDraft, setLengthTargetDraft] = useState(
     activeQuestion.lengthTarget ? String(activeQuestion.lengthTarget) : ""
   )
+  const [isTitleSuggestionLoading, setIsTitleSuggestionLoading] = useState(false)
+  const [isApplyingTitleSuggestion, setIsApplyingTitleSuggestion] = useState(false)
+  const [isTitleSuggestionDialogOpen, setIsTitleSuggestionDialogOpen] = useState(false)
+  const [titleSuggestions, setTitleSuggestions] = useState<TitleSuggestion[]>([])
+  const [selectedTitleSuggestion, setSelectedTitleSuggestion] = useState("")
+  const [currentTitleLine, setCurrentTitleLine] = useState("")
   const [isCompanyInsightOpen, setIsCompanyInsightOpen] = useState(true)
   const [isRagContextOpen, setIsRagContextOpen] = useState(true)
   const topRef = useRef<HTMLDivElement>(null)
@@ -299,6 +320,10 @@ export function ContextPanel() {
         ? String(activeQuestion.lengthTarget)
         : ""
     )
+    setIsTitleSuggestionDialogOpen(false)
+    setTitleSuggestions([])
+    setSelectedTitleSuggestion("")
+    setCurrentTitleLine("")
   }, [activeQuestion.id])
 
   const { mistranslations, aiReviewReport, washedKr } = activeQuestion
@@ -306,7 +331,10 @@ export function ContextPanel() {
   const pipelineState = getPipelineState(pipelineStage, progressMessage, isProcessing)
   const activeStepIndex = PIPELINE_STEPS.findIndex((step) => step.id === pipelineState.activeStepId)
 
-  const currentCount = getLength(washedKr || activeQuestion.content)
+  const currentCount = getLength(
+    getDisplayedWashedText(washedKr || "", aiReviewReport?.taggedWashedText) ||
+      activeQuestion.content
+  )
   const hasDraft = !!activeQuestion.content
 
   const handleDirectiveChange = (value: string) => {
@@ -361,6 +389,36 @@ export function ContextPanel() {
     refineDraft(directiveDraft, {
       lengthTarget: parseLengthTarget(lengthTargetDraft, activeQuestion.maxLength),
     })
+  }
+
+  const handleRewriteTitle = async () => {
+    setIsTitleSuggestionLoading(true)
+    try {
+      const response = await fetchTitleSuggestions()
+      const candidates = response.candidates ?? []
+      setTitleSuggestions(candidates)
+      setCurrentTitleLine(response.currentTitle ?? "")
+      setSelectedTitleSuggestion(
+        candidates.find((candidate) => candidate.recommended)?.title ?? candidates[0]?.title ?? ""
+      )
+      setIsTitleSuggestionDialogOpen(true)
+    } finally {
+      setIsTitleSuggestionLoading(false)
+    }
+  }
+
+  const handleApplyTitleSuggestion = async () => {
+    if (!selectedTitleSuggestion) {
+      return
+    }
+
+    setIsApplyingTitleSuggestion(true)
+    try {
+      await applyTitleSuggestion(selectedTitleSuggestion)
+      setIsTitleSuggestionDialogOpen(false)
+    } finally {
+      setIsApplyingTitleSuggestion(false)
+    }
   }
 
   return (
@@ -554,6 +612,18 @@ export function ContextPanel() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <ApplicationInfoQuickCopyDialog
+              trigger={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2 rounded-full px-4 font-bold shadow-sm"
+                >
+                  <Copy className="size-3.5" />
+                  {"지원 정보"}
+                </Button>
+              }
+            />
             <Button
               size="sm"
               onClick={handleInitialGenerate}
@@ -580,6 +650,20 @@ export function ContextPanel() {
                 <Wand2 className="size-3.5" />
               )}
               {"\ub2e4\ub4ec\uae30"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleRewriteTitle()}
+              disabled={isProcessing || isTitleSuggestionLoading || !hasDraft}
+              className="gap-2 rounded-full px-4 font-bold shadow-sm"
+            >
+              {isTitleSuggestionLoading ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Lightbulb className="size-3.5" />
+              )}
+              {"\uc81c\ubaa9 \ub2e4\ub4ec\uae30"}
             </Button>
           </div>
         </div>
@@ -656,13 +740,33 @@ export function ContextPanel() {
             </Card>
           )}
 
-          {processingError && !isProcessing && (
-            <Card className="border-destructive/30 bg-destructive/5">
+          {processingIssue && !isProcessing && (
+            <Card
+              className={
+                processingIssueSeverity === "warning"
+                  ? "border-amber-300/70 bg-amber-50/80"
+                  : "border-destructive/30 bg-destructive/5"
+              }
+            >
               <CardContent className="p-4 flex items-start gap-3">
-                <AlertTriangle className="size-4 text-destructive mt-0.5 shrink-0" />
+                <AlertTriangle
+                  className={`size-4 mt-0.5 shrink-0 ${
+                    processingIssueSeverity === "warning"
+                      ? "text-amber-600"
+                      : "text-destructive"
+                  }`}
+                />
                 <div className="space-y-1">
-                  <p className="text-xs font-black uppercase tracking-wider text-destructive">파이프라인 오류</p>
-                  <p className="text-sm text-foreground/80 break-words">{processingError}</p>
+                  <p
+                    className={`text-xs font-black uppercase tracking-wider ${
+                      processingIssueSeverity === "warning"
+                        ? "text-amber-700"
+                        : "text-destructive"
+                    }`}
+                  >
+                    {processingIssueSeverity === "warning" ? "파이프라인 안내" : "파이프라인 오류"}
+                  </p>
+                  <p className="text-sm text-foreground/80 break-words">{processingIssue}</p>
                 </div>
               </CardContent>
             </Card>
@@ -1040,6 +1144,77 @@ export function ContextPanel() {
       )}
         </div>
       </ScrollArea>
+
+      <Dialog open={isTitleSuggestionDialogOpen} onOpenChange={setIsTitleSuggestionDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>제목 후보 추천</DialogTitle>
+            <DialogDescription>
+              AI가 문항 적합도 기준으로 후보를 정렬했습니다. 추천 1개를 기본 선택해두었고, 직접 골라 적용할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {currentTitleLine ? (
+              <div className="rounded-2xl border border-border/70 bg-muted/40 px-4 py-3">
+                <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                  현재 제목
+                </p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{currentTitleLine}</p>
+              </div>
+            ) : null}
+
+            {titleSuggestions.length > 0 ? (
+              titleSuggestions.map((candidate, index) => {
+                const isSelected = selectedTitleSuggestion === candidate.title
+
+                return (
+                  <button
+                    key={`${candidate.title}-${index}`}
+                    type="button"
+                    onClick={() => setSelectedTitleSuggestion(candidate.title)}
+                    className={`w-full rounded-2xl border px-4 py-4 text-left transition-all ${
+                      isSelected
+                        ? "border-primary bg-primary/5 shadow-sm"
+                        : "border-border/70 bg-background hover:border-primary/40 hover:bg-muted/30"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={candidate.recommended ? "default" : "secondary"}>
+                        {candidate.recommended ? "AI 추천" : `${index + 1}순위`}
+                      </Badge>
+                      <Badge variant="outline">적합도 {candidate.score}</Badge>
+                    </div>
+                    <p className="mt-3 text-base font-semibold text-foreground">{candidate.title}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{candidate.reason}</p>
+                  </button>
+                )
+              })
+            ) : (
+              <div className="rounded-2xl border border-dashed border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
+                표시할 제목 후보를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsTitleSuggestionDialogOpen(false)}
+              disabled={isApplyingTitleSuggestion}
+            >
+              닫기
+            </Button>
+            <Button
+              onClick={() => void handleApplyTitleSuggestion()}
+              disabled={!selectedTitleSuggestion || isApplyingTitleSuggestion || titleSuggestions.length === 0}
+            >
+              {isApplyingTitleSuggestion ? <Loader2 className="size-4 animate-spin" /> : null}
+              선택한 제목 적용
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

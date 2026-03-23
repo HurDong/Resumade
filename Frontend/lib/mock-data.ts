@@ -22,7 +22,7 @@ export interface Application {
   rawJd?: string
   aiInsight?: string
   companyResearch?: string
-  result: ApplicationResult
+  result?: ApplicationResult
 }
 
 export interface Experience {

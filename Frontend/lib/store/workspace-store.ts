@@ -8,6 +8,8 @@ import {
 import type {
   ContextItem,
   PipelineStage,
+  TitleSuggestionResponse,
+  WorkspaceCompletionPayload,
   WorkspaceQuestion,
 } from "@/lib/workspace/types";
 import {
@@ -24,6 +26,8 @@ export type {
   ContextItem,
   Mistranslation,
   PipelineStage,
+  TitleSuggestion,
+  TitleSuggestionResponse,
   WorkspaceQuestion,
 } from "@/lib/workspace/types";
 
@@ -51,7 +55,8 @@ interface WorkspaceState {
   pipelineStage: PipelineStage;
   progressMessage: string;
   progressHistory: string[];
-  processingError: string | null;
+  processingIssue: string | null;
+  processingIssueSeverity: "warning" | "error" | null;
   activeStreamController: AbortController | null;
   saveTimeout: SaveTimeoutHandle;
 
@@ -80,10 +85,13 @@ interface WorkspaceState {
   updateProgress: (message: string) => void;
   updateDraftIntermediate: (draft: string) => void;
   updateWashedIntermediate: (washed: string) => void;
-  completeProcessing: (data: any) => void;
+  completeProcessing: (data: WorkspaceCompletionPayload) => void;
   setError: (error: string) => void;
+  setWarning: (warning: string) => void;
   generateDraft: (options?: { useDirective?: boolean; lengthTarget?: number | null }) => Promise<void>;
   refineDraft: (directive: string, options?: { lengthTarget?: number | null }) => Promise<void>;
+  fetchTitleSuggestions: () => Promise<TitleSuggestionResponse>;
+  applyTitleSuggestion: (title: string) => Promise<void>;
   rerunWash: () => Promise<void>;
   rerunPatch: () => Promise<void>;
 }
@@ -172,7 +180,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   pipelineStage: "IDLE",
   progressMessage: "",
   progressHistory: [],
-  processingError: null,
+  processingIssue: null,
+  processingIssueSeverity: null,
   activeStreamController: null,
   saveTimeout: null,
 
@@ -246,8 +255,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const activeQuestion = updatedQuestions.find(q => q.id === state.activeQuestionId);
 
     if (activeQuestion?.dbId && shouldSyncQuestion(updates)) {
-      if (get().saveTimeout) {
-        clearTimeout(get().saveTimeout);
+      const existingSaveTimeout = get().saveTimeout;
+      if (existingSaveTimeout) {
+        clearTimeout(existingSaveTimeout);
       }
 
       const timeout = setTimeout(() => {
@@ -302,7 +312,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       pipelineStage: "IDLE",
       progressMessage: loadingMessage,
       progressHistory: [loadingMessage],
-      processingError: null,
+      processingIssue: null,
+      processingIssueSeverity: null,
     });
 
     try {
@@ -324,7 +335,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         pipelineStage: "IDLE",
         progressMessage: "",
         progressHistory: [],
-        processingError: null,
+        processingIssue: null,
+        processingIssueSeverity: null,
       });
 
       if (mappedQuestions.length > 0 && mappedQuestions[0].dbId) {
@@ -336,7 +348,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         isProcessing: false,
         pipelineStage: "IDLE",
         progressMessage: "Error",
-        processingError: "Failed to load application data.",
+        processingIssue: "Failed to load application data.",
+        processingIssueSeverity: "error",
       });
     }
   },
@@ -402,7 +415,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       pipelineStage: "RAG",
       progressMessage: initialMessage,
       progressHistory: [initialMessage],
-      processingError: null,
+      processingIssue: null,
+      processingIssueSeverity: null,
       leftPanelTab: "context",
       activeStreamController: null,
     });
@@ -439,22 +453,30 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!activeQ) return;
 
     const updatedMistranslations = normalizeCompletionMistranslations(data.mistranslations);
+    const finalWashedDraft = data.humanPatched || data.draft || "";
+    const sourceDraft = data.sourceDraft || activeQ.content;
+    const warningMessage = data.warningMessage || null;
 
     set((state) => ({
       isProcessing: false,
       pipelineStage: "DONE",
       progressMessage: "Completed.",
       progressHistory: appendProgressHistory(state.progressHistory, "Completed."),
-      processingError: null,
+      processingIssue:
+        warningMessage ||
+        (state.processingIssueSeverity === "warning" ? state.processingIssue : null),
+      processingIssueSeverity:
+        warningMessage || state.processingIssueSeverity === "warning" ? "warning" : null,
       activeStreamController: null,
       leftPanelTab: "report",
       questions: state.questions.map((q) =>
         q.id === state.activeQuestionId
           ? {
               ...q,
-              washedKr: data.draft,
+              content: sourceDraft,
+              washedKr: finalWashedDraft,
               mistranslations: updatedMistranslations,
-              aiReviewReport: data.aiReviewReport,
+              aiReviewReport: data.aiReviewReport ?? null,
             }
           : q
       ),
@@ -465,9 +487,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (activeQ.dbId) {
       persistQuestionUpdate({
         ...activeQ,
-        washedKr: data.draft,
+        content: sourceDraft,
+        washedKr: finalWashedDraft,
         mistranslations: updatedMistranslations,
-        aiReviewReport: data.aiReviewReport,
+        aiReviewReport: data.aiReviewReport ?? null,
       }).catch((err) => console.error("Initial wash save failed", err));
     }
   },
@@ -480,9 +503,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         pipelineStage: "IDLE",
         progressMessage: message,
         progressHistory: appendProgressHistory(state.progressHistory, message),
-        processingError: message,
+        processingIssue: message,
+        processingIssueSeverity: "error",
         activeStreamController: null,
         leftPanelTab: "context",
+      };
+    }),
+
+  setWarning: (warning) =>
+    set((state) => {
+      const message = warning || "A warning occurred.";
+      return {
+        progressMessage: message,
+        progressHistory: appendProgressHistory(state.progressHistory, message),
+        processingIssue: message,
+        processingIssueSeverity: "warning",
       };
     }),
 
@@ -550,6 +585,84 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       get,
       errorFallbackMessage: "An error occurred while refining the draft.",
     });
+  },
+
+  fetchTitleSuggestions: async () => {
+    const state = get();
+    const emptyResponse: TitleSuggestionResponse = { currentTitle: "", candidates: [] };
+    let activeQ;
+    try {
+      activeQ = await ensureQuestionPersisted(state);
+    } catch (error) {
+      console.error("Failed to persist question before title rewrite", error);
+      state.setError("An error occurred while saving the question.");
+      return emptyResponse;
+    }
+
+    if (!activeQ?.dbId) {
+      state.setError("Could not find a valid question ID.");
+      return emptyResponse;
+    }
+
+    try {
+      const response = await fetch(toApiUrl(`/api/workspace/title-suggestions/${activeQ.dbId}`));
+      if (!response.ok) {
+        throw new Error("Failed to fetch title suggestions");
+      }
+
+      return (await response.json()) as TitleSuggestionResponse;
+    } catch (error) {
+      console.error("Title suggestion fetch failed", error);
+      state.setError("An error occurred while loading title suggestions.");
+      return emptyResponse;
+    }
+  },
+
+  applyTitleSuggestion: async (title: string) => {
+    const state = get();
+    let activeQ;
+    try {
+      activeQ = await ensureQuestionPersisted(state);
+    } catch (error) {
+      console.error("Failed to persist question before title apply", error);
+      state.setError("An error occurred while saving the question.");
+      return;
+    }
+
+    if (!activeQ?.dbId) {
+      state.setError("Could not find a valid question ID.");
+      return;
+    }
+
+    try {
+      const response = await fetch(toApiUrl(`/api/workspace/title/${activeQ.dbId}`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to apply title suggestion");
+      }
+
+      const updatedQuestion = mapStoredQuestion(await response.json());
+      set((current) => ({
+        processingIssue: null,
+        processingIssueSeverity: null,
+        questions: current.questions.map((question) =>
+          question.id === activeQ.id
+            ? {
+                ...question,
+                ...updatedQuestion,
+                id: question.id,
+                lengthTarget: question.lengthTarget,
+              }
+            : question
+        ),
+      }));
+    } catch (error) {
+      console.error("Title suggestion apply failed", error);
+      state.setError("An error occurred while applying the title.");
+    }
   },
 
   rerunWash: async () => {
@@ -740,12 +853,20 @@ async function runWorkspaceSse({
             parsed?.message || parseSseMessage(data) || errorFallbackMessage
           );
           controller.abort();
+          return;
+        }
+
+        if (eventName === "warning") {
+          const parsed = parseSseJson(data);
+          get().setWarning(
+            parsed?.message || parseSseMessage(data) || "A warning occurred."
+          );
         }
       },
     });
 
     const state = get();
-    if (state.isProcessing && !state.processingError) {
+    if (state.isProcessing && state.processingIssueSeverity !== "error") {
       state.setError("The stream ended unexpectedly.");
     }
   } catch (error) {

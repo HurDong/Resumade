@@ -28,6 +28,7 @@ export function WorkspaceSelector() {
             company: app.companyName || "무제",
             position: app.position || "직무 미정",
             deadline: app.deadline,
+            techStack: [],
             logoColor: app.logoColor || "bg-primary",
             logoUrl: app.logoUrl,
             status: app.status,

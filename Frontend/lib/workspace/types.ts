@@ -24,6 +24,17 @@ export interface AiReviewReport {
   readability?: number;
 }
 
+export interface WorkspaceCompletionPayload {
+  draft: string;
+  humanPatched?: string;
+  sourceDraft?: string;
+  usedFallbackDraft?: boolean;
+  fallbackDraft?: string | null;
+  warningMessage?: string | null;
+  mistranslations?: Mistranslation[];
+  aiReviewReport?: AiReviewReport | null;
+}
+
 export interface WorkspaceQuestion {
   id: string;
   dbId?: number;
@@ -36,6 +47,18 @@ export interface WorkspaceQuestion {
   mistranslations: Mistranslation[];
   aiReviewReport: AiReviewReport | null;
   isCompleted: boolean;
+}
+
+export interface TitleSuggestion {
+  title: string;
+  score: number;
+  reason: string;
+  recommended: boolean;
+}
+
+export interface TitleSuggestionResponse {
+  currentTitle: string;
+  candidates: TitleSuggestion[];
 }
 
 export interface ContextItem {

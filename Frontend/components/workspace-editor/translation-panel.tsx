@@ -1,6 +1,6 @@
 "use client"
 
-import type { MouseEvent, ReactNode } from "react"
+import type { ClipboardEvent, MouseEvent, ReactNode } from "react"
 import {
   AlertTriangle,
   CheckCircle,
@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   ensureTaggedTitle,
+  getDisplayedWashedText,
   getTranslationProcessingMeta,
   injectHighlightTags,
 } from "@/lib/workspace/translation-panel-helpers"
@@ -37,6 +38,7 @@ interface DraftCardProps {
   titleClassName?: string
   contentClassName: string
   overlay?: ProcessingOverlayProps
+  onCopy?: (event: ClipboardEvent<HTMLDivElement>) => void
 }
 
 function EmptyTranslationState() {
@@ -87,6 +89,7 @@ function DraftCard({
   titleClassName,
   contentClassName,
   overlay,
+  onCopy,
 }: DraftCardProps) {
   return (
     <Card className={className}>
@@ -109,10 +112,13 @@ function DraftCard({
         {renderHtml ? (
           <div
             className={contentClassName}
+            onCopy={onCopy}
             dangerouslySetInnerHTML={{ __html: content }}
           />
         ) : (
-          <div className={contentClassName}>{content}</div>
+          <div className={contentClassName} onCopy={onCopy}>
+            {content}
+          </div>
         )}
         {overlay ? <ProcessingOverlay {...overlay} /> : null}
       </CardContent>
@@ -127,7 +133,8 @@ export function TranslationPanel() {
     isProcessing,
     pipelineStage,
     progressMessage,
-    processingError,
+    processingIssue,
+    processingIssueSeverity,
     hoveredMistranslationId,
     setHoveredMistranslationId,
     rerunWash,
@@ -165,6 +172,11 @@ export function TranslationPanel() {
       )
     : washedKr || ""
 
+  const displayedWashedText = getDisplayedWashedText(
+    washedKr || "",
+    aiReviewReport?.taggedWashedText
+  )
+
   const handleHighlightMouseOver = (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target instanceof Element ? event.target : null
     const misId = target?.closest("[data-mis-id]")?.getAttribute("data-mis-id")
@@ -172,22 +184,51 @@ export function TranslationPanel() {
   }
 
   const copyWashedDraft = async () => {
-    await navigator.clipboard.writeText(washedKr)
+    await navigator.clipboard.writeText(displayedWashedText)
     toast.success("클립보드에 복사했습니다.", {
       description: "결과물을 바로 붙여넣기할 수 있습니다.",
       position: "top-center",
     })
   }
 
+  const handleWashedDraftCopy = (event: ClipboardEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.clipboardData.setData("text/plain", displayedWashedText)
+  }
+
   if (!draft && !washedKr && !isProcessing) {
     return <EmptyTranslationState />
   }
 
+  const statusBanner = isProcessing ? (
+    <Badge
+      variant="secondary"
+      className="animate-in fade-in zoom-in-95 flex min-h-11 w-full items-start gap-2 whitespace-normal rounded-xl px-3 py-2 text-left sm:px-4"
+      title={progressMessage}
+    >
+      <div className="mt-1 size-2 shrink-0 rounded-full bg-primary animate-pulse" />
+      <span className="break-words text-xs font-bold leading-5">{progressMessage}</span>
+    </Badge>
+  ) : !isProcessing && processingIssue ? (
+    <Badge
+      variant={processingIssueSeverity === "error" ? "destructive" : "outline"}
+      className={`flex min-h-11 w-full items-start gap-2 whitespace-normal rounded-xl px-3 py-2 text-left sm:px-4 ${
+        processingIssueSeverity === "warning"
+          ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300"
+          : ""
+      }`}
+      title={processingIssue}
+    >
+      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+      <span className="break-words text-xs font-bold leading-5">{processingIssue}</span>
+    </Badge>
+  ) : null
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-muted/10">
       <div className="sticky top-0 z-10 shrink-0 border-b border-border bg-background/50 p-6 backdrop-blur-md">
-        <div className="flex items-center justify-between gap-4">
-          <div>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
             <h3 className="flex items-center gap-2 text-lg font-bold">
               <CheckCircle className="size-5 text-emerald-500" />
               휴먼 패치 결과
@@ -196,49 +237,40 @@ export function TranslationPanel() {
               번역 루프로 세탁된 원고를 의미 충실도 기준으로 검토한 결과입니다.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 gap-2 rounded-lg border-primary/20 px-3 text-[11px] font-bold shadow-sm transition-all hover:bg-primary/5"
-              onClick={() => void rerunWash()}
-              disabled={!draft || isProcessing}
-            >
-              <RefreshCw className="size-3.5" />
-              재세탁
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 gap-2 rounded-lg border-primary/20 px-3 text-[11px] font-bold shadow-sm transition-all hover:bg-primary/5"
-              onClick={() => void rerunPatch()}
-              disabled={!draft || !washedKr || isProcessing}
-            >
-              <ScanSearch className="size-3.5" />
-              재패치
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 gap-2 rounded-lg border-primary/20 px-3 text-[11px] font-bold shadow-sm transition-all hover:bg-primary/5"
-              onClick={() => void copyWashedDraft()}
-              disabled={!washedKr}
-            >
-              <Copy className="size-3.5" />
-              복사
-            </Button>
-            {isProcessing ? (
-              <Badge variant="secondary" className="animate-in fade-in zoom-in-95 gap-2 px-3 py-1.5">
-                <div className="size-2 rounded-full bg-primary animate-pulse" />
-                <span className="text-[11px] font-bold">{progressMessage}</span>
-              </Badge>
-            ) : null}
-            {!isProcessing && processingError ? (
-              <Badge variant="destructive" className="max-w-full gap-2 px-3 py-1.5">
-                <AlertTriangle className="size-3.5 shrink-0" />
-                <span className="break-all text-[11px] font-bold">{processingError}</span>
-              </Badge>
-            ) : null}
+          <div className="flex w-full flex-col gap-2 lg:w-[min(44rem,56%)] lg:shrink-0">
+            {statusBanner}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-2 rounded-lg border-primary/20 px-3 text-[11px] font-bold shadow-sm transition-all hover:bg-primary/5"
+                onClick={() => void rerunWash()}
+                disabled={!draft || isProcessing}
+              >
+                <RefreshCw className="size-3.5" />
+                재세탁
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-2 rounded-lg border-primary/20 px-3 text-[11px] font-bold shadow-sm transition-all hover:bg-primary/5"
+                onClick={() => void rerunPatch()}
+                disabled={!draft || !washedKr || isProcessing}
+              >
+                <ScanSearch className="size-3.5" />
+                재패치
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-2 rounded-lg border-primary/20 px-3 text-[11px] font-bold shadow-sm transition-all hover:bg-primary/5"
+                onClick={() => void copyWashedDraft()}
+                disabled={!washedKr}
+              >
+                <Copy className="size-3.5" />
+                복사
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -279,6 +311,7 @@ export function TranslationPanel() {
               icon={<CheckCircle className="size-3.5 text-primary" />}
               content={washedContent}
               renderHtml={Boolean(aiReviewReport?.taggedWashedText)}
+              onCopy={handleWashedDraftCopy}
               className="border-primary/20 bg-background shadow-lg ring-1 ring-primary/5"
               titleClassName="text-primary"
               contentClassName={
