@@ -1,140 +1,71 @@
-"use client"
+"use client";
 
-import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
-import { AppSidebar } from "@/components/app-sidebar"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Separator } from "@/components/ui/separator"
-import { Bell, Globe, Key, User } from "lucide-react"
+import { Archive, CopyPlus, Settings2 } from "lucide-react";
+import { AppSidebar } from "@/components/app-sidebar";
+import { ApplicationInfoLibrary } from "@/components/application-info/application-info-library";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 export default function SettingsPage() {
   return (
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <div className="flex h-screen flex-col">
-          <header className="flex h-16 shrink-0 items-center gap-4 border-b border-border bg-background px-8">
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight">설정</h1>
-              <p className="text-sm text-muted-foreground">
-                환경설정과 계정 정보를 관리합니다.
-              </p>
+        <div className="flex h-screen flex-col bg-muted/20">
+          <header className="shrink-0 border-b border-border bg-background/95 px-8 py-7 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-start justify-between gap-6">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-primary">
+                  <Settings2 className="size-4" />
+                  <span className="text-xs font-black uppercase tracking-[0.28em]">
+                    Profile Vault
+                  </span>
+                </div>
+                <div>
+                  <h1 className="text-3xl font-black tracking-tight text-foreground">
+                    지원 정보 라이브러리
+                  </h1>
+                  <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">
+                    실제 공채 지원서에 반복해서 넣는 등록번호, 기간, 활동 설명을 카드처럼 저장합니다.
+                    저장한 항목은 작업실과 대시보드에서 바로 열어 한 줄 요약 또는 상세 포맷으로 복사할 수
+                    있습니다.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid min-w-[280px] gap-3 sm:grid-cols-2">
+                <div className="rounded-[26px] border border-primary/15 bg-primary/[0.06] p-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <Archive className="size-4" />
+                    <p className="text-[11px] font-black uppercase tracking-[0.24em]">
+                      저장
+                    </p>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-foreground/80">
+                    자격증, 수상, 활동, 외국어 정보를 분류해 누적 관리합니다.
+                  </p>
+                </div>
+                <div className="rounded-[26px] border border-border/70 bg-background p-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <CopyPlus className="size-4" />
+                    <p className="text-[11px] font-black uppercase tracking-[0.24em]">
+                      복사
+                    </p>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-foreground/80">
+                    요약 복사와 상세 복사를 분리해 지원 사이트 양식에 맞춰 빠르게 붙여넣습니다.
+                  </p>
+                </div>
+              </div>
             </div>
           </header>
-          <main className="flex-1 overflow-auto bg-muted/30 p-6">
-            <div className="mx-auto max-w-3xl space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <User className="size-5" />
-                    프로필 설정
-                  </CardTitle>
-                  <CardDescription>
-                    계정 기본 정보를 확인합니다.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="name">이름</Label>
-                    <Input id="name" defaultValue="김개발" />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="email">이메일</Label>
-                    <Input id="email" type="email" defaultValue="dev.kim@example.com" />
-                  </div>
-                </CardContent>
-              </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Key className="size-5" />
-                    API 연결
-                  </CardTitle>
-                  <CardDescription>
-                    외부 생성형 AI API 키를 관리합니다.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="openai">OpenAI API Key</Label>
-                    <Input id="openai" type="password" placeholder="sk-..." />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="gemini">Gemini API Key</Label>
-                    <Input id="gemini" type="password" placeholder="AIza..." />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Bell className="size-5" />
-                    알림 설정
-                  </CardTitle>
-                  <CardDescription>
-                    알림 수신 방식을 설정합니다.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>마감일 알림</Label>
-                      <p className="text-sm text-muted-foreground">
-                        채용 공고 마감 3일 전 알림을 받습니다.
-                      </p>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>AI 분석 완료 알림</Label>
-                      <p className="text-sm text-muted-foreground">
-                        JD 분석이나 기업 분석이 완료되면 알려줍니다.
-                      </p>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Globe className="size-5" />
-                    언어 및 지역
-                  </CardTitle>
-                  <CardDescription>
-                    서비스 언어와 지역 설정을 확인합니다.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>인터페이스 언어</Label>
-                      <p className="text-sm text-muted-foreground">
-                        현재 한국어로 설정되어 있습니다.
-                      </p>
-                    </div>
-                    <Button variant="outline" size="sm">
-                      변경 예정
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="flex justify-end">
-                <Button>설정 저장</Button>
-              </div>
+          <main className="flex-1 overflow-auto px-6 py-6">
+            <div className="mx-auto w-full max-w-7xl">
+              <ApplicationInfoLibrary />
             </div>
           </main>
         </div>
       </SidebarInset>
     </SidebarProvider>
-  )
+  );
 }
