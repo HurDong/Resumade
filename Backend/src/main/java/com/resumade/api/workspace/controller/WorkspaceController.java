@@ -1,9 +1,13 @@
 package com.resumade.api.workspace.controller;
 
+import com.resumade.api.workspace.dto.ApplyTitleSuggestionRequest;
+import com.resumade.api.workspace.dto.TitleSuggestionResponse;
 import com.resumade.api.workspace.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -53,5 +57,17 @@ public class WorkspaceController {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
         executorService.execute(() -> workspaceService.processRepatch(questionId, emitter));
         return emitter;
+    }
+
+    @GetMapping("/title-suggestions/{questionId}")
+    public TitleSuggestionResponse suggestTitles(@PathVariable Long questionId) {
+        return workspaceService.suggestTitles(questionId);
+    }
+
+    @PostMapping("/title/{questionId}")
+    public com.resumade.api.workspace.domain.WorkspaceQuestion applyTitleSuggestion(
+            @PathVariable Long questionId,
+            @RequestBody ApplyTitleSuggestionRequest request) {
+        return workspaceService.applyTitleSuggestion(questionId, request.getTitle());
     }
 }

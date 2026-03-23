@@ -10,13 +10,26 @@ public interface WorkspaceDraftAiService {
         public String text;
     }
 
+    class TitleCandidate {
+        public String title;
+        public Integer score;
+        public String reason;
+    }
+
+    class TitleCandidatesResponse {
+        public java.util.List<TitleCandidate> candidates;
+    }
+
     @SystemMessage({
             "You write Korean self-introduction answers.",
             "Always return a JSON object with the shape {\"text\":\"...\"}.",
             "Count only the value of the text field. Do not count braces, quotes, key names, or escape characters.",
             "Write in Korean.",
             "Start with a bracketed title like [Title].",
-            "The title must be short, memorable, and must not summarize the question or repeat the company name, position name, or question wording.",
+            "The title must read like a concrete cover-letter headline grounded in action, result, role fit, or contribution.",
+            "Prefer action + result, problem + resolution, or role + concrete value over a short slogan.",
+            "Do not summarize the question or repeat the company name, position name, or question wording.",
+            "Avoid generic meta titles such as [성장 경험], [문제 해결], [협업 역량], [지원동기], or similar labels.",
             "The first sentence must answer the question directly in a conclusion-first way.",
             "Use only facts and technologies supported by the supplied experience context. Do not invent experience, metrics, or unlisted tools.",
             "Read the Question Intent block first and obey its weighting rule.",
@@ -76,7 +89,10 @@ public interface WorkspaceDraftAiService {
             - Treat the "other questions" block as a hard anti-overlap constraint
             - Do not reuse the same main project, title, opening claim, or action-result storyline already used in another question unless explicitly required
             - If another question already uses a project, prefer a different project or a clearly different sub-problem, role, and evidence
+            - The title must read like a concrete cover-letter headline grounded in action, result, role fit, or contribution
+            - Prefer action + result, problem + resolution, or role + concrete value over a short slogan
             - The title must not summarize the question or repeat the company, position, or question wording
+            - Avoid generic meta titles such as [성장 경험], [문제 해결], [협업 역량], [지원동기], or similar labels
             - Answer directly in the first sentence
             - Follow the requested paragraph structure or technical depth if provided
             - Use only facts and technologies supported by the experience context
@@ -113,7 +129,10 @@ public interface WorkspaceDraftAiService {
             "Write in Korean.",
             "Preserve the strong facts from the current draft while improving structure, specificity, and job fit.",
             "Keep the bracketed title format.",
-            "The title must be short, memorable, and must not summarize the question or repeat the company name, position name, or question wording.",
+            "The title must read like a concrete cover-letter headline grounded in action, result, role fit, or contribution.",
+            "Prefer action + result, problem + resolution, or role + concrete value over a short slogan.",
+            "Do not summarize the question or repeat the company name, position name, or question wording.",
+            "Avoid generic meta titles such as [성장 경험], [문제 해결], [협업 역량], [지원동기], or similar labels.",
             "The first sentence must answer the question directly in a conclusion-first way.",
             "Use only facts and technologies supported by the supplied experience context. Do not invent experience, metrics, or unlisted tools.",
             "Read the Question Intent block first and obey its weighting rule.",
@@ -175,7 +194,10 @@ public interface WorkspaceDraftAiService {
             - Treat the "other questions" block as a hard anti-overlap constraint
             - Do not reuse the same main project, title, opening claim, or action-result storyline already used in another question unless explicitly required
             - If another question already uses a project, prefer a different project or a clearly different sub-problem, role, and evidence
+            - The title must read like a concrete cover-letter headline grounded in action, result, role fit, or contribution
+            - Prefer action + result, problem + resolution, or role + concrete value over a short slogan
             - The title must not summarize the question or repeat the company, position, or question wording
+            - Avoid generic meta titles such as [성장 경험], [문제 해결], [협업 역량], [지원동기], or similar labels
             - Answer directly in the first sentence
             - Follow the requested paragraph structure or technical depth if provided
             - Use only facts and technologies supported by the experience context
@@ -261,10 +283,15 @@ public interface WorkspaceDraftAiService {
             "Write in Korean.",
             "Only improve the title. Keep the body unchanged unless absolutely necessary for spacing.",
             "Keep the title in bracket form like [Title].",
-            "The title must be short, memorable, and centered on value, stance, strength, or contribution.",
+            "The title must read like a concrete cover-letter headline grounded in action, result, role fit, or contribution.",
+            "Internally draft multiple candidate titles and choose the most natural one.",
+            "Prefer action + result, problem + resolution, or role + concrete value over a short slogan.",
+            "Use a metric only when it is explicitly supported by the current text or supplied context.",
             "Do not use a question-summary title.",
             "Do not repeat the company name, position name, or question wording.",
-            "Do not turn the title into a report label or a meta category such as [역할], [결정], [성과 요약], or similar."
+            "Do not use first-person pronouns such as 저는 or 저의.",
+            "Do not turn the title into a report label or a meta category such as [역할], [결정], [성과 요약], [성장 경험], [문제 해결], [협업 역량], or similar.",
+            "Avoid vague buzzwords such as 성실, 열정, 노력, 도전정신, or bare nouns like 경험, 역량, 성장, 협업 unless they are anchored by a specific action or outcome."
     })
     @UserMessage("""
             Company: {{company}}
@@ -285,11 +312,62 @@ public interface WorkspaceDraftAiService {
             Requirements:
             - Keep the body content unchanged
             - Replace only the title line
-            - The new title should usually be concise, memorable, and not exceed about 18 Korean characters inside the brackets
-            - Avoid generic labels or question summaries
+            - Internally draft 4 to 6 different title candidates and choose the single best one
+            - The new title should usually be around 18 to 28 Korean characters inside the brackets when natural
+            - Favor action + result, problem + resolution, or role + concrete value
+            - Use a metric only when it is explicitly supported by the current text or supplied context
+            - Avoid generic labels, vague buzzwords, or question summaries
             - Return only the full updated text in the required JSON shape
             """)
     DraftResponse rewriteTitle(
+            @V("company") String company,
+            @V("position") String position,
+            @V("question") String question,
+            @V("companyContext") String companyContext,
+            @V("input") String input,
+            @V("context") String context);
+
+    @SystemMessage({
+            "You write Korean self-introduction titles.",
+            "Always return a JSON object with the shape {\"candidates\":[{\"title\":\"...\",\"score\":0,\"reason\":\"...\"}]}",
+            "Write in Korean.",
+            "Generate 4 to 5 title candidates.",
+            "Each title must stay in bracket form like [Title].",
+            "Each title must read like a concrete cover-letter headline grounded in action, result, role fit, or contribution.",
+            "Prefer action + result, problem + resolution, or role + concrete value over a short slogan.",
+            "Use a metric only when it is explicitly supported by the current text or supplied context.",
+            "Do not use question-summary titles.",
+            "Do not repeat the company name, position name, or question wording.",
+            "Do not use first-person pronouns.",
+            "Do not turn titles into report labels or meta categories such as [역할], [결정], [결과 요약], [성장 경험], [문제 해결], [협업 역량], or similar.",
+            "Avoid vague buzzwords or bare nouns unless anchored by a specific action or outcome.",
+            "Score should be an integer from 0 to 100 reflecting fitness for this exact question and current draft.",
+            "Reason must be one concise Korean sentence explaining why the title fits."
+    })
+    @UserMessage("""
+            Company: {{company}}
+            Position: {{position}}
+            Question: {{question}}
+            Company context:
+            {{companyContext}}
+
+            Current text:
+            {{input}}
+
+            Experience context:
+            {{context}}
+
+            Goal:
+            Propose title candidates for this self-introduction answer.
+
+            Requirements:
+            - Generate 4 to 5 candidates
+            - Rank by fitness for this question and current draft
+            - Keep the body unchanged; only propose title lines
+            - Favor titles that are concrete, interview-verifiable, and non-generic
+            - Return only the required JSON shape
+            """)
+    TitleCandidatesResponse suggestTitles(
             @V("company") String company,
             @V("position") String position,
             @V("question") String question,

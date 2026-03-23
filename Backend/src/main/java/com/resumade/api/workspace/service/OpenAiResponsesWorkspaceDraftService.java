@@ -21,6 +21,20 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
 
     private static final String RESPONSES_API_URL = "https://api.openai.com/v1/responses";
     private static final String LENGTH_RETRY_MARKER = "[LENGTH_RETRY]";
+    private static final double ESTIMATED_OUTPUT_TOKENS_PER_VISIBLE_CHAR = 1.45;
+    private static final int OUTPUT_TOKEN_JSON_OVERHEAD = 96;
+    private static final int MIN_OUTPUT_TOKEN_BUDGET = 700;
+    private static final double GENERATE_REASONING_RESERVE_RATIO = 0.55;
+    private static final double REFINE_REASONING_RESERVE_RATIO = 0.45;
+    private static final double EXPAND_REASONING_RESERVE_RATIO = 0.30;
+    private static final int GENERATE_REASONING_RESERVE_FLOOR = 480;
+    private static final int REFINE_REASONING_RESERVE_FLOOR = 400;
+    private static final int EXPAND_REASONING_RESERVE_FLOOR = 280;
+    private static final int GENERATE_REASONING_RESERVE_CEILING = 960;
+    private static final int REFINE_REASONING_RESERVE_CEILING = 820;
+    private static final int EXPAND_REASONING_RESERVE_CEILING = 560;
+    private static final int SHORT_OUTPUT_RETRY_LIMIT = 2;
+    private static final double MIN_ACCEPTABLE_DRAFT_RATIO = 0.875;
 
     private static final String GENERATE_SYSTEM_PROMPT = """
             You write Korean self-introduction answers.
@@ -303,7 +317,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             You write Korean self-introduction answers in Korean.
             Return JSON only with exactly this shape: {"text":"..."}.
             Count only the value of the text field. Do not count braces, quotes, key names, or escape characters.
-            Aim for the requested target window. The server enforces the final hard limit downstream.
+            Aim for the requested target window and stay below the hard limit with margin. Treat over-limit output as invalid.
             Start with a bracketed title like [Title].
             The title must be short and must not repeat the company, position, or question wording.
             The first sentence must answer the question directly.
@@ -451,6 +465,18 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
         return fallback.rewriteTitle(company, position, question, companyContext, input, context);
     }
 
+    @Override
+    public TitleCandidatesResponse suggestTitles(
+            String company,
+            String position,
+            String question,
+            String companyContext,
+            String input,
+            String context
+    ) {
+        return fallback.suggestTitles(company, position, question, companyContext, input, context);
+    }
+
     private String buildCompactSystemPrompt(String stage, boolean isLengthRetry) {
         StringBuilder builder = new StringBuilder(COMPACT_BASE_SYSTEM_PROMPT.trim());
         String stageNote = "generate".equalsIgnoreCase(stage)
@@ -481,7 +507,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
                 Question: %s
                 Hard limit: %d characters
                 Target text-field window: %d to %d visible characters
-                Priority: land inside the target window. The server trims to the hard limit downstream if needed
+                Priority: land inside the target window and stay below the hard limit with margin. Over-limit output is invalid.
 
                 Company context:
                 %s
@@ -542,7 +568,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
                 Position: %s
                 Hard limit: %d characters
                 Target text-field window: %d to %d visible characters
-                Priority: land inside the target window. The server trims to the hard limit downstream if needed
+                Priority: land inside the target window and stay below the hard limit with margin. Over-limit output is invalid.
 
                 Company context:
                 %s
@@ -594,33 +620,78 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             return fallbackCall.invoke();
         }
 
-        JsonNode response = null;
-        try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(apiKey.trim());
+        String promptForAttempt = userPrompt;
+        for (int attempt = 0; attempt <= SHORT_OUTPUT_RETRY_LIMIT; attempt++) {
+            JsonNode response = null;
+            try {
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.setBearerAuth(apiKey.trim());
 
-            // logFinalPrompt(stage, systemPrompt, userPrompt, maxLength, minTarget, maxTarget);
-            Map<String, Object> requestBody = buildRequestBody(systemPrompt, userPrompt, maxLength, minTarget, maxTarget, stage);
-            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-            response = restTemplate.postForObject(RESPONSES_API_URL, entity, JsonNode.class);
+                Map<String, Object> requestBody = buildRequestBody(systemPrompt, promptForAttempt, maxLength, minTarget, maxTarget, stage);
+                HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+                response = restTemplate.postForObject(RESPONSES_API_URL, entity, JsonNode.class);
 
-            if (response == null) {
-                throw new IllegalStateException("Responses API returned no body");
+                if (response == null) {
+                    throw new IllegalStateException("Responses API returned no body");
+                }
+
+                if (shouldFallbackToLegacy(response)) {
+                    log.warn(
+                            "Responses API exhausted output budget before emitting draft content. Falling back to legacy chat model. stage={} model={} reason={} outputTokens={} reasoningTokens={}",
+                            stage,
+                            response.path("model").asText(modelName),
+                            response.path("incomplete_details").path("reason").asText("unknown"),
+                            response.path("usage").path("output_tokens").asInt(-1),
+                            response.path("usage").path("output_tokens_details").path("reasoning_tokens").asInt(-1));
+                    return fallbackCall.invoke();
+                }
+
+                DraftResponse draftResponse = parseDraftResponse(response);
+                int actualChars = countVisibleCharacters(draftResponse.text);
+                String status = resolveLengthStatus(actualChars, minTarget, maxLength);
+                log.info("{} AI 초안 생성 | 단계={} | 상태={} | 초안군=- | 시도=- | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={} | 모델={}",
+                        resolveStageIcon(stage, status),
+                        toKoreanStage(stage),
+                        toKoreanStatus(status),
+                        actualChars,
+                        minTarget,
+                        maxTarget,
+                        maxLength,
+                        "워크스페이스로 반환",
+                        modelName);
+
+                if (!shouldRetryForShortOutput(stage, actualChars, minTarget) || attempt == SHORT_OUTPUT_RETRY_LIMIT) {
+                    return draftResponse;
+                }
+
+                int acceptableFloor = resolveAcceptableRetryFloor(minTarget);
+                int missingChars = Math.max(1, acceptableFloor - actualChars);
+                log.warn(
+                        "Responses API draft was far below the acceptable floor. Retrying stage={} attempt={} actualChars={} acceptableFloor={} minTarget={} maxTarget={}",
+                        stage,
+                        attempt + 1,
+                        actualChars,
+                        acceptableFloor,
+                        minTarget,
+                        maxTarget);
+                promptForAttempt = buildShortOutputRetryPrompt(promptForAttempt, actualChars, acceptableFloor, maxTarget, missingChars);
+            } catch (Exception e) {
+                logResponseFailureDetails(stage, response, e);
+                if (isIncompleteMaxOutputTokens(response)) {
+                    log.warn(
+                            "Responses API draft call hit max_output_tokens after partial content. Falling back to legacy chat model. stage={} model={} outputTokens={} reasoningTokens={}",
+                            stage,
+                            response.path("model").asText(modelName),
+                            response.path("usage").path("output_tokens").asInt(-1),
+                            response.path("usage").path("output_tokens_details").path("reasoning_tokens").asInt(-1));
+                } else {
+                    log.warn("Responses API draft call failed. Falling back to legacy chat model. model={}", modelName, e);
+                }
+                return fallbackCall.invoke();
             }
-
-            DraftResponse draftResponse = parseDraftResponse(response);
-            int actualChars = countVisibleCharacters(draftResponse.text);
-            boolean underMin = minTarget > 0 && actualChars < minTarget;
-            boolean overHard = maxLength > 0 && actualChars > maxLength;
-            log.info("Responses API length metrics stage={} hardLimit={} minTarget={} preferredTarget={} actualChars={} underMin={} overHard={}",
-                    stage, maxLength, minTarget, maxTarget, actualChars, underMin, overHard);
-            return draftResponse;
-        } catch (Exception e) {
-            logResponseFailureDetails(stage, response, e);
-            log.warn("Responses API draft call failed. Falling back to legacy chat model. model={}", modelName, e);
-            return fallbackCall.invoke();
         }
+        return fallbackCall.invoke();
     }
 
     private Map<String, Object> buildRequestBody(
@@ -689,7 +760,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
 
         String normalized = currentModelName.trim().toLowerCase(Locale.ROOT);
         if (normalized.startsWith("gpt-5-mini")) {
-            return "medium";
+            // For short schema-constrained draft calls, medium reasoning often spends the entire
+            // output budget before the model emits the JSON payload.
+            return "low";
         }
         if (normalized.startsWith("gpt-5.4-pro")) {
             return "medium";
@@ -720,15 +793,45 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
     }
 
     private int resolveMaxOutputTokens(int maxLength, int maxTarget, String stage) {
-        int draftChars = Math.max(Math.max(maxLength, maxTarget), 1);
+        int referenceChars = Math.max(1, maxTarget > 0 ? maxTarget : maxLength);
+        int answerTokenBudget = OUTPUT_TOKEN_JSON_OVERHEAD
+                + (int) Math.ceil(referenceChars * ESTIMATED_OUTPUT_TOKENS_PER_VISIBLE_CHAR);
+        int reasoningReserve = resolveReasoningReserve(answerTokenBudget, stage);
 
-        if ("expand".equalsIgnoreCase(stage)) {
-            int generousCap = Math.max(8192, draftChars * 8);
-            return Math.min(generousCap, 12000);
+        return Math.max(MIN_OUTPUT_TOKEN_BUDGET, answerTokenBudget + reasoningReserve);
+    }
+
+    private int resolveReasoningReserve(int answerTokenBudget, String stage) {
+        String normalizedStage = stage == null ? "" : stage.trim().toLowerCase(Locale.ROOT);
+
+        double ratio;
+        int floor;
+        int ceiling;
+        switch (normalizedStage) {
+            case "generate" -> {
+                ratio = GENERATE_REASONING_RESERVE_RATIO;
+                floor = GENERATE_REASONING_RESERVE_FLOOR;
+                ceiling = GENERATE_REASONING_RESERVE_CEILING;
+            }
+            case "expand" -> {
+                ratio = EXPAND_REASONING_RESERVE_RATIO;
+                floor = EXPAND_REASONING_RESERVE_FLOOR;
+                ceiling = EXPAND_REASONING_RESERVE_CEILING;
+            }
+            case "refine" -> {
+                ratio = REFINE_REASONING_RESERVE_RATIO;
+                floor = REFINE_REASONING_RESERVE_FLOOR;
+                ceiling = REFINE_REASONING_RESERVE_CEILING;
+            }
+            default -> {
+                ratio = REFINE_REASONING_RESERVE_RATIO;
+                floor = REFINE_REASONING_RESERVE_FLOOR;
+                ceiling = REFINE_REASONING_RESERVE_CEILING;
+            }
         }
 
-        int generousCap = Math.max(6144, draftChars * 6);
-        return Math.min(generousCap, 10000);
+        int dynamicReserve = (int) Math.ceil(answerTokenBudget * ratio);
+        return Math.max(floor, Math.min(ceiling, dynamicReserve));
     }
 
     private DraftResponse parseDraftResponse(JsonNode response) throws IOException {
@@ -897,6 +1000,45 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
         }
     }
 
+    private boolean shouldFallbackToLegacy(JsonNode response) {
+        if (response == null) {
+            return false;
+        }
+
+        if (!isIncompleteMaxOutputTokens(response)) {
+            return false;
+        }
+
+        JsonNode outputs = response.path("output");
+        if (!outputs.isArray() || outputs.isEmpty()) {
+            return true;
+        }
+
+        for (JsonNode item : outputs) {
+            String outputType = item.path("type").asText("");
+            if ("message".equalsIgnoreCase(outputType) || "output_text".equalsIgnoreCase(outputType)) {
+                return true;
+            }
+
+            if (!"reasoning".equalsIgnoreCase(outputType)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private boolean isIncompleteMaxOutputTokens(JsonNode response) {
+        if (response == null) {
+            return false;
+        }
+
+        String status = response.path("status").asText("");
+        String incompleteReason = response.path("incomplete_details").path("reason").asText("");
+        return "incomplete".equalsIgnoreCase(status)
+                && "max_output_tokens".equalsIgnoreCase(incompleteReason);
+    }
+
     private String summarizeOutputTypes(JsonNode outputs) {
         if (!outputs.isArray() || outputs.isEmpty()) {
             return "[]";
@@ -950,6 +1092,93 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
 
     private static boolean isLengthRetryDirective(String directive) {
         return directive != null && directive.contains(LENGTH_RETRY_MARKER);
+    }
+
+    private boolean shouldRetryForShortOutput(String stage, int actualChars, int minTarget) {
+        if (minTarget <= 0 || actualChars >= minTarget) {
+            return false;
+        }
+
+        String normalizedStage = stage == null ? "" : stage.trim().toLowerCase(Locale.ROOT);
+        if (!"generate".equals(normalizedStage)
+                && !"refine".equals(normalizedStage)
+                && !"expand".equals(normalizedStage)) {
+            return false;
+        }
+
+        return actualChars < resolveAcceptableRetryFloor(minTarget);
+    }
+
+    private int resolveAcceptableRetryFloor(int minTarget) {
+        return Math.max(1, (int) Math.ceil(minTarget * MIN_ACCEPTABLE_DRAFT_RATIO));
+    }
+
+    private String buildShortOutputRetryPrompt(
+            String originalPrompt,
+            int actualChars,
+            int acceptableFloor,
+            int maxTarget,
+            int missingChars) {
+        return originalPrompt + """
+
+                
+                Retry correction:
+                - The previous output was invalid because it was only %d visible characters.
+                - The next output must be at least %d visible characters.
+                - Add at least %d more visible characters with concrete facts, reasoning, obstacles, actions, and outcomes.
+                - Do not summarize or compress the draft.
+                - Use denser evidence and explanation until the answer reaches the requested window.
+                - Outputs below %d visible characters are invalid.
+                - Aim for %d visible characters if natural.
+                """.formatted(
+                actualChars,
+                acceptableFloor,
+                Math.max(1, missingChars),
+                acceptableFloor,
+                Math.max(acceptableFloor, maxTarget));
+    }
+
+    private String resolveLengthStatus(int actualChars, int minTarget, int hardLimit) {
+        if (hardLimit > 0 && actualChars > hardLimit) {
+            return "OVER_LIMIT";
+        }
+        if (minTarget > 0 && actualChars < minTarget) {
+            return "UNDER_MIN";
+        }
+        return "IN_RANGE";
+    }
+
+    private String toKoreanStage(String stage) {
+        String normalized = stage == null ? "" : stage.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "GENERATE" -> "초안 생성";
+            case "REFINE" -> "초안 수정";
+            case "EXPAND" -> "초안 확장";
+            default -> normalized;
+        };
+    }
+
+    private String toKoreanStatus(String status) {
+        return switch (status) {
+            case "UNDER_MIN" -> "최소 글자수 미달";
+            case "OVER_LIMIT" -> "최대 글자수 초과";
+            case "IN_RANGE" -> "목표 구간 충족";
+            default -> status;
+        };
+    }
+
+    private String resolveStageIcon(String stage, String status) {
+        if ("UNDER_MIN".equals(status) || "OVER_LIMIT".equals(status)) {
+            return "⚠️";
+        }
+        if ("IN_RANGE".equals(status)) {
+            return "✅";
+        }
+        String normalized = stage == null ? "" : stage.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "GENERATE", "REFINE", "EXPAND" -> "📝";
+            default -> "ℹ️";
+        };
     }
 
     private int countVisibleCharacters(String text) {

@@ -69,7 +69,9 @@ public class GoogleCloudTranslationService implements TranslationProvider {
         String requestUrl = GOOGLE_TRANSLATE_API_URL + "?key=" + apiKey.trim();
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
-        log.info("Requesting Google Cloud translation (target: {}, text length: {})", targetLanguage, text.length());
+        log.info("🌐 번역 요청 | 단계={} | 상태=요청 시작 | 초안군=- | 시도=- | 글자수={}자 | 목표=- | 제한=- | 다음=Google Cloud 호출 | 제공자=google-cloud",
+                resolveTranslationStage(targetLanguage),
+                text.length());
         Map<String, Object> response = restTemplate.postForObject(requestUrl, entity, Map.class);
         if (response == null) {
             return text;
@@ -96,5 +98,15 @@ public class GoogleCloudTranslationService implements TranslationProvider {
         }
 
         return HtmlUtils.htmlUnescape(translated);
+    }
+
+    private String resolveTranslationStage(String targetLanguage) {
+        if ("en".equalsIgnoreCase(targetLanguage)) {
+            return "세탁 번역(한->영)";
+        }
+        if ("ko".equalsIgnoreCase(targetLanguage)) {
+            return "세탁 번역(영->한)";
+        }
+        return "번역";
     }
 }
