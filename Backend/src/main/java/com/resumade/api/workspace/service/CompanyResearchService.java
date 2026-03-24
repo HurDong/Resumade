@@ -1,6 +1,7 @@
 package com.resumade.api.workspace.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.resumade.api.infra.sse.Utf8SseSupport;
 import com.resumade.api.workspace.domain.Application;
 import com.resumade.api.workspace.domain.ApplicationRepository;
 import com.resumade.api.workspace.dto.CompanyResearchRequest;
@@ -89,18 +90,21 @@ public class CompanyResearchService {
 
     private void sendEvent(SseEmitter emitter, String name, Object data) {
         try {
-            Object payload = data instanceof String ? data : objectMapper.writeValueAsString(data);
-            emitter.send(SseEmitter.event().name(name).data(payload));
-        } catch (IOException e) {
+            if (data instanceof String text) {
+                emitter.send(Utf8SseSupport.textEvent(name, text));
+            } else {
+                emitter.send(Utf8SseSupport.jsonEvent(name, data));
+            }
+        } catch (IOException | IllegalStateException e) {
             log.warn("Failed to send company research SSE event: {}", e.getMessage());
         }
     }
 
     private void sendError(SseEmitter emitter, String message) {
         try {
-            emitter.send(SseEmitter.event().name("ERROR").data(objectMapper.writeValueAsString(Map.of("message", message))));
+            emitter.send(Utf8SseSupport.jsonEvent("ERROR", Map.of("message", message)));
             emitter.complete();
-        } catch (IOException e) {
+        } catch (IOException | IllegalStateException e) {
             log.warn("Failed to send company research error event: {}", e.getMessage());
         }
     }

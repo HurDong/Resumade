@@ -1,5 +1,6 @@
 package com.resumade.api.workspace.controller;
 
+import com.resumade.api.infra.sse.Utf8SseSupport;
 import com.resumade.api.workspace.domain.Application;
 import com.resumade.api.workspace.domain.ApplicationRepository;
 import com.resumade.api.workspace.domain.ApplicationResult;
@@ -68,14 +69,14 @@ public class ApplicationController {
         return Map.of("uuid", uuid);
     }
 
-    @GetMapping("/analyze/stream/{uuid}")
+    @GetMapping(value = "/analyze/stream/{uuid}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
     public SseEmitter streamAnalyze(@PathVariable String uuid) {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
         executorService.execute(() -> jdAnalysisService.processAnalysis(uuid, emitter));
         return emitter;
     }
 
-    @GetMapping("/analyze/image/stream/{uuid}")
+    @GetMapping(value = "/analyze/image/stream/{uuid}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
     public SseEmitter streamImageAnalyze(@PathVariable String uuid) {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
         executorService.execute(() -> jdAnalysisService.processImageAnalysis(uuid, emitter));
@@ -89,7 +90,7 @@ public class ApplicationController {
         return Map.of("uuid", uuid);
     }
 
-    @GetMapping("/company-research/stream/{uuid}")
+    @GetMapping(value = "/company-research/stream/{uuid}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
     public SseEmitter streamCompanyResearch(@PathVariable String uuid) {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
         executorService.execute(() -> companyResearchService.processResearch(uuid, emitter));

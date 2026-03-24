@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.resumade.api.experience.domain.Experience;
 import com.resumade.api.experience.domain.ExperienceRepository;
 import com.resumade.api.experience.service.ExperienceVectorRetrievalService;
+import com.resumade.api.infra.sse.Utf8SseSupport;
 import com.resumade.api.workspace.domain.WorkspaceQuestion;
 import com.resumade.api.workspace.domain.WorkspaceQuestionRepository;
 import com.resumade.api.workspace.dto.DraftAnalysisResult;
@@ -58,6 +59,9 @@ public class WorkspaceService {
     private static final double DEFAULT_TARGET_MAX_RATIO = 1.00;
     private static final int TITLE_MIN_VISIBLE_CHARS = 8;
     private static final int TITLE_MAX_VISIBLE_CHARS = 45;
+    private static final Pattern REDUNDANT_TITLE_BLOCK_PATTERN = Pattern.compile(
+            "\\n\\s*\\n(?:\\*\\*[^*\\n]+\\*\\*\\s*)?(?:\\[[^\\]\\n]+\\])");
+    private static final int REDUNDANT_TITLE_BLOCK_MIN_PREFIX_CHARS = 180;
     private static final List<String> GENERIC_TITLE_PATTERNS = List.of(
             "\uC131\uC7A5\uACBD\uD5D8",
             "\uBB38\uC81C\uD574\uACB0",
@@ -237,15 +241,15 @@ public class WorkspaceService {
                     ? initialQuestion.getWashedKr()
                     : initialQuestion.getContent();
 
-            sendProgress(emitter, STAGE_RAG, "�??�하??기업 ?�보?? 문항???��?�?초안 컨텍?�트�?구성?�고 ?�어?? ?��");
-            sendProgress(emitter, STAGE_RAG, "?�른 문항�?겹치�? ?�도�?경험 ?�이?��? ?��??�게 조정 중입?�다. ?��");
+            sendProgress(emitter, STAGE_RAG, "지원한 기업 정보와 문항을 바탕으로 초안 컨텍스트를 구성하고 있어요. 🧭");
+            sendProgress(emitter, STAGE_RAG, "다른 문항과 겹치지 않도록 경험 포인트를 자연스럽게 조정 중입니다. 🧩");
 
             List<Experience> allExperiences = experienceRepository.findAll();
             String others = buildOthersContext(initialQuestion, questionId, allExperiences);
             String context = buildFilteredContext(initialQuestion, questionId, allExperiences);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_DRAFT, "?�택??경험�??�청?�항??반영?�여 초안???�시 ?�성?�고 ?�습?�다. ?�️");
+            sendProgress(emitter, STAGE_DRAFT, "선택한 경험과 요청 사항을 반영해 초안을 다시 생성하고 있습니다. ✍️");
 
             int maxLength = initialQuestion.getMaxLength();
             int[] targetRange = resolveTargetRange(
@@ -316,11 +320,11 @@ public class WorkspaceService {
             sendSse(emitter, "draft_intermediate", refinedDraft);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_WASH, "기계?�인 말투�?�??�기 ?�해 1�?�?�?EN)??진행 중입?�다. ?��");
+            sendProgress(emitter, STAGE_WASH, "기계적인 말투를 줄이기 위해 1차 번역(한->영)을 진행 중입니다. 🌐");
             String translatedEn = translationService.translateToEnglish(refinedDraft);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_WASH, "?�연?�러???�국??문장?�로 컴파?�하???�탁본을 ?�성 중입?�다. ?��");
+            sendProgress(emitter, STAGE_WASH, "더 자연스러운 한국어 문장으로 다듬기 위해 세탁본을 만들고 있습니다. 🫧");
             String washedKr = prepareWashedDraft(
                     translationService.translateToKorean(translatedEn));
 
@@ -330,7 +334,7 @@ public class WorkspaceService {
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_PATCH, "?�탁??문장?�서 ?��?�? �??�거???�색??�?분을 '?�먼?�치'�??��? 중입?�다. ?��");
+            sendProgress(emitter, STAGE_PATCH, "세탁본 문장에서 의미 손실과 어색한 표현을 휴먼 패치로 분석 중입니다. 🔎");
             int maxLengthPatch = initialQuestion.getMaxLength();
             int findingTarget = calculateFindingTarget(washedKr);
             DraftAnalysisResult analysis = analyzePatchSafely(
@@ -404,21 +408,21 @@ public class WorkspaceService {
 
             sendComment(emitter, "flush buffer");
 
-            sendProgress(emitter, STAGE_RAG, "?�기?�개???�성???�해 기업 분석 ?�이?��? 문항??�?비하�??�어?? ?��");
+            sendProgress(emitter, STAGE_RAG, "자기소개서 생성을 위해 기업 분석 데이터와 문항을 준비하고 있어요. 🧭");
 
             paceProcessing();
 
-            sendProgress(emitter, STAGE_RAG, "??? ???? ??? ?? ??? ?? ??? ???? ????.");
+            sendProgress(emitter, STAGE_RAG, "질문 의도와 글자 수 조건을 먼저 맞춰 초안 방향을 정리하고 있습니다. 📐");
 
             List<Experience> allExperiences = experienceRepository.findAll();
             String others = buildOthersContext(initialQuestion, questionId, allExperiences);
 
-            sendProgress(emitter, STAGE_RAG, "문항??�?????맞는 ?�만???�심 경험???�정?�고 ?�어?? ?��");
+            sendProgress(emitter, STAGE_RAG, "문항에 가장 잘 맞는 핵심 경험만 골라 연결하고 있어요. 🧩");
 
             String context = buildFilteredContext(initialQuestion, questionId, allExperiences);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_DRAFT, "?�선??경험 ?�이?��? 바탕?�로 ?�로??초안???�성 중입?�다. ??");
+            sendProgress(emitter, STAGE_DRAFT, "엄선한 경험 데이터를 바탕으로 새로운 초안을 생성 중입니다. ✍️");
 
             int maxLengthGen = initialQuestion.getMaxLength();
             String rawDirective = initialQuestion.getUserDirective();
@@ -493,12 +497,12 @@ public class WorkspaceService {
             sendSse(emitter, "draft_intermediate", draft);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_WASH, "기계?�인 말투�??�거?�기 ?�해 1�?번역 공정??진행?�고 ?�습?�다. ?��");
+            sendProgress(emitter, STAGE_WASH, "기계적인 말투를 줄이기 위해 1차 번역 공정을 진행하고 있습니다. 🌐");
             String translatedEn = translationService.translateToEnglish(draft);
             logTraceLength("humanPatch.wash.translatedEn", translatedEn, 0, 0, 0);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_WASH, "?�연?�러???�국??문장?�로 컴파?�하???�탁본을 ?�성 중입?�다. ?��");
+            sendProgress(emitter, STAGE_WASH, "더 자연스러운 한국어 문장으로 다듬기 위해 세탁본을 만들고 있습니다. 🫧");
             String washedKr = prepareWashedDraft(
                     translationService.translateToKorean(translatedEn));
             logTraceLength("humanPatch.wash.washedKr", washedKr, maxLengthGen, minTargetChars, preferredTargetChars);
@@ -509,7 +513,7 @@ public class WorkspaceService {
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_PATCH, "?�욱 ?�람 ?�새 ?�는 �????�해 '?�먼?�치' 분석??진행?�고 ?�어?? ?��");
+            sendProgress(emitter, STAGE_PATCH, "더 사람 냄새 나는 문장을 위해 휴먼 패치 분석을 진행하고 있어요. 🔎");
             int maxLengthFinal = initialQuestion.getMaxLength();
             int findingTarget = calculateFindingTarget(washedKr);
             DraftAnalysisResult analysis = analyzePatchSafely(
@@ -610,15 +614,15 @@ public class WorkspaceService {
             }
 
             sendComment(emitter, "flush buffer");
-            sendProgress(emitter, STAGE_DRAFT, "?�재 초안??바탕?�로 ?�탁 ?�이?�라?�을 ?�시 ?�작?�니?? ?��");
+            sendProgress(emitter, STAGE_DRAFT, "현재 초안을 바탕으로 세탁 파이프라인을 다시 시작합니다. 🌊");
             sendSse(emitter, "draft_intermediate", draft);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_WASH, "초안 고도?��? ?�해 중간 번역 과정??거치�??�습?�다. ?��");
+            sendProgress(emitter, STAGE_WASH, "초안 고도화를 위해 중간 번역 과정을 거치고 있습니다. 🌐");
             String translatedEn = translationService.translateToEnglish(draft);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_WASH, "?�국?�로 ?�시 번역?�며 �????��? 최적?�하�??�습?�다. ?��");
+            sendProgress(emitter, STAGE_WASH, "한국어로 다시 번역하며 표현을 더 자연스럽게 다듬고 있습니다. 🫧");
 
             int maxLength = question.getMaxLength();
             String rawDirective = question.getUserDirective();
@@ -641,7 +645,7 @@ public class WorkspaceService {
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_PATCH, "?�제??문장??바탕?�로 ?�먼?�치 분석???�시 ?�행?�니?? ?��");
+            sendProgress(emitter, STAGE_PATCH, "이제 새 문장을 바탕으로 휴먼 패치 분석을 다시 진행합니다. 🔎");
             finalizePatchAnalysis(
                     emitter,
                     questionId,
@@ -693,12 +697,12 @@ public class WorkspaceService {
             String others = buildOthersContext(question, questionId, allExperiences);
 
             sendComment(emitter, "flush buffer");
-            sendProgress(emitter, STAGE_PATCH, "?�분?�을 ?�해 초안�??�탁본을 불러?�고 ?�습?�다. ?��");
+            sendProgress(emitter, STAGE_PATCH, "재분석을 위해 초안과 세탁본을 불러오고 있습니다. 📂");
             sendSse(emitter, "draft_intermediate", draft);
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
-            sendProgress(emitter, STAGE_PATCH, "???�벽??문장???�해 ?�심 ?�치 ?�인?��? ?�시 분석?�니?? ?��");
+            sendProgress(emitter, STAGE_PATCH, "문장을 다시 읽으며 핵심 패치 포인트를 재분석하고 있습니다. 🔎");
             finalizePatchAnalysis(
                     emitter,
                     questionId,
@@ -1278,9 +1282,9 @@ public class WorkspaceService {
     private String resolveUserFacingErrorMessage(Exception e) {
         if (e instanceof IllegalStateException && e.getMessage() != null
                 && e.getMessage().contains("minimum length requirement")) {
-            return "?? ??? ????? ???? ?????. ????? ????? ?? ???? ?? ??? ???.";
+            return "최소 글자수 요구사항을 만족하는 초안을 끝내 만들지 못했습니다. 조건을 조금 완화해 다시 시도해 주세요.";
         }
-        return "?? ?? ? ??? ??????. ?? ? ?? ??? ???.";
+        return "처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
     }
 
     private void sendMinimumLengthWarningIfNeeded(SseEmitter emitter, String draft, int minTargetChars) {
@@ -1293,7 +1297,7 @@ public class WorkspaceService {
         }
 
         sendSse(emitter, "warning", Map.of(
-                "message", "최소 �??????�구?�항???�전??충족?��???못했�?�? �???근접??초안??기�??�로 ?�탁 결과�??�어??보여?�렸?�니??"));
+                "message", "최소 글자수 요구사항을 완전히 충족하지 못해 가장 목표에 근접한 초안을 기준으로 세탁 결과를 보여드렸습니다."));
     }
 
     private Map<String, Object> buildCompletionResult(
@@ -1316,7 +1320,7 @@ public class WorkspaceService {
         result.put(
                 "warningMessage",
                 usedFallbackDraft
-                        ? "최소 �????��? ?�전??충족?��???못해 �???목표??근접??초안??기�??�로 ?�탁?�습?�다."
+                        ? "최소 글자수를 완전히 충족하지 못해 가장 목표에 근접한 초안을 기준으로 세탁했습니다."
                         : null);
         result.put("mistranslations", analysis.getMistranslations());
         result.put("aiReviewReport", analysis.getAiReviewReport());
@@ -2398,7 +2402,7 @@ public class WorkspaceService {
         if (text == null) {
             return null;
         }
-        return normalizeLengthText(normalizeTitleSpacing(text)).trim();
+        return sanitizeWashedDraftText(text);
     }
 
     private String normalizeLengthText(String text) {
@@ -2587,7 +2591,7 @@ public class WorkspaceService {
         } catch (Exception e) {
             if (isQuotaError(e) || isPatchAnalysisRequestError(e) || isTimeoutError(e)) {
                 log.warn("Patch analysis skipped due to upstream OpenAI issue", e);
-                sendProgress(emitter, STAGE_PATCH, "?�먼?�치 분석 결과�? 불안?�하???�탁본만 반환?�니?? ?�️");
+                sendProgress(emitter, STAGE_PATCH, "휴먼 패치 분석 응답이 불안정해 세탁본만 반환합니다. ⚠️");
 
                 return DraftAnalysisResult.builder()
                         .humanPatchedText(washedKr)
@@ -2692,6 +2696,8 @@ public class WorkspaceService {
             return;
         }
 
+        analysis.setHumanPatchedText(sanitizeWashedDraftText(analysis.getHumanPatchedText()));
+
         List<DraftAnalysisResult.Mistranslation> mistranslations = analysis.getMistranslations();
         if (mistranslations == null) {
             mistranslations = new ArrayList<>();
@@ -2726,6 +2732,30 @@ public class WorkspaceService {
 
     private String safeTrim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String sanitizeWashedDraftText(String text) {
+        if (text == null) {
+            return null;
+        }
+
+        String normalized = normalizeLengthText(normalizeTitleSpacing(text)).trim();
+        if (normalized.isBlank()) {
+            return normalized;
+        }
+
+        Matcher duplicateTitleBlockMatcher = REDUNDANT_TITLE_BLOCK_PATTERN.matcher(normalized);
+        if (duplicateTitleBlockMatcher.find()) {
+            String leadingContent = normalized.substring(0, duplicateTitleBlockMatcher.start()).trim();
+            if (countResumeCharacters(leadingContent) >= REDUNDANT_TITLE_BLOCK_MIN_PREFIX_CHARS) {
+                log.info("Trimmed redundant trailing title block from washed draft charsBefore={} charsAfter={}",
+                        countResumeCharacters(normalized),
+                        countResumeCharacters(leadingContent));
+                return leadingContent;
+            }
+        }
+
+        return normalized;
     }
 
     private void logTraceLength(
@@ -2766,13 +2796,13 @@ public class WorkspaceService {
 
     private void sendSse(SseEmitter emitter, String name, Object data) {
         try {
-            Object sseData = data;
-            if (!(data instanceof String)) {
-                sseData = objectMapper.writeValueAsString(data);
-            }
             log.debug("SSE send: name={}, payloadType={}", name,
                     data == null ? "null" : data.getClass().getSimpleName());
-            emitter.send(SseEmitter.event().name(name).data(sseData));
+            if (data instanceof String text) {
+                emitter.send(Utf8SseSupport.textEvent(name, text));
+            } else {
+                emitter.send(Utf8SseSupport.jsonEvent(name, data));
+            }
         } catch (IOException | IllegalStateException e) {
             log.warn("Failed to send SSE event: {}", name);
             throw new SseConnectionClosedException(e);

@@ -1,5 +1,6 @@
 package com.resumade.api.workspace.service;
 
+import com.resumade.api.infra.sse.Utf8SseSupport;
 import com.resumade.api.workspace.dto.JdAnalysisResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -165,7 +166,11 @@ public class JdAnalysisService {
 
     private void sendEvent(SseEmitter emitter, String name, Object data) {
         try {
-            emitter.send(SseEmitter.event().name(name).data(data));
+            if (data instanceof String text) {
+                emitter.send(Utf8SseSupport.textEvent(name, text));
+            } else {
+                emitter.send(Utf8SseSupport.jsonEvent(name, data));
+            }
         } catch (IOException | IllegalStateException e) {
             log.warn("Failed to send SSE event: {}", e.getMessage());
         }
@@ -173,7 +178,7 @@ public class JdAnalysisService {
 
     private void sendError(SseEmitter emitter, String message) {
         try {
-            emitter.send(SseEmitter.event().name("ERROR").data(Map.of("message", message)));
+            emitter.send(Utf8SseSupport.jsonEvent("ERROR", Map.of("message", message)));
             emitter.complete();
         } catch (IOException | IllegalStateException e) {
             log.warn("Failed to send error event: {}", e.getMessage());

@@ -1,5 +1,6 @@
 package com.resumade.api.workspace.controller;
 
+import com.resumade.api.infra.sse.Utf8SseSupport;
 import com.resumade.api.workspace.dto.ApplyTitleSuggestionRequest;
 import com.resumade.api.workspace.dto.TitleSuggestionResponse;
 import com.resumade.api.workspace.service.WorkspaceService;
@@ -25,7 +26,7 @@ public class WorkspaceController {
     private final WorkspaceService workspaceService;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
-    @GetMapping("/stream/{questionId}")
+    @GetMapping(value = "/stream/{questionId}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
     public SseEmitter streamHumanPatch(
             @PathVariable Long questionId,
             @RequestParam(defaultValue = "true") boolean useDirective,
@@ -35,7 +36,7 @@ public class WorkspaceController {
         return emitter;
     }
 
-    @GetMapping("/refine-stream/{questionId}")
+    @GetMapping(value = "/refine-stream/{questionId}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
     public SseEmitter streamRefinement(
             @PathVariable Long questionId,
             @RequestParam String directive,
@@ -45,14 +46,14 @@ public class WorkspaceController {
         return emitter;
     }
 
-    @GetMapping("/rewash-stream/{questionId}")
+    @GetMapping(value = "/rewash-stream/{questionId}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
     public SseEmitter streamRewash(@PathVariable Long questionId) {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
         executorService.execute(() -> workspaceService.processRewash(questionId, emitter));
         return emitter;
     }
 
-    @GetMapping("/repatch-stream/{questionId}")
+    @GetMapping(value = "/repatch-stream/{questionId}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
     public SseEmitter streamRepatch(@PathVariable Long questionId) {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
         executorService.execute(() -> workspaceService.processRepatch(questionId, emitter));

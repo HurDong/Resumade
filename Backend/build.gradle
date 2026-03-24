@@ -61,6 +61,8 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 bootRun {
+	jvmArgs = ['-Dfile.encoding=UTF-8']
+
 	if (file("../.env").exists()) {
 		file("../.env").readLines().each { line ->
 			if (!line.isEmpty() && !line.startsWith("#")) {
