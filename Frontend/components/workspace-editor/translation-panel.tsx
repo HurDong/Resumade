@@ -20,6 +20,7 @@ import {
   getDisplayedWashedText,
   getTranslationProcessingMeta,
   injectHighlightTags,
+  sanitizeWashedText,
 } from "@/lib/workspace/translation-panel-helpers"
 import { useWorkspaceStore } from "@/lib/store/workspace-store"
 
@@ -148,6 +149,7 @@ export function TranslationPanel() {
     mistranslations,
     aiReviewReport,
   } = activeQuestion
+  const normalizedWashedText = sanitizeWashedText(washedKr || "")
   const hasHighlights = mistranslations.length > 0
   const { target: processingTarget, label: processingLabel } = getTranslationProcessingMeta(
     isProcessing,
@@ -165,15 +167,15 @@ export function TranslationPanel() {
 
   const washedContent = aiReviewReport?.taggedWashedText
     ? injectHighlightTags(
-        ensureTaggedTitle(washedKr || "", aiReviewReport.taggedWashedText),
+        ensureTaggedTitle(normalizedWashedText, aiReviewReport.taggedWashedText),
         mistranslations,
         hoveredMistranslationId,
         false
       )
-    : washedKr || ""
+    : normalizedWashedText
 
   const displayedWashedText = getDisplayedWashedText(
-    washedKr || "",
+    normalizedWashedText,
     aiReviewReport?.taggedWashedText
   )
 
