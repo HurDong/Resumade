@@ -20,7 +20,7 @@ import { streamSse } from "@/lib/network/stream-sse"
 import {
   playCompletionSound,
   prepareCompletionSound,
-} from "@/lib/audio/completion-sound"
+} from "../../lib/audio/completion-sound"
 import {
   parseCompanyResearch,
   type CompanyResearchData,

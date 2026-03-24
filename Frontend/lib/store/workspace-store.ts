@@ -4,7 +4,7 @@ import { streamSse } from "@/lib/network/stream-sse";
 import {
   playCompletionSound,
   prepareCompletionSound,
-} from "@/lib/audio/completion-sound";
+} from "../audio/completion-sound";
 import type {
   ContextItem,
   PipelineStage,
