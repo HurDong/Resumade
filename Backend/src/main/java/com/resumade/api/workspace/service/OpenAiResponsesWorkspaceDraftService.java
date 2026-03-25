@@ -51,8 +51,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Identify the most relevant 1-2 competencies, attitudes, or collaboration signals implied by the combined Question Intent and JD context and make the answer prove them with evidence.
             If the explicit user directive says to foreground, suppress, or avoid certain experiences, roles, or technologies, follow that directive over retrieved-context emphasis.
             Treat the supplied "other questions" context as a hard anti-overlap constraint, not a soft suggestion.
-            Do not reuse the same main project, same first-sentence claim, same bracket title, or the same action-result arc already used in another question when another credible angle exists.
-            If another question already uses a project, prefer a different project or clearly different sub-problem, role, and evidence for this question.
+            Project-title overlap across questions is allowed only when the detailed topic is different.
+            Do not reuse the same first-sentence claim, same bracket title, same detailed technical decision, same troubleshooting point, same lesson learned, same metric cluster, or the same action-result arc already used in another question when another credible angle exists.
+            If another question already uses a project, prefer a clearly different sub-problem, role, evidence cluster, and takeaway for this question.
             Prefer wording that can survive detailed interview follow-up.
             Each core example should show role, judgment, action, and result.
             Think in STAR or CARE internally, but never expose framework labels or section names in the final answer.
@@ -89,8 +90,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Identify the most relevant 1-2 competencies, attitudes, or collaboration signals implied by the combined Question Intent and JD context and make the answer prove them with evidence.
             If the explicit user directive says to foreground, suppress, or avoid certain experiences, roles, or technologies, follow that directive over retrieved-context emphasis.
             Treat the supplied "other questions" context as a hard anti-overlap constraint, not a soft suggestion.
-            Do not reuse the same main project, same first-sentence claim, same bracket title, or the same action-result arc already used in another question when another credible angle exists.
-            If another question already uses a project, prefer a different project or clearly different sub-problem, role, and evidence for this question.
+            Project-title overlap across questions is allowed only when the detailed topic is different.
+            Do not reuse the same first-sentence claim, same bracket title, same detailed technical decision, same troubleshooting point, same lesson learned, same metric cluster, or the same action-result arc already used in another question when another credible angle exists.
+            If another question already uses a project, prefer a clearly different sub-problem, role, evidence cluster, and takeaway for this question.
             Prefer wording that can survive detailed interview follow-up.
             Each core example should show role, judgment, action, and result.
             Think in STAR or CARE internally, but never expose framework labels or section names in the final answer.
@@ -129,8 +131,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Identify the most relevant 1-2 competencies, attitudes, or collaboration signals implied by the combined Question Intent and JD context and make the answer prove them with evidence.
             If the explicit user directive says to foreground, suppress, or avoid certain experiences, roles, or technologies, follow that directive over retrieved-context emphasis.
             Treat the supplied "other questions" context as a hard anti-overlap constraint, not a soft suggestion.
-            Do not reuse the same main project, same first-sentence claim, same bracket title, or the same action-result arc already used in another question when another credible angle exists.
-            If another question already uses a project, prefer a different project or clearly different sub-problem, role, and evidence for this question.
+            Project-title overlap across questions is allowed only when the detailed topic is different.
+            Do not reuse the same first-sentence claim, same bracket title, same detailed technical decision, same troubleshooting point, same lesson learned, same metric cluster, or the same action-result arc already used in another question when another credible angle exists.
+            If another question already uses a project, prefer a clearly different sub-problem, role, evidence cluster, and takeaway for this question.
             Prefer wording that can survive detailed interview follow-up.
             Each core example should show role, judgment, action, and result.
             Think in STAR or CARE internally, but never expose framework labels or section names in the final answer.
@@ -180,8 +183,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             - Infer the most relevant 1-2 competencies, attitudes, or collaboration signals from the combined Question Intent and JD context and center the answer on proving them
             - If the retrieved experience is weakly related to those priorities, reshape the answer toward stronger evidence rather than writing a generic story
             - Treat the "other questions" block as a hard anti-overlap constraint
-            - Do not reuse the same main project, title, opening claim, or action-result storyline already used in another question unless explicitly required
-            - If another question already uses a project, prefer a different project or a clearly different sub-problem, role, and evidence
+            - Project-title overlap across questions is allowed only when the detailed topic is different
+            - Do not reuse the same title, opening claim, detailed technical decision, troubleshooting point, lesson learned, metric cluster, or action-result storyline already used in another question unless explicitly required
+            - If another question already uses a project, prefer a clearly different sub-problem, role, evidence cluster, and takeaway
             - Start with [Title]
             - The title must not summarize the question or repeat the company, position, or question wording
             - Answer directly in the first sentence
@@ -234,8 +238,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             - If the Question Intent block indicates collaboration, growth, value-fit, or problem-solving is primary, prioritize that intent first and use JD as a secondary tie-back
             - Infer the most relevant 1-2 competencies, attitudes, or collaboration signals from the combined Question Intent and JD context and revise the current draft to prove them more clearly
             - Treat the "other questions" block as a hard anti-overlap constraint
-            - Do not reuse the same main project, title, opening claim, or action-result storyline already used in another question unless explicitly required
-            - If another question already uses a project, prefer a different project or a clearly different sub-problem, role, and evidence
+            - Project-title overlap across questions is allowed only when the detailed topic is different
+            - Do not reuse the same title, opening claim, detailed technical decision, troubleshooting point, lesson learned, metric cluster, or action-result storyline already used in another question unless explicitly required
+            - If another question already uses a project, prefer a clearly different sub-problem, role, evidence cluster, and takeaway
             - Start with [Title]
             - Keep the title concise and non-generic
             - Answer directly in the first sentence
@@ -288,8 +293,9 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             - If the Question Intent block indicates collaboration, growth, value-fit, or problem-solving is primary, prioritize that intent first and use JD as a secondary tie-back
             - Infer the most relevant 1-2 competencies, attitudes, or collaboration signals from the combined Question Intent and JD context and revise the current draft to prove them more clearly
             - Treat the "other questions" block as a hard anti-overlap constraint
-            - Do not reuse the same main project, title, opening claim, or action-result storyline already used in another question unless explicitly required
-            - If another question already uses a project, prefer a different project or a clearly different sub-problem, role, and evidence
+            - Project-title overlap across questions is allowed only when the detailed topic is different
+            - Do not reuse the same title, opening claim, detailed technical decision, troubleshooting point, lesson learned, metric cluster, or action-result storyline already used in another question unless explicitly required
+            - If another question already uses a project, prefer a clearly different sub-problem, role, evidence cluster, and takeaway
             - The previous output was under the minimum length target. Fix this in this retry.
             - Preserve all strong facts already present
             - Expand only missing depth; do not summarize or compress existing strong content

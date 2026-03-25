@@ -57,6 +57,10 @@ public class WorkspaceQuestion {
     @Column(length = 16777215)
     private String userDirective;
 
+    @Lob
+    @Column(length = 16777215)
+    private String batchStrategyDirective;
+
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -65,7 +69,7 @@ public class WorkspaceQuestion {
     private LocalDateTime updatedAt;
 
     @Builder
-    public WorkspaceQuestion(String title, Integer maxLength, String content, String washedKr, String mistranslations, String aiReview, String userDirective, Boolean isCompleted) {
+    public WorkspaceQuestion(String title, Integer maxLength, String content, String washedKr, String mistranslations, String aiReview, String userDirective, String batchStrategyDirective, Boolean isCompleted) {
         this.title = title;
         this.maxLength = maxLength;
         this.content = content;
@@ -73,6 +77,7 @@ public class WorkspaceQuestion {
         this.mistranslations = mistranslations;
         this.aiReview = aiReview;
         this.userDirective = userDirective;
+        this.batchStrategyDirective = batchStrategyDirective;
         this.isCompleted = isCompleted != null ? isCompleted : false;
     }
 }

@@ -6,6 +6,7 @@ import {
   prepareCompletionSound,
 } from "../audio/completion-sound";
 import type {
+  BatchPlanResponse,
   ContextItem,
   PipelineStage,
   TitleSuggestionResponse,
@@ -26,10 +27,21 @@ export type {
   ContextItem,
   Mistranslation,
   PipelineStage,
+  BatchPlanResponse,
   TitleSuggestion,
   TitleSuggestionResponse,
   WorkspaceQuestion,
 } from "@/lib/workspace/types";
+
+export interface QuestionBatchState {
+  isProcessing: boolean;
+  stage: PipelineStage;
+  message: string;
+  error?: string;
+}
+
+// Module-level registry — avoids Zustand re-renders on controller changes
+const batchControllerRegistry: Record<string, AbortController> = {};
 
 type SaveTimeoutHandle = ReturnType<typeof setTimeout> | null;
 
@@ -40,17 +52,17 @@ interface WorkspaceState {
   position: string;
   aiInsight: string;
   companyResearch: string;
-  
+
   // Questions management
   questions: WorkspaceQuestion[];
   activeQuestionId: string | null;
   extractedContext: ContextItem[];
-  
+
   // UI State
   leftPanelTab: "context" | "report";
   hoveredMistranslationId: string | null;
-  
-  // Transient processing state
+
+  // Transient processing state (single-question)
   isProcessing: boolean;
   pipelineStage: PipelineStage;
   progressMessage: string;
@@ -60,10 +72,17 @@ interface WorkspaceState {
   activeStreamController: AbortController | null;
   saveTimeout: SaveTimeoutHandle;
 
+  // Batch processing state
+  isBatchRunning: boolean;
+  batchState: Record<string, QuestionBatchState>;
+  batchPlan: BatchPlanResponse | null;
+  isBatchPlanLoading: boolean;
+  batchPlanError: string | null;
+
   // Actions
   setCompany: (company: string) => void;
   setPosition: (position: string) => void;
-  
+
   setQuestions: (questions: WorkspaceQuestion[]) => void;
   setActiveQuestionId: (id: string) => void;
   setLeftPanelTab: (tab: "context" | "report") => void;
@@ -73,13 +92,13 @@ interface WorkspaceState {
   applySuggestion: (mistranslationId: string) => void;
   updateMistranslationSuggestion: (mistranslationId: string, suggestion: string) => void;
   dismissMistranslation: (mistranslationId: string) => void;
-  
+
   fetchApplicationData: (id: string) => Promise<void>;
   fetchRAGContext: (questionId: number, query?: string) => Promise<void>;
-  
+
   deleteActiveQuestion: () => Promise<void>;
   toggleActiveQuestionCompletion: () => Promise<void>;
-  
+
   startProcessing: () => void;
   setPipelineStage: (stage: PipelineStage) => void;
   updateProgress: (message: string) => void;
@@ -94,6 +113,11 @@ interface WorkspaceState {
   applyTitleSuggestion: (title: string) => Promise<void>;
   rerunWash: () => Promise<void>;
   rerunPatch: () => Promise<void>;
+  fetchBatchPlan: () => Promise<BatchPlanResponse>;
+  applyBatchPlan: (plan: BatchPlanResponse) => void;
+  clearBatchPlan: () => void;
+  batchGenerate: (options?: { useDirective?: boolean }) => Promise<void>;
+  cancelBatch: () => void;
 }
 
 async function ensureQuestionPersisted(state: WorkspaceState) {
@@ -162,6 +186,7 @@ const defaultQuestion: WorkspaceQuestion = {
   mistranslations: [],
   aiReviewReport: null,
   userDirective: "",
+  batchStrategyDirective: "",
   isCompleted: false,
 };
 
@@ -184,6 +209,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   processingIssueSeverity: null,
   activeStreamController: null,
   saveTimeout: null,
+  isBatchRunning: false,
+  batchState: {},
+  batchPlan: null,
+  isBatchPlanLoading: false,
+  batchPlanError: null,
 
   setCompany: (company) => set({ company }),
   setPosition: (position) => set({ position }),
@@ -331,6 +361,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         companyResearch: data.companyResearch || "",
         questions: mappedQuestions.length > 0 ? mappedQuestions : [defaultQuestion],
         activeQuestionId: mappedQuestions.length > 0 ? mappedQuestions[0].id : "q-default",
+        batchPlan: null,
+        batchPlanError: null,
+        isBatchPlanLoading: false,
         isProcessing: false,
         pipelineStage: "IDLE",
         progressMessage: "",
@@ -453,7 +486,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!activeQ) return;
 
     const updatedMistranslations = normalizeCompletionMistranslations(data.mistranslations);
-    const finalWashedDraft = data.humanPatched || data.draft || "";
+    const finalWashedDraft = data.draft || "";
     const sourceDraft = data.sourceDraft || activeQ.content;
     const warningMessage = data.warningMessage || null;
 
@@ -523,6 +556,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   generateDraft: async (options) => {
     const state = get();
+
+    // Flush any pending debounced save so the backend reads the latest directive
+    const existingSaveTimeout = get().saveTimeout;
+    if (existingSaveTimeout) {
+      clearTimeout(existingSaveTimeout);
+      set({ saveTimeout: null });
+    }
+
     let activeQ;
     try {
       activeQ = await ensureQuestionPersisted(state);
@@ -534,6 +575,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!activeQ?.dbId) {
       state.setError("Could not find a valid question ID.");
       return;
+    }
+
+    // Immediately persist to DB so the backend sees the latest userDirective
+    try {
+      await persistQuestionUpdate(activeQ);
+    } catch (err) {
+      console.warn("Pre-generation flush save failed, proceeding with current DB state", err);
     }
 
     await prepareCompletionSound();
@@ -701,7 +749,140 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       get,
       errorFallbackMessage: "An error occurred while rerunning patch.",
     });
-  }}));
+  },
+
+  fetchBatchPlan: async () => {
+    const state = get();
+    const targets = state.questions.filter((q) => q.dbId && q.title.trim().length > 0);
+    if (!state.applicationId || targets.length === 0) {
+      throw new Error("No eligible questions found for planning.");
+    }
+
+    set({ isBatchPlanLoading: true, batchPlanError: null, batchPlan: null });
+
+    try {
+      const response = await fetch(toApiUrl("/api/workspace/batch-plan"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          applicationId: Number(state.applicationId),
+          questions: targets.map((question) => ({
+            questionId: question.dbId,
+            title: question.title,
+            maxLength: question.maxLength,
+            userDirective: question.userDirective,
+            batchStrategyDirective: question.batchStrategyDirective ?? "",
+            content: question.content,
+            washedKr: question.washedKr,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch batch plan");
+      }
+
+      const plan = (await response.json()) as BatchPlanResponse;
+      set({ batchPlan: plan, isBatchPlanLoading: false, batchPlanError: null });
+      return plan;
+    } catch (error) {
+      console.error("Failed to fetch batch plan", error);
+      set({
+        isBatchPlanLoading: false,
+        batchPlanError: "전략 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+      });
+      throw error;
+    }
+  },
+
+  applyBatchPlan: (plan) => {
+    const assignmentMap = new Map(
+      (plan.assignments || []).map((assignment) => [assignment.questionId, assignment])
+    );
+
+    set((state) => ({
+      batchPlan: plan,
+      questions: state.questions.map((question) => {
+        if (!question.dbId) {
+          return question;
+        }
+
+        const assignment = assignmentMap.get(question.dbId);
+        if (!assignment) {
+          return question;
+        }
+
+        return {
+          ...question,
+          batchStrategyDirective: assignment.directivePrefix,
+        };
+      }),
+    }));
+  },
+
+  clearBatchPlan: () => set({ batchPlan: null, batchPlanError: null, isBatchPlanLoading: false }),
+
+  batchGenerate: async (options) => {
+    const state = get();
+
+    // Abort any active single-question stream
+    state.activeStreamController?.abort();
+
+    // Target: all questions that have a dbId and a non-empty title
+    const targets = state.questions.filter((q) => q.dbId && q.title.trim().length > 0);
+    if (targets.length === 0) return;
+
+    await prepareCompletionSound();
+
+    // Initialise per-question batch state and register controllers
+    const initialBatchState: Record<string, QuestionBatchState> = {};
+    for (const q of targets) {
+      initialBatchState[q.id] = { isProcessing: true, stage: "RAG", message: "대기 중..." };
+      batchControllerRegistry[q.id] = new AbortController();
+    }
+
+    // Flush pending saves for all target questions so backend sees latest directives
+    await Promise.allSettled(targets.map((q) => persistQuestionUpdate(q)));
+
+    set({ isBatchRunning: true, batchState: initialBatchState, isProcessing: false });
+
+    const useDirective = options?.useDirective ?? true;
+
+    const promises = targets.map((q) =>
+      runBatchQuestionSse(q.id, q.dbId!, useDirective, set, get)
+    );
+
+    await Promise.allSettled(promises);
+
+    // Clean up controllers
+    for (const q of targets) {
+      delete batchControllerRegistry[q.id];
+    }
+
+    set({ isBatchRunning: false });
+    void playCompletionSound();
+  },
+
+  cancelBatch: () => {
+    // Abort all active batch streams
+    for (const controller of Object.values(batchControllerRegistry)) {
+      controller.abort();
+    }
+    // Clear registry
+    for (const key of Object.keys(batchControllerRegistry)) {
+      delete batchControllerRegistry[key];
+    }
+    set((state) => {
+      const cancelledState: Record<string, QuestionBatchState> = {};
+      for (const [id, qs] of Object.entries(state.batchState)) {
+        cancelledState[id] = qs.isProcessing
+          ? { isProcessing: false, stage: "IDLE", message: "취소됨" }
+          : qs;
+      }
+      return { isBatchRunning: false, batchState: cancelledState };
+    });
+  },
+}));
 
 function parseSseMessage(raw: string) {
   if (!raw) {
@@ -894,4 +1075,152 @@ function normalizeSseError(error: unknown, fallbackMessage: string) {
   return "An error occurred.";
 }
 
+// ── Batch processing helper ─────────────────────────────────────────────────
 
+function setBatchQuestion(
+  set: typeof useWorkspaceStore.setState,
+  questionId: string,
+  patch: Partial<QuestionBatchState>
+) {
+  set((state) => ({
+    batchState: {
+      ...state.batchState,
+      [questionId]: { ...state.batchState[questionId], ...patch },
+    },
+  }));
+}
+
+async function runBatchQuestionSse(
+  questionId: string,
+  dbId: number,
+  useDirective: boolean,
+  set: typeof useWorkspaceStore.setState,
+  get: () => WorkspaceState
+) {
+  const controller = batchControllerRegistry[questionId];
+  if (!controller) return;
+
+  try {
+    await streamSse({
+      url: toApiUrl(`/api/workspace/stream/${dbId}?useDirective=${useDirective}`),
+      signal: controller.signal,
+      onOpen: () => {
+        setBatchQuestion(set, questionId, { message: "파이프라인 연결됨" });
+      },
+      onEvent: ({ event, data }) => {
+        const eventName = event.toLowerCase();
+
+        if (eventName === "stage") {
+          const stage = parsePipelineStage(data);
+          if (stage) setBatchQuestion(set, questionId, { stage });
+          return;
+        }
+
+        if (eventName === "progress") {
+          setBatchQuestion(set, questionId, { message: parseSseMessage(data) });
+          return;
+        }
+
+        if (eventName === "draft_intermediate") {
+          const draft = parseSseMessage(data);
+          set((state) => ({
+            questions: state.questions.map((q) =>
+              q.id === questionId ? { ...q, content: draft } : q
+            ),
+          }));
+          return;
+        }
+
+        if (eventName === "washed_intermediate") {
+          const washed = parseSseMessage(data);
+          set((state) => ({
+            questions: state.questions.map((q) =>
+              q.id === questionId ? { ...q, washedKr: washed } : q
+            ),
+          }));
+          return;
+        }
+
+        if (eventName === "complete") {
+          const parsed = parseSseJson(data);
+          if (!parsed) {
+            setBatchQuestion(set, questionId, {
+              isProcessing: false,
+              stage: "IDLE",
+              error: "Could not parse completion data.",
+            });
+            controller.abort();
+            return;
+          }
+
+          const updatedMistranslations = normalizeCompletionMistranslations(parsed.mistranslations);
+          const finalWashedDraft = parsed.draft || "";
+          const sourceDraft = parsed.sourceDraft || "";
+
+          set((state) => {
+            const question = state.questions.find((q) => q.id === questionId);
+            if (question?.dbId) {
+              persistQuestionUpdate({
+                ...question,
+                content: sourceDraft || question.content,
+                washedKr: finalWashedDraft,
+                mistranslations: updatedMistranslations,
+                aiReviewReport: parsed.aiReviewReport ?? null,
+              }).catch((err) => console.error("Batch question save failed", err));
+            }
+            return {
+              batchState: {
+                ...state.batchState,
+                [questionId]: { isProcessing: false, stage: "DONE", message: "완료" },
+              },
+              questions: state.questions.map((q) =>
+                q.id === questionId
+                  ? {
+                      ...q,
+                      content: sourceDraft || q.content,
+                      washedKr: finalWashedDraft,
+                      mistranslations: updatedMistranslations,
+                      aiReviewReport: parsed.aiReviewReport ?? null,
+                    }
+                  : q
+              ),
+            };
+          });
+          controller.abort();
+          return;
+        }
+
+        if (eventName === "error") {
+          const parsed = parseSseJson(data);
+          const message = parsed?.message || parseSseMessage(data) || "오류 발생";
+          setBatchQuestion(set, questionId, {
+            isProcessing: false,
+            stage: "IDLE",
+            message,
+            error: message,
+          });
+          controller.abort();
+        }
+      },
+    });
+
+    // Stream ended without explicit complete/error
+    const currentState = get().batchState[questionId];
+    if (currentState?.isProcessing) {
+      setBatchQuestion(set, questionId, {
+        isProcessing: false,
+        stage: "IDLE",
+        message: "스트림이 예기치 않게 종료되었습니다.",
+        error: "Unexpected stream end.",
+      });
+    }
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    setBatchQuestion(set, questionId, {
+      isProcessing: false,
+      stage: "IDLE",
+      message: "오류가 발생했습니다.",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+}

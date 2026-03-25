@@ -12,6 +12,7 @@ export function shouldSyncQuestion(updates: Partial<WorkspaceQuestion>) {
     updates.washedKr !== undefined ||
     updates.mistranslations !== undefined ||
     updates.userDirective !== undefined ||
+    updates.batchStrategyDirective !== undefined ||
     updates.isCompleted !== undefined
   );
 }
@@ -21,6 +22,7 @@ export function createQuestionRequestBody(question: WorkspaceQuestion) {
     title: question.title,
     maxLength: question.maxLength,
     userDirective: question.userDirective,
+    batchStrategyDirective: question.batchStrategyDirective ?? "",
     content: question.content,
     washedKr: question.washedKr,
     mistranslations: JSON.stringify(question.mistranslations),
@@ -37,6 +39,7 @@ export function mapStoredQuestion(question: any): WorkspaceQuestion {
     maxLength: question.maxLength,
     lengthTarget: null,
     userDirective: question.userDirective || "",
+    batchStrategyDirective: question.batchStrategyDirective || "",
     content: question.content || "",
     washedKr: question.washedKr || "",
     mistranslations: parseStoredMistranslations(question.mistranslations),

@@ -260,7 +260,10 @@ public class WorkspaceService {
                     DEFAULT_TARGET_MAX_RATIO);
             int minTargetChars = targetRange[0];
             int maxTargetChars = targetRange[1];
-            String directiveForPrompt = augmentDirectiveForPrompt(directive, maxLength, targetChars);
+            String directiveForPrompt = augmentDirectiveForPrompt(
+                    mergeDirectiveLayers(initialQuestion.getBatchStrategyDirective(), directive),
+                    maxLength,
+                    targetChars);
 
             WorkspaceDraftAiService.DraftResponse refineResponse = workspaceDraftAiService.refineDraft(
                     company,
@@ -352,9 +355,7 @@ public class WorkspaceService {
             question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
             question.setAiReview(objectMapper.writeValueAsString(analysis.getAiReviewReport()));
 
-            String responseDraft = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
-                    ? analysis.getHumanPatchedText()
-                    : washedKr;
+            String responseDraft = washedKr;
             responseDraft = prepareDraftForTranslation(
                     normalizeTitleSpacing(responseDraft),
                     maxLength,
@@ -425,7 +426,9 @@ public class WorkspaceService {
             sendProgress(emitter, STAGE_DRAFT, "엄선한 경험 데이터를 바탕으로 새로운 초안을 생성 중입니다. ✍️");
 
             int maxLengthGen = initialQuestion.getMaxLength();
-            String rawDirective = initialQuestion.getUserDirective();
+            String rawDirective = mergeDirectiveLayers(
+                    initialQuestion.getBatchStrategyDirective(),
+                    initialQuestion.getUserDirective());
             String directiveForPrompt = useDirective
                     ? augmentDirectiveForPrompt(rawDirective, maxLengthGen, targetChars)
                     : NO_EXTRA_USER_DIRECTIVE;
@@ -534,9 +537,7 @@ public class WorkspaceService {
             question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
             question.setAiReview(objectMapper.writeValueAsString(analysis.getAiReviewReport()));
 
-            String responseDraft = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
-                    ? analysis.getHumanPatchedText()
-                    : washedKr;
+            String responseDraft = washedKr;
             logTraceLength("humanPatch.final.beforeLengthLimit", responseDraft, maxLengthFinal, minTargetChars, preferredTargetChars);
             responseDraft = prepareDraftForTranslation(
                     normalizeTitleSpacing(responseDraft),
@@ -825,7 +826,7 @@ public class WorkspaceService {
                             Used projects: %s
                             Title used: %s
                             Body snippet: %s
-                            Avoid reusing the same main project, title, first-sentence claim, or action-result arc for the current question unless the user explicitly requires it.
+                            Project overlap itself is allowed when needed, but avoid reusing the same detailed technical decision, troubleshooting point, lesson learned, metric cluster, opening claim, or action-result arc for the current question unless the user explicitly requires it.
                             """.formatted(
                             safeSnippet(q.getTitle(), 180),
                             safeSnippet(usedProjects, 180),
@@ -1313,7 +1314,7 @@ public class WorkspaceService {
 
         Map<String, Object> result = new HashMap<>();
         result.put("draft", washedDraft);
-        result.put("humanPatched", humanPatchedDraft);
+        result.put("humanPatched", washedDraft);
         result.put("sourceDraft", sourceDraft);
         result.put("usedFallbackDraft", usedFallbackDraft);
         result.put("fallbackDraft", usedFallbackDraft ? sourceDraft : null);
@@ -1350,13 +1351,18 @@ public class WorkspaceService {
                 DEFAULT_TARGET_MAX_RATIO);
         StringBuilder builder = new StringBuilder();
         if (!NO_EXTRA_USER_DIRECTIVE.equals(normalized)) {
-            builder.append("Priority rules for this answer:\n");
-            builder.append("- Treat the following user directive as the highest-priority writing instruction.\n");
-            builder.append("- If it conflicts with retrieved experience emphasis, follow the user directive unless it would invent facts not present in the directive or current draft.\n");
-            builder.append("- If the user directive says not to emphasize a role, technology, or project angle, suppress that emphasis even if it appears in retrieved context.\n");
-            builder.append("- If the user directive names a specific project, role, or frontend/backend angle to emphasize, prioritize that framing.\n");
-            builder.append("User directive details:\n");
+            builder.append("=== USER DIRECTIVE (MANDATORY — follow every line) ===\n");
+            builder.append("Rules:\n");
+            builder.append("- Every line in the directive below is an independent instruction. Apply ALL of them.\n");
+            builder.append("- If the directive lists a numbered/bulleted structure (e.g., '1. …', '- …', '구조 a', '단락 1'), treat each item as a required paragraph or section in the output.\n");
+            builder.append("- If the directive says to avoid or exclude something, suppress it even if it appears in retrieved context.\n");
+            builder.append("- If the directive names a specific project, technology, or role to emphasize, prioritize that framing.\n");
+            builder.append("- Do not merge, skip, or paraphrase directive lines — apply them verbatim in spirit.\n");
+            builder.append("Directive:\n");
+            builder.append("---\n");
             builder.append(normalized).append("\n");
+            builder.append("---\n");
+            builder.append("=== END OF USER DIRECTIVE ===\n");
         }
 
         builder.append("Length guidance:\n");
@@ -1375,6 +1381,20 @@ public class WorkspaceService {
         builder.append("- Recount before returning. If the answer is short, add concrete evidence and explanation instead of filler.");
 
         return builder.toString().trim();
+    }
+
+    private String mergeDirectiveLayers(String strategyDirective, String userDirective) {
+        List<String> layers = new ArrayList<>();
+        if (strategyDirective != null && !strategyDirective.isBlank()) {
+            layers.add(strategyDirective.trim());
+        }
+        if (userDirective != null && !userDirective.isBlank()) {
+            layers.add(userDirective.trim());
+        }
+        if (layers.isEmpty()) {
+            return NO_EXTRA_USER_DIRECTIVE;
+        }
+        return String.join("\n\n", layers);
     }
 
     private RequestedLengthDirective resolveRequestedLengthDirective(String directive, Integer targetChars, int maxLength) {
@@ -1559,7 +1579,7 @@ public class WorkspaceService {
         }
 
         int finalLength = countResumeCharacters(bestCandidate);
-        log.warn("{} ?�크?�페?�스 | ?�계={} | ?�태={} | 초안�?{} | ?�도=- | �??�수={}??| 목표={}~{}??| ?�한={}??| ?�음={}",
+        log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군={} | 시도=- | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
                 resolveStageIcon("DRAFT", "FAILED"),
                 toKoreanStage("DRAFT"),
                 toKoreanStatus("FAILED"),
@@ -1595,7 +1615,7 @@ public class WorkspaceService {
             boolean underMin = candidateLength < minTargetChars;
             String stage = underMin ? "EXPAND" : "SHORTEN";
             String status = underMin ? "UNDER_MIN" : "OVER_LIMIT";
-            log.warn("{} ?�크?�페?�스 | ?�계={} | ?�태={} | 초안�?{} | ?�도={} | �??�수={}??| 목표={}~{}??| ?�한={}??| ?�음={}",
+            log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군={} | 시도={} | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
                     resolveStageIcon(stage, status),
                     toKoreanStage(stage),
                     toKoreanStatus(status),
@@ -1647,7 +1667,7 @@ public class WorkspaceService {
                 }
             } catch (Exception e) {
                 log.warn(
-                        "{} ?�크?�페?�스 | ?�계={} | ?�태={} | 초안�?{} | ?�도={} | �??�수={}??| 목표={}~{}??| ?�한={}??| ?�음={} | ?�유=?�장 ?�출 ?�패",
+                        "{} 워크스페이스 | 단계={} | 상태={} | 초안군={} | 시도={} | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={} | 이유=확장 호출 실패",
                         resolveStageIcon("EXPAND", "ERROR"),
                         toKoreanStage("EXPAND"),
                         toKoreanStatus("ERROR"),
@@ -1663,7 +1683,7 @@ public class WorkspaceService {
         }
 
         int finalLength = countResumeCharacters(candidate);
-        log.warn("{} ?�크?�페?�스 | ?�계={} | ?�태={} | 초안�?{} | ?�도={} | �??�수={}??| 목표={}~{}??| ?�한={}??| ?�음={}",
+        log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군={} | 시도={} | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
                 resolveStageIcon("EXPAND", "FAMILY_FAILED"),
                 toKoreanStage("EXPAND"),
                 toKoreanStatus("FAMILY_FAILED"),
@@ -1692,7 +1712,7 @@ public class WorkspaceService {
             int family) {
         int previousLength = countResumeCharacters(previousBestDraft);
         log.warn(
-                "{} ?�크?�페?�스 | ?�계={} | ?�태={} | 초안�?{} | ?�도=- | �??�수={}??| 목표={}~{}??| ?�한={}??| ?�음={}",
+                "{} 워크스페이스 | 단계={} | 상태={} | 초안군={} | 시도=- | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
                 resolveStageIcon("REGENERATE", "START"),
                 toKoreanStage("REGENERATE"),
                 toKoreanStatus("START"),
@@ -1732,7 +1752,7 @@ public class WorkspaceService {
                     others);
         } catch (Exception e) {
             log.warn(
-                    "{} ?�크?�페?�스 | ?�계={} | ?�태={} | 초안�?{} | ?�도=- | �??�수={}??| 목표={}~{}??| ?�한={}??| ?�음={} | ?�유=??초안�??�성 ?�패",
+                    "{} 워크스페이스 | 단계={} | 상태={} | 초안군={} | 시도=- | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={} | 이유=재생성 실패",
                     resolveStageIcon("REGENERATE", "ERROR"),
                     toKoreanStage("REGENERATE"),
                     toKoreanStatus("ERROR"),
@@ -2233,7 +2253,7 @@ public class WorkspaceService {
                 Math.max(Math.max(1, minTargetChars), preferredTargetChars > 0 ? preferredTargetChars : maxLength)
         };
         logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], normalized, 0);
-        log.warn("{} ?�크?�페?�스 | ?�계={} | ?�태={} | 초안�?- | ?�도=0 | �??�수={}??| 목표={}~{}??| ?�한={}??| ?�음={}",
+        log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군=- | 시도=0 | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
                 resolveStageIcon("SHORTEN", "OVER_LIMIT"),
                 toKoreanStage("SHORTEN"),
                 toKoreanStatus("OVER_LIMIT"),
@@ -2260,7 +2280,7 @@ public class WorkspaceService {
                     safeOthers);
 
             if (shortened == null || shortened.text == null || shortened.text.isBlank()) {
-                log.warn("{} ?�크?�페?�스 | ?�계={} | ?�태={} | 초안�?- | ?�도=1 | �??�수={}??| 목표={}~{}??| ?�한={}??| ?�음={}",
+                log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군=- | 시도=1 | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
                         resolveStageIcon("SHORTEN", "EMPTY_RESULT"),
                         toKoreanStage("SHORTEN"),
                         toKoreanStatus("EMPTY_RESULT"),
@@ -2284,7 +2304,7 @@ public class WorkspaceService {
             }
 
             String retryStatus = candidateLength > maxLength ? "OVER_LIMIT" : "UNDER_MIN";
-            log.warn("{} ?�크?�페?�스 | ?�계={} | ?�태={} | 초안�?- | ?�도=1 | �??�수={}??| 목표={}~{}??| ?�한={}??| ?�음={}",
+            log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군=- | 시도=1 | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
                     resolveStageIcon("SHORTEN", retryStatus),
                     toKoreanStage("SHORTEN"),
                     toKoreanStatus(retryStatus),
@@ -2299,7 +2319,7 @@ public class WorkspaceService {
             logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], trimmed, 2);
             return trimmed;
         } catch (Exception e) {
-            log.warn("{} ?�크?�페?�스 | ?�계={} | ?�태={} | 초안�?- | ?�도=1 | �??�수={}??| 목표={}~{}??| ?�한={}??| ?�음={} | ?�유=줄이�??�출 ?�패",
+            log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군=- | 시도=1 | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={} | 이유=줄이기 호출 실패",
                     resolveStageIcon("SHORTEN", "ERROR"),
                     toKoreanStage("SHORTEN"),
                     toKoreanStatus("ERROR"),
@@ -2454,7 +2474,7 @@ public class WorkspaceService {
         String next = resolvePipelineNextAction(stage, status);
         String normalizedStage = stage == null ? "" : stage.trim().toUpperCase();
         log.info(
-                "{} ?�크?�페?�스 | ?�계={} | ?�태={} | 초안�?- | ?�도={} | �??�수={}??| 목표={}~{}??| ?�한={}??| ?�음={}",
+                "{} 워크스페이스 | 단계={} | 상태={} | 초안군=- | 시도={} | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
                 resolveStageIcon(normalizedStage, status),
                 toKoreanStage(normalizedStage),
                 toKoreanStatus(status),
@@ -2493,46 +2513,46 @@ public class WorkspaceService {
 
     private String toKoreanStage(String stage) {
         return switch (stage) {
-            case "GENERATE" -> "?? ??";
-            case "REFINE" -> "?? ??";
-            case "EXPAND" -> "?? ??";
-            case "REGENERATE" -> "???";
-            case "SHORTEN" -> "?? ???";
-            case "FINAL" -> "?? ??";
-            case "DRAFT" -> "?? ?????";
+            case "GENERATE" -> "초안 생성";
+            case "REFINE" -> "초안 수정";
+            case "EXPAND" -> "초안 확장";
+            case "REGENERATE" -> "재생성";
+            case "SHORTEN" -> "글자수 단축";
+            case "FINAL" -> "최종 완료";
+            case "DRAFT" -> "초안 파이프라인";
             default -> stage;
         };
     }
 
     private String toKoreanStatus(String status) {
         return switch (status) {
-            case "UNDER_MIN" -> "?? ??? ??";
-            case "IN_RANGE" -> "?? ?? ??";
-            case "ABOVE_PREFERRED" -> "?? ?? ??";
-            case "OVER_LIMIT" -> "?? ??? ??";
-            case "FAILED" -> "??";
-            case "FAMILY_FAILED" -> "??? ??";
-            case "ERROR" -> "??";
-            case "START" -> "??";
-            case "EMPTY_RESULT" -> "?? ?? ??";
+            case "UNDER_MIN" -> "최소 글자수 미달";
+            case "IN_RANGE" -> "목표 구간 충족";
+            case "ABOVE_PREFERRED" -> "선호 초과 상태";
+            case "OVER_LIMIT" -> "최대 글자수 초과";
+            case "FAILED" -> "실패";
+            case "FAMILY_FAILED" -> "계열 실패";
+            case "ERROR" -> "오류";
+            case "START" -> "시작";
+            case "EMPTY_RESULT" -> "빈 결과 반환";
             default -> status;
         };
     }
 
     private String toKoreanNextAction(String next) {
         return switch (next) {
-            case "EXPAND_OR_CONTINUE" -> "?? ?? ??";
-            case "CHECK_TARGET" -> "?? ?? ??";
-            case "CHECK_LIMIT" -> "??? ?? ??";
-            case "COMPLETE" -> "?? ?? ??";
-            case "ABORT" -> "????? ??";
-            case "EXPAND_RETRY" -> "?? ????? ?? ??";
-            case "NEW_FAMILY" -> "?? ??? ??";
-            case "GENERATE_FRESH_FAMILY" -> "? ???? ?? ??";
-            case "KEEP_PREVIOUS_BEST" -> "?? ??? ??";
-            case "SHORTEN_RETRY" -> "??? ???";
-            case "HARD_TRIM" -> "?? ???";
-            case "CONTINUE" -> "?? ??";
+            case "EXPAND_OR_CONTINUE" -> "확장 또는 계속";
+            case "CHECK_TARGET" -> "목표 구간 확인";
+            case "CHECK_LIMIT" -> "제한 초과 확인";
+            case "COMPLETE" -> "워크스페이스로 반환";
+            case "ABORT" -> "처리 강제 중단";
+            case "EXPAND_RETRY" -> "글자수 부족으로 재시도";
+            case "NEW_FAMILY" -> "새 초안군 생성";
+            case "GENERATE_FRESH_FAMILY" -> "새 초안으로 재생성";
+            case "KEEP_PREVIOUS_BEST" -> "이전 최고안 유지";
+            case "SHORTEN_RETRY" -> "단축 재시도";
+            case "HARD_TRIM" -> "강제 단축";
+            case "CONTINUE" -> "계속 진행";
             default -> next;
         };
     }
@@ -2726,7 +2746,7 @@ public class WorkspaceService {
         if (washedKr == null || washedKr.isBlank()) {
             return 5;
         }
-        // 200?�당 ??1�?finding, �??��? 많을?�록 ??많이 ?�청 (?�한 15)
+        // 200자당 최소 1개 finding, 글자수가 많을수록 더 많이 요청 (제한 15)
         return Math.max(5, Math.min(15, (washedKr.length() / 200) + 3));
     }
 

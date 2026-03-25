@@ -2,7 +2,10 @@ package com.resumade.api.workspace.controller;
 
 import com.resumade.api.infra.sse.Utf8SseSupport;
 import com.resumade.api.workspace.dto.ApplyTitleSuggestionRequest;
+import com.resumade.api.workspace.dto.BatchPlanRequest;
+import com.resumade.api.workspace.dto.BatchPlanResponse;
 import com.resumade.api.workspace.dto.TitleSuggestionResponse;
+import com.resumade.api.workspace.service.WorkspaceBatchPlanService;
 import com.resumade.api.workspace.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,6 +27,7 @@ import java.util.concurrent.Executors;
 public class WorkspaceController {
 
     private final WorkspaceService workspaceService;
+    private final WorkspaceBatchPlanService workspaceBatchPlanService;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     @GetMapping(value = "/stream/{questionId}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
@@ -63,6 +67,11 @@ public class WorkspaceController {
     @GetMapping("/title-suggestions/{questionId}")
     public TitleSuggestionResponse suggestTitles(@PathVariable Long questionId) {
         return workspaceService.suggestTitles(questionId);
+    }
+
+    @PostMapping("/batch-plan")
+    public BatchPlanResponse createBatchPlan(@RequestBody BatchPlanRequest request) {
+        return workspaceBatchPlanService.createPlan(request);
     }
 
     @PostMapping("/title/{questionId}")

@@ -42,11 +42,31 @@ export interface WorkspaceQuestion {
   maxLength: number;
   lengthTarget?: number | null;
   userDirective: string;
+  batchStrategyDirective?: string;
   content: string;
   washedKr: string;
   mistranslations: Mistranslation[];
   aiReviewReport: AiReviewReport | null;
   isCompleted: boolean;
+}
+
+export interface BatchPlanAssignment {
+  questionId: number;
+  questionTitle: string;
+  primaryExperiences: string[];
+  angle: string;
+  focusDetails: string[];
+  learningPoints: string[];
+  avoidDetails: string[];
+  reasoning: string;
+  directivePrefix: string;
+}
+
+export interface BatchPlanResponse {
+  coverageSummary: string;
+  globalGuardrails: string[];
+  model: string;
+  assignments: BatchPlanAssignment[];
 }
 
 export interface TitleSuggestion {

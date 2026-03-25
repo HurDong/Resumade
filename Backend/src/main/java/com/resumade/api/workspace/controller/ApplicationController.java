@@ -11,6 +11,7 @@ import com.resumade.api.workspace.dto.CompanyResearchRequest;
 import com.resumade.api.workspace.dto.JdAnalysisResponse;
 import com.resumade.api.workspace.service.CompanyResearchService;
 import com.resumade.api.workspace.service.JdAnalysisService;
+import com.resumade.api.workspace.service.PdfTextExtractorService;
 import com.resumade.api.workspace.service.WorkspaceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
@@ -39,6 +40,7 @@ public class ApplicationController {
     private final WorkspaceQuestionRepository questionRepository;
     private final ObjectMapper objectMapper;
     private final JdAnalysisService jdAnalysisService;
+    private final PdfTextExtractorService pdfTextExtractorService;
     private final CompanyResearchService companyResearchService;
     private final WorkspaceService workspaceService;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
@@ -66,6 +68,13 @@ public class ApplicationController {
     @PostMapping("/analyze/upload")
     public Map<String, String> uploadAnalyze(@RequestParam("image") org.springframework.web.multipart.MultipartFile file) throws java.io.IOException {
         String uuid = jdAnalysisService.initImageAnalysis(file.getBytes());
+        return Map.of("uuid", uuid);
+    }
+
+    @PostMapping("/analyze/pdf/upload")
+    public Map<String, String> uploadPdfAnalyze(@RequestParam("pdf") org.springframework.web.multipart.MultipartFile file) throws java.io.IOException {
+        String extractedText = pdfTextExtractorService.extractText(file.getBytes());
+        String uuid = jdAnalysisService.initAnalysis(extractedText);
         return Map.of("uuid", uuid);
     }
 
@@ -284,6 +293,9 @@ public class ApplicationController {
             if (questionDetails.getMistranslations() != null) question.setMistranslations(questionDetails.getMistranslations());
             if (questionDetails.getAiReview() != null) question.setAiReview(questionDetails.getAiReview());
             if (questionDetails.getUserDirective() != null) question.setUserDirective(questionDetails.getUserDirective());
+            if (questionDetails.getBatchStrategyDirective() != null) {
+                question.setBatchStrategyDirective(questionDetails.getBatchStrategyDirective());
+            }
             question.setCompleted(questionDetails.isCompleted());
             
             WorkspaceQuestion saved = questionRepository.save(question);

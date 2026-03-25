@@ -19,6 +19,9 @@ import {
   Trash2,
   CheckCircle2,
   ChevronDown,
+  Zap,
+  X,
+  CheckCheck,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -29,7 +32,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { type PipelineStage, useWorkspaceStore } from "@/lib/store/workspace-store"
+import { type PipelineStage, useWorkspaceStore, type QuestionBatchState } from "@/lib/store/workspace-store"
 import { parseCompanyResearch } from "@/lib/application-intelligence"
 import { countResumeCharacters } from "@/lib/text/resume-character-count"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -42,6 +45,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { ApplicationInfoQuickCopyDialog } from "@/components/application-info/application-info-quick-copy-dialog"
+import { BatchPlanDialog } from "@/components/workspace-editor/batch-plan-dialog"
 import type { TitleSuggestion } from "@/lib/workspace/types"
 import { getDisplayedWashedText } from "@/lib/workspace/translation-panel-helpers"
 
@@ -260,8 +264,108 @@ const getPipelineState = (
     isComplete: false,
   }
 }
+// ── Batch progress card ───────────────────────────────────────────────────────
+const BATCH_STAGE_LABELS: Record<string, string> = {
+  RAG:   "경험 매칭 중",
+  DRAFT: "초안 생성 중",
+  WASH:  "번역 세탁 중",
+  PATCH: "휴먼 패치 중",
+  DONE:  "완료",
+  IDLE:  "—",
+}
+
+function BatchProgressCard({
+  batchItem,
+  totalCount,
+  doneCount,
+  errorCount,
+}: {
+  batchItem: QuestionBatchState
+  totalCount: number
+  doneCount: number
+  errorCount: number
+}) {
+  const progressPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
+
+  return (
+    <Card className="border-violet-300/50 bg-gradient-to-br from-violet-50/80 to-blue-50/40 shadow-lg shadow-violet-100/30 animate-in fade-in slide-in-from-top-2 border-r-4 border-r-violet-500">
+      <CardContent className="p-5">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="relative">
+            <div className="size-9 rounded-xl bg-violet-100 flex items-center justify-center">
+              <Zap className="size-4 text-violet-600" />
+            </div>
+            <div className="absolute -inset-1 rounded-xl bg-violet-200/50 animate-ping opacity-40" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 className="text-sm font-black text-violet-700 uppercase tracking-tighter">전체 문항 병렬 생성</h4>
+            <p className="text-xs font-semibold text-foreground/70 italic truncate">
+              {batchItem.isProcessing ? BATCH_STAGE_LABELS[batchItem.stage] ?? "처리 중..." : batchItem.message}
+            </p>
+          </div>
+          <div className="shrink-0 text-right">
+            <span className="text-lg font-black text-violet-700 tabular-nums">{doneCount}</span>
+            <span className="text-xs font-bold text-muted-foreground/60"> / {totalCount}</span>
+            {errorCount > 0 && (
+              <p className="text-[10px] font-black text-destructive">{errorCount}건 오류</p>
+            )}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Progress
+            value={progressPct}
+            className="h-2 bg-violet-100"
+            indicatorClassName="bg-gradient-to-r from-violet-500 to-blue-500 shadow-[0_0_6px_rgba(139,92,246,0.4)]"
+          />
+          <p className="text-[10px] font-bold text-violet-600/60 text-right tabular-nums">{progressPct}%</p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── Batch stage badge ────────────────────────────────────────────────────────
+const BATCH_STAGE_CONFIG: Record<string, { label: string; className: string }> = {
+  RAG:   { label: "매칭 중", className: "bg-blue-100 text-blue-700 border-blue-200" },
+  DRAFT: { label: "초안 생성", className: "bg-violet-100 text-violet-700 border-violet-200" },
+  WASH:  { label: "번역 세탁", className: "bg-amber-100 text-amber-700 border-amber-200" },
+  PATCH: { label: "휴먼 패치", className: "bg-orange-100 text-orange-700 border-orange-200" },
+  DONE:  { label: "완료", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  IDLE:  { label: "오류", className: "bg-red-100 text-red-700 border-red-200" },
+}
+
+function QuestionBatchBadge({ state }: { state: QuestionBatchState | undefined }) {
+  if (!state) return null
+  if (state.stage === "DONE" && !state.isProcessing) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-black tracking-tight bg-emerald-100 text-emerald-700 border-emerald-200">
+        <CheckCheck className="size-2.5" />
+        완료
+      </span>
+    )
+  }
+  if (state.error && !state.isProcessing) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-black tracking-tight bg-red-100 text-red-700 border-red-200">
+        <X className="size-2.5" />
+        오류
+      </span>
+    )
+  }
+  if (state.isProcessing) {
+    const cfg = BATCH_STAGE_CONFIG[state.stage] ?? BATCH_STAGE_CONFIG.RAG
+    return (
+      <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-black tracking-tight ${cfg.className}`}>
+        <Loader2 className="size-2.5 animate-spin" />
+        {cfg.label}
+      </span>
+    )
+  }
+  return null
+}
+
 export function ContextPanel() {
-  const { 
+  const {
     company,
     setCompany,
     position,
@@ -291,6 +395,16 @@ export function ContextPanel() {
     hoveredMistranslationId,
     deleteActiveQuestion,
     toggleActiveQuestionCompletion,
+    isBatchRunning,
+    batchState,
+    batchPlan,
+    isBatchPlanLoading,
+    batchPlanError,
+    fetchBatchPlan,
+    applyBatchPlan,
+    clearBatchPlan,
+    batchGenerate,
+    cancelBatch,
   } = useWorkspaceStore()
 
   const activeQuestion = questions.find(q => q.id === activeQuestionId) || questions[0]
@@ -301,6 +415,8 @@ export function ContextPanel() {
   const [isTitleSuggestionLoading, setIsTitleSuggestionLoading] = useState(false)
   const [isApplyingTitleSuggestion, setIsApplyingTitleSuggestion] = useState(false)
   const [isTitleSuggestionDialogOpen, setIsTitleSuggestionDialogOpen] = useState(false)
+  const [isBatchPlanDialogOpen, setIsBatchPlanDialogOpen] = useState(false)
+  const [isApplyingBatchPlan, setIsApplyingBatchPlan] = useState(false)
   const [titleSuggestions, setTitleSuggestions] = useState<TitleSuggestion[]>([])
   const [selectedTitleSuggestion, setSelectedTitleSuggestion] = useState("")
   const [currentTitleLine, setCurrentTitleLine] = useState("")
@@ -321,6 +437,7 @@ export function ContextPanel() {
         : ""
     )
     setIsTitleSuggestionDialogOpen(false)
+    setIsBatchPlanDialogOpen(false)
     setTitleSuggestions([])
     setSelectedTitleSuggestion("")
     setCurrentTitleLine("")
@@ -389,6 +506,34 @@ export function ContextPanel() {
     refineDraft(directiveDraft, {
       lengthTarget: parseLengthTarget(lengthTargetDraft, activeQuestion.maxLength),
     })
+  }
+
+  const handleOpenBatchPlan = async () => {
+    commitDirectiveDraft()
+    commitLengthTargetDraft()
+    scrollToTop()
+
+    try {
+      await fetchBatchPlan()
+      setIsBatchPlanDialogOpen(true)
+    } catch {
+      setIsBatchPlanDialogOpen(false)
+    }
+  }
+
+  const handleConfirmBatchPlan = async () => {
+    if (!batchPlan) {
+      return
+    }
+
+    setIsApplyingBatchPlan(true)
+    try {
+      applyBatchPlan(batchPlan)
+      setIsBatchPlanDialogOpen(false)
+      await batchGenerate({ useDirective: true })
+    } finally {
+      setIsApplyingBatchPlan(false)
+    }
   }
 
   const handleRewriteTitle = async () => {
@@ -460,31 +605,96 @@ export function ContextPanel() {
             </>
           ) : (
             <>
-              {questions.map((q, idx) => (
-                <Button
-                  key={q.id}
-                  variant={activeQuestionId === q.id ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setActiveQuestionId(q.id)}
-                  className="shrink-0 gap-2 h-8"
-                >
-                  문항 {idx + 1}
-                  {activeQuestionId === q.id && <div className="size-1.5 rounded-full bg-primary-foreground" />}
-                </Button>
-              ))}
-              <Button variant="ghost" size="icon" className="size-8 shrink-0 rounded-full hover:bg-primary/10 hover:text-primary transition-colors" onClick={addQuestion} title="문항 추가">
+              {questions.map((q, idx) => {
+                const qBatch = batchState[q.id]
+                return (
+                  <Button
+                    key={q.id}
+                    variant={activeQuestionId === q.id ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setActiveQuestionId(q.id)}
+                    disabled={isBatchRunning && !!qBatch?.isProcessing && activeQuestionId !== q.id}
+                    className="shrink-0 gap-1.5 h-8 relative"
+                  >
+                    문항 {idx + 1}
+                    {isBatchRunning && qBatch?.isProcessing && (
+                      <Loader2 className="size-3 animate-spin" />
+                    )}
+                    {isBatchRunning && qBatch?.stage === "DONE" && !qBatch.isProcessing && (
+                      <CheckCheck className="size-3 text-emerald-500" />
+                    )}
+                    {isBatchRunning && qBatch?.error && !qBatch.isProcessing && (
+                      <X className="size-3 text-destructive" />
+                    )}
+                    {!isBatchRunning && activeQuestionId === q.id && (
+                      <div className="size-1.5 rounded-full bg-primary-foreground" />
+                    )}
+                  </Button>
+                )
+              })}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 shrink-0 rounded-full hover:bg-primary/10 hover:text-primary transition-colors"
+                onClick={addQuestion}
+                disabled={isBatchRunning}
+                title="문항 추가"
+              >
                 <Plus className="size-4" />
               </Button>
             </>
           )}
-          {questions.length > 1 && !(!company && isProcessing) && (
-            <Button variant="ghost" size="icon" className="size-8 shrink-0 rounded-full hover:bg-destructive/10 hover:text-destructive transition-colors ml-auto" onClick={() => deleteActiveQuestion()} title="현재 문항 삭제">
+          {/* Batch Generate / Cancel button */}
+          {questions.some((q) => q.dbId && q.title.trim().length > 0) && !(!company && isProcessing) && (
+            isBatchRunning ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 gap-1.5 h-8 rounded-full hover:bg-destructive/10 hover:text-destructive transition-colors ml-auto text-[11px] font-black"
+                onClick={cancelBatch}
+                title="전체 생성 취소"
+              >
+                <X className="size-3.5" />
+                취소
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 gap-1.5 h-8 rounded-full hover:bg-primary/10 hover:text-primary transition-colors ml-auto text-[11px] font-black"
+                onClick={handleOpenBatchPlan}
+                disabled={isProcessing || isBatchPlanLoading}
+                title="모든 문항 동시 생성"
+              >
+                {isBatchPlanLoading ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Zap className="size-3.5" />
+                )}
+                {isBatchPlanLoading ? "전략 수립 중" : "전체 생성"}
+              </Button>
+            )
+          )}
+          {questions.length > 1 && !(!company && isProcessing) && !isBatchRunning && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0 rounded-full hover:bg-destructive/10 hover:text-destructive transition-colors"
+              onClick={() => deleteActiveQuestion()}
+              title="현재 문항 삭제"
+            >
               <Trash2 className="size-4" />
             </Button>
           )}
         </div>
 
         <div className="space-y-4">
+          {batchPlanError ? (
+            <div className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {batchPlanError}
+            </div>
+          ) : null}
+
           <div className="flex items-start gap-3">
             <Button
               variant="ghost"
@@ -627,7 +837,7 @@ export function ContextPanel() {
             <Button
               size="sm"
               onClick={handleInitialGenerate}
-              disabled={isProcessing}
+              disabled={isProcessing || isBatchRunning}
               className="gap-2 rounded-full px-4 font-bold shadow-sm"
             >
               {isProcessing ? (
@@ -641,7 +851,7 @@ export function ContextPanel() {
               size="sm"
               variant="outline"
               onClick={handleRegenerate}
-              disabled={isProcessing || !hasDraft}
+              disabled={isProcessing || isBatchRunning || !hasDraft}
               className="gap-2 rounded-full px-4 font-bold shadow-sm"
             >
               {isProcessing ? (
@@ -655,7 +865,7 @@ export function ContextPanel() {
               size="sm"
               variant="outline"
               onClick={() => void handleRewriteTitle()}
-              disabled={isProcessing || isTitleSuggestionLoading || !hasDraft}
+              disabled={isProcessing || isBatchRunning || isTitleSuggestionLoading || !hasDraft}
               className="gap-2 rounded-full px-4 font-bold shadow-sm"
             >
               {isTitleSuggestionLoading ? (
@@ -674,6 +884,16 @@ export function ContextPanel() {
         <div className="min-w-0 space-y-8 overflow-x-hidden pb-10">
           {leftPanelTab === "context" ? (
             <>
+          {/* Batch progress overlay for active question */}
+          {isBatchRunning && activeQuestion && batchState[activeQuestion.id] && (
+            <BatchProgressCard
+              batchItem={batchState[activeQuestion.id]}
+              totalCount={questions.filter((q) => batchState[q.id]).length}
+              doneCount={Object.values(batchState).filter((s) => s.stage === "DONE" && !s.isProcessing).length}
+              errorCount={Object.values(batchState).filter((s) => !!s.error && !s.isProcessing).length}
+            />
+          )}
+
           {/* Progress Overlay during processing */}
           {isProcessing && (
             <Card className="border-primary/30 bg-primary/5 shadow-2xl shadow-primary/10 animate-in fade-in slide-in-from-top-2 border-r-4 border-r-primary">
@@ -994,11 +1214,11 @@ export function ContextPanel() {
                   isDirectiveComposingRef.current = false
                   handleDirectiveChange(e.currentTarget.value)
                 }}
-                placeholder="예) 병원 전산 직무라서 기술 나열보다 운영 안정성과 데이터 흐름 개선에 기여한 경험을 강조해줘. 문장은 추상적 표현보다 근거 중심으로 다듬어줘."
+                placeholder={`예) B 프로젝트(결제 시스템 개편)만 다룰 것. A 프로젝트 언급 금지.\n\n또는 구조를 지정하려면 각 줄에 하나씩:\n1단락: 문제 상황과 배경\n2단락: 내가 취한 기술적 판단과 행동\n3단락: 성과와 수치`}
                 className="min-h-[150px] w-full max-w-full resize-none overflow-x-hidden whitespace-pre-wrap break-words text-sm leading-7 bg-background/50 focus:bg-background border border-border/40 focus:border-primary/40 transition-all duration-300"
               />
               <p className="break-words text-[11px] text-muted-foreground leading-relaxed">
-                이 요청은 최우선 제약사항 바로 아래 우선순위로 반영됩니다. 사실성, 글자수, 금지 규칙과 충돌하지 않는 한 최대한 가깝게 따릅니다.
+                구조를 지정할 때는 <span className="font-bold text-foreground/70">각 줄에 하나씩</span> 작성하면 AI가 줄마다 독립적인 지시로 인식합니다. 사실성·글자수 규칙과 충돌하지 않는 한 모든 줄을 따릅니다.
               </p>
             </div>
 
@@ -1215,6 +1435,19 @@ export function ContextPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BatchPlanDialog
+        open={isBatchPlanDialogOpen}
+        plan={batchPlan}
+        onOpenChange={(open) => {
+          setIsBatchPlanDialogOpen(open)
+          if (!open) {
+            clearBatchPlan()
+          }
+        }}
+        onConfirm={handleConfirmBatchPlan}
+        isSubmitting={isApplyingBatchPlan || isBatchRunning}
+      />
     </div>
   )
 }
