@@ -405,6 +405,7 @@ export function ContextPanel() {
     clearBatchPlan,
     batchGenerate,
     cancelBatch,
+    cancelSingle,
   } = useWorkspaceStore()
 
   const activeQuestion = questions.find(q => q.id === activeQuestionId) || questions[0]
@@ -834,19 +835,27 @@ export function ContextPanel() {
                 </Button>
               }
             />
-            <Button
-              size="sm"
-              onClick={handleInitialGenerate}
-              disabled={isProcessing || isBatchRunning}
-              className="gap-2 rounded-full px-4 font-bold shadow-sm"
-            >
-              {isProcessing ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
+            {isProcessing ? (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={cancelSingle}
+                className="gap-2 rounded-full px-4 font-bold shadow-sm animate-in fade-in"
+              >
+                <X className="size-3.5" />
+                {"취소"}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                onClick={handleInitialGenerate}
+                disabled={isBatchRunning}
+                className="gap-2 rounded-full px-4 font-bold shadow-sm"
+              >
                 <Sparkles className="size-3.5" />
-              )}
-              {"\uc0c8\ub85c \uc0dd\uc131"}
-            </Button>
+                {"\uc0c8\ub85c \uc0dd\uc131"}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"

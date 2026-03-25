@@ -118,6 +118,7 @@ interface WorkspaceState {
   clearBatchPlan: () => void;
   batchGenerate: (options?: { useDirective?: boolean }) => Promise<void>;
   cancelBatch: () => void;
+  cancelSingle: () => void;
 }
 
 async function ensureQuestionPersisted(state: WorkspaceState) {
@@ -854,6 +855,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     await Promise.allSettled(promises);
 
+    // If cancelBatch() was called while we were awaiting, registry is already empty
+    // and isBatchRunning is already false — skip cleanup and sound.
+    if (!get().isBatchRunning) return;
+
     // Clean up controllers
     for (const q of targets) {
       delete batchControllerRegistry[q.id];
@@ -881,6 +886,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
       return { isBatchRunning: false, batchState: cancelledState };
     });
+  },
+
+  cancelSingle: () => {
+    const { activeStreamController } = get();
+    if (!activeStreamController) return;
+    activeStreamController.abort();
+    set((state) => ({
+      isProcessing: false,
+      pipelineStage: "IDLE",
+      activeStreamController: null,
+      progressMessage: "생성이 취소되었습니다.",
+      progressHistory: appendProgressHistory(state.progressHistory, "생성이 취소되었습니다."),
+      processingIssue: null,
+      processingIssueSeverity: null,
+    }));
   },
 }));
 
