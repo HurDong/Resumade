@@ -18,11 +18,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   CheckCircle2,
   FileText,
+  FileUp,
   Image as ImageIcon,
   Loader2,
-  Plus,
   Sparkles,
-  Trash2,
   Upload,
 } from "lucide-react"
 
@@ -38,6 +37,8 @@ interface AddApplicationDialogProps {
   }) => void
 }
 
+type InputMode = "image" | "pdf" | "text"
+
 export function AddApplicationDialog({
   isOpen,
   onClose,
@@ -47,96 +48,122 @@ export function AddApplicationDialog({
   const [company, setCompany] = useState("")
   const [position, setPosition] = useState("")
   const [rawJd, setRawJd] = useState("")
-  const [extractedQuestions, setExtractedQuestions] = useState<
-    { title: string; maxLength: number }[]
-  >([])
   const [aiInsight, setAiInsight] = useState("")
   const [isUploading, setIsUploading] = useState(false)
   const [extractionError, setExtractionError] = useState<string | null>(null)
+  const [extractingMode, setExtractingMode] = useState<InputMode>("image")
 
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const pdfInputRef = useRef<HTMLInputElement>(null)
 
-  const processFile = (file: File) => {
-    setIsUploading(true)
-    void performExtraction(null, file)
-  }
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // ─── 이미지 처리 ────────────────────────────────────────────────
+  const handleImageFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-    processFile(file)
+    setExtractingMode("image")
+    void performExtraction({ mode: "image", file })
   }
 
+  // ─── PDF 처리 ────────────────────────────────────────────────────
+  const handlePdfFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setExtractingMode("pdf")
+    void performExtraction({ mode: "pdf", file })
+  }
+
+  // ─── 클립보드 붙여넣기 (이미지만) ──────────────────────────────
   const handlePaste = (event: React.ClipboardEvent) => {
     const items = event.clipboardData?.items
     if (!items) return
-
     for (let index = 0; index < items.length; index += 1) {
       if (!items[index].type.includes("image")) continue
       const file = items[index].getAsFile()
       if (!file) continue
-      processFile(file)
+      setExtractingMode("image")
+      void performExtraction({ mode: "image", file })
       return
     }
   }
 
+  // ─── 텍스트 추출 시작 ──────────────────────────────────────────
+  const handleStartAiExtraction = () => {
+    setExtractingMode("text")
+    void performExtraction({ mode: "text", text: rawJd })
+  }
+
+  // ─── 통합 추출 함수 ────────────────────────────────────────────
   const performExtraction = async (
-    textToAnalyze: string | null,
-    fileToUpload: File | null
+    input:
+      | { mode: "image"; file: File }
+      | { mode: "pdf"; file: File }
+      | { mode: "text"; text: string }
   ) => {
     setStep("extracting")
     setExtractionError(null)
-    setIsUploading(!!fileToUpload)
+    setIsUploading(input.mode !== "text")
 
     try {
       let uuid = ""
       let streamUrl = ""
 
-      if (fileToUpload) {
+      if (input.mode === "image") {
         const formData = new FormData()
-        formData.append("image", fileToUpload)
+        formData.append("image", input.file)
 
         const initResponse = await fetch("/api/applications/analyze/upload", {
           method: "POST",
           body: formData,
         })
+        if (!initResponse.ok) throw new Error("이미지 분석 초기화에 실패했습니다.")
 
-        if (!initResponse.ok) {
-          throw new Error("이미지 분석 초기화에 실패했습니다.")
-        }
-
-        const data = await initResponse.json()
+        const data = await initResponse.json() as { uuid: string }
         uuid = data.uuid
         streamUrl = `/api/applications/analyze/image/stream/${uuid}`
-      } else if (textToAnalyze) {
+
+      } else if (input.mode === "pdf") {
+        const formData = new FormData()
+        formData.append("pdf", input.file)
+
+        const initResponse = await fetch("/api/applications/analyze/pdf/upload", {
+          method: "POST",
+          body: formData,
+        })
+        if (!initResponse.ok) {
+          const errText = await initResponse.text()
+          throw new Error(errText || "PDF 분석 초기화에 실패했습니다.")
+        }
+
+        const data = await initResponse.json() as { uuid: string }
+        uuid = data.uuid
+        streamUrl = `/api/applications/analyze/stream/${uuid}`
+
+      } else {
         const initResponse = await fetch("/api/applications/analyze/init", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rawJd: textToAnalyze }),
+          body: JSON.stringify({ rawJd: input.text }),
         })
+        if (!initResponse.ok) throw new Error("JD 분석 초기화에 실패했습니다.")
 
-        if (!initResponse.ok) {
-          throw new Error("JD 분석 초기화에 실패했습니다.")
-        }
-
-        const data = await initResponse.json()
+        const data = await initResponse.json() as { uuid: string }
         uuid = data.uuid
         streamUrl = `/api/applications/analyze/stream/${uuid}`
-      } else {
-        setStep("input")
-        setIsUploading(false)
-        return
       }
 
       const eventSource = new EventSource(streamUrl)
 
       eventSource.addEventListener("COMPLETE", (event) => {
-        const data = JSON.parse(event.data)
-        setCompany(data.companyName || "")
-        setPosition(data.position || "")
-        setRawJd(data.rawJd || textToAnalyze || "")
-        setExtractedQuestions([])
-        setAiInsight(data.aiInsight || "")
+        const data = JSON.parse(event.data) as {
+          companyName?: string
+          position?: string
+          rawJd?: string
+          aiInsight?: string
+        }
+        setCompany(data.companyName ?? "")
+        setPosition(data.position ?? "")
+        setRawJd(data.rawJd ?? (input.mode === "text" ? input.text : ""))
+        setAiInsight(data.aiInsight ?? "")
         setIsUploading(false)
         setStep("review")
         eventSource.close()
@@ -144,8 +171,8 @@ export function AddApplicationDialog({
 
       eventSource.addEventListener("ERROR", (event) => {
         try {
-          const data = JSON.parse(event.data)
-          setExtractionError(data.message || "AI 분석 중 오류가 발생했습니다.")
+          const data = JSON.parse(event.data) as { message?: string }
+          setExtractionError(data.message ?? "AI 분석 중 오류가 발생했습니다.")
         } catch {
           setExtractionError("AI 분석 중 오류가 발생했습니다.")
         }
@@ -169,19 +196,16 @@ export function AddApplicationDialog({
     }
   }
 
-  const handleStartAiExtraction = () => {
-    void performExtraction(rawJd, null)
-  }
-
   const handleReset = () => {
     setStep("input")
     setCompany("")
     setPosition("")
     setRawJd("")
-    setExtractedQuestions([])
     setAiInsight("")
     setIsUploading(false)
     setExtractionError(null)
+    if (imageInputRef.current) imageInputRef.current.value = ""
+    if (pdfInputRef.current) pdfInputRef.current.value = ""
   }
 
   const handleCancel = () => {
@@ -190,15 +214,15 @@ export function AddApplicationDialog({
   }
 
   const handleSubmit = () => {
-    onAdd({
-      company,
-      position,
-      rawJd,
-      aiInsight,
-      questions: [],
-    })
+    onAdd({ company, position, rawJd, aiInsight, questions: [] })
     handleReset()
     onClose()
+  }
+
+  const extractingDescription: Record<InputMode, string> = {
+    image: "OCR, JD 구조화, 문항 추출을 순서대로 처리하고 있습니다.",
+    pdf: "PDF에서 텍스트를 추출하고 JD를 구조화하고 있습니다.",
+    text: "공고의 핵심 직무 역량을 구조화하고 있습니다.",
   }
 
   return (
@@ -210,12 +234,13 @@ export function AddApplicationDialog({
         <DialogHeader className="p-6 pb-0">
           <DialogTitle>새 채용 공고 추가</DialogTitle>
           <DialogDescription>
-            이미지 업로드나 텍스트 붙여넣기로 JD를 넣으면 AI가 기업명, 직무,
+            이미지·PDF 업로드 또는 텍스트 붙여넣기로 JD를 넣으면 AI가 기업명, 직무,
             자소서 문항을 추출합니다.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 py-4">
+          {/* ── 입력 단계 ── */}
           {step === "input" && (
             <div className="space-y-4">
               {extractionError && (
@@ -225,23 +250,28 @@ export function AddApplicationDialog({
               )}
 
               <Tabs defaultValue="image" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="image" className="gap-2">
-                    <ImageIcon className="size-4" />
-                    이미지 업로드
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="image" className="gap-1.5 text-xs">
+                    <ImageIcon className="size-3.5" />
+                    이미지
                   </TabsTrigger>
-                  <TabsTrigger value="text" className="gap-2">
-                    <FileText className="size-4" />
-                    텍스트 붙여넣기
+                  <TabsTrigger value="pdf" className="gap-1.5 text-xs">
+                    <FileUp className="size-3.5" />
+                    PDF
+                  </TabsTrigger>
+                  <TabsTrigger value="text" className="gap-1.5 text-xs">
+                    <FileText className="size-3.5" />
+                    텍스트
                   </TabsTrigger>
                 </TabsList>
 
+                {/* 이미지 탭 */}
                 <TabsContent value="image" className="mt-6">
                   <div
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => imageInputRef.current?.click()}
                     className="flex cursor-pointer flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed border-muted-foreground/20 p-12 transition-colors hover:bg-muted/30"
                   >
-                    {isUploading ? (
+                    {isUploading && extractingMode === "image" ? (
                       <Loader2 className="size-10 animate-spin text-primary" />
                     ) : (
                       <Upload className="size-10 text-muted-foreground" />
@@ -251,19 +281,53 @@ export function AddApplicationDialog({
                         공고 캡처 이미지를 클릭하거나 붙여넣어 주세요.
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        클립보드 이미지도 <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px]">Ctrl+V</kbd> 로 넣을 수 있습니다.
+                        클립보드 이미지도{" "}
+                        <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px]">
+                          Ctrl+V
+                        </kbd>{" "}
+                        로 넣을 수 있습니다.
                       </p>
                     </div>
                     <input
-                      ref={fileInputRef}
+                      ref={imageInputRef}
                       type="file"
                       className="hidden"
                       accept="image/*"
-                      onChange={handleFileUpload}
+                      onChange={handleImageFileChange}
                     />
                   </div>
                 </TabsContent>
 
+                {/* PDF 탭 */}
+                <TabsContent value="pdf" className="mt-6">
+                  <div
+                    onClick={() => pdfInputRef.current?.click()}
+                    className="flex cursor-pointer flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed border-muted-foreground/20 p-12 transition-colors hover:bg-muted/30"
+                  >
+                    {isUploading && extractingMode === "pdf" ? (
+                      <Loader2 className="size-10 animate-spin text-primary" />
+                    ) : (
+                      <FileUp className="size-10 text-muted-foreground" />
+                    )}
+                    <div className="space-y-2 text-center">
+                      <p className="font-medium text-balance">
+                        채용사이트 공고 PDF를 클릭하여 업로드하세요.
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        채용사이트에서 다운로드한 디지털 PDF만 지원합니다.
+                      </p>
+                    </div>
+                    <input
+                      ref={pdfInputRef}
+                      type="file"
+                      className="hidden"
+                      accept="application/pdf"
+                      onChange={handlePdfFileChange}
+                    />
+                  </div>
+                </TabsContent>
+
+                {/* 텍스트 탭 */}
                 <TabsContent value="text" className="mt-6 space-y-4">
                   <div className="space-y-2">
                     <Label>채용 공고 원문</Label>
@@ -287,6 +351,7 @@ export function AddApplicationDialog({
             </div>
           )}
 
+          {/* ── 추출 중 단계 ── */}
           {step === "extracting" && (
             <div className="flex flex-col items-center justify-center gap-6 py-20">
               <div className="relative">
@@ -300,7 +365,7 @@ export function AddApplicationDialog({
                   "AI가 공고를 분석하고 있습니다..."
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  OCR, JD 구조화, 문항 추출을 순서대로 처리하고 있습니다.
+                  {extractingDescription[extractingMode]}
                 </p>
               </div>
               <div className="w-full max-w-xs space-y-2">
@@ -314,6 +379,7 @@ export function AddApplicationDialog({
             </div>
           )}
 
+          {/* ── 검토 단계 ── */}
           {step === "review" && (
             <div className="space-y-6 pb-4">
               <div className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 text-emerald-600 shadow-sm">
