@@ -330,6 +330,7 @@ public class WorkspaceService {
             sendProgress(emitter, STAGE_WASH, "더 자연스러운 한국어 문장으로 다듬기 위해 세탁본을 만들고 있습니다. 🫧");
             String washedKr = prepareWashedDraft(
                     translationService.translateToKorean(translatedEn));
+            logLengthMetrics("wash", maxLength, minTargetChars, maxTargetChars, washedKr, 0);
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setWashedKr(washedKr);
@@ -509,6 +510,7 @@ public class WorkspaceService {
             String washedKr = prepareWashedDraft(
                     translationService.translateToKorean(translatedEn));
             logTraceLength("humanPatch.wash.washedKr", washedKr, maxLengthGen, minTargetChars, preferredTargetChars);
+            logLengthMetrics("wash", maxLengthGen, minTargetChars, preferredTargetChars, washedKr, 0);
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setWashedKr(washedKr);
@@ -639,6 +641,7 @@ public class WorkspaceService {
 
             String washedKr = prepareWashedDraft(
                     translationService.translateToKorean(translatedEn));
+            logLengthMetrics("wash", maxLength, minTargetChars, preferredTargetChars, washedKr, 0);
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setWashedKr(washedKr);
@@ -2473,17 +2476,19 @@ public class WorkspaceService {
         String attempt = retryCount > 0 ? String.valueOf(retryCount) : "-";
         String next = resolvePipelineNextAction(stage, status);
         String normalizedStage = stage == null ? "" : stage.trim().toUpperCase();
-        log.info(
-                "{} 워크스페이스 | 단계={} | 상태={} | 초안군=- | 시도={} | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
-                resolveStageIcon(normalizedStage, status),
-                toKoreanStage(normalizedStage),
-                toKoreanStatus(status),
-                attempt,
-                actualChars,
-                minimumTarget,
-                preferredTarget,
-                hardLimit,
-                toKoreanNextAction(next));
+        String icon = resolveStageIcon(normalizedStage, status);
+        String message = "{} 워크스페이스 | 단계={} | 상태={} | 초안군=- | 시도={} | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}";
+        Object[] args = {icon, toKoreanStage(normalizedStage), toKoreanStatus(status), attempt,
+                actualChars, minimumTarget, preferredTarget, hardLimit, toKoreanNextAction(next)};
+        boolean isWarn = switch (status) {
+            case "OVER_LIMIT", "UNDER_MIN", "ERROR", "FAILED", "FAMILY_FAILED", "EMPTY_RESULT" -> true;
+            default -> false;
+        };
+        if (isWarn) {
+            log.warn(message, args);
+        } else {
+            log.info(message, args);
+        }
     }
 
     private String resolvePipelineLengthStatus(int actualChars, int minimumTarget, int preferredTarget, int hardLimit) {
@@ -2506,6 +2511,7 @@ public class WorkspaceService {
             case "EXPAND" -> "CHECK_TARGET";
             case "REGENERATE" -> "CHECK_TARGET";
             case "SHORTEN" -> "CHECK_LIMIT";
+            case "WASH" -> "CHECK_LIMIT";
             case "FINAL" -> "COMPLETE";
             default -> "CONTINUE";
         };
@@ -2518,6 +2524,7 @@ public class WorkspaceService {
             case "EXPAND" -> "초안 확장";
             case "REGENERATE" -> "재생성";
             case "SHORTEN" -> "글자수 단축";
+            case "WASH" -> "세탁 완료";
             case "FINAL" -> "최종 완료";
             case "DRAFT" -> "초안 파이프라인";
             default -> stage;
@@ -2574,6 +2581,7 @@ public class WorkspaceService {
             case "GENERATE", "REFINE", "EXPAND", "DRAFT" -> "[DRAFT]";
             case "REGENERATE" -> "[RETRY]";
             case "SHORTEN" -> "[TRIM]";
+            case "WASH" -> "[WASH]";
             case "FINAL" -> "[DONE]";
             default -> "[STEP]";
         };
@@ -2768,7 +2776,7 @@ public class WorkspaceService {
         if (duplicateTitleBlockMatcher.find()) {
             String leadingContent = normalized.substring(0, duplicateTitleBlockMatcher.start()).trim();
             if (countResumeCharacters(leadingContent) >= REDUNDANT_TITLE_BLOCK_MIN_PREFIX_CHARS) {
-                log.info("Trimmed redundant trailing title block from washed draft charsBefore={} charsAfter={}",
+                log.warn("[TRIM] 워크스페이스 | 단계=세탁 정제 | 상태=제목 블록 제거 | 초안군=- | 시도=- | 글자수={}자→{}자 | 목표=- | 제한=- | 다음=길이 재검증",
                         countResumeCharacters(normalized),
                         countResumeCharacters(leadingContent));
                 return leadingContent;
