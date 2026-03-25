@@ -30,7 +30,8 @@ public interface WorkspacePatchAiService {
             "4. DO NOT change any other text, whitespace, or paragraphs inside the tagged representations. Only insert the <mark> tags into the exact locations of the original texts.",
             "Each mistranslation item must include: id, issueType, original, originalSentence, translated, translatedSentence, severity, reason, suggestion, and suggestedSentence.",
             "Allowed issueType values: TERM_WEAKENED, FRAMEWORK_MISTRANSLATED, PROPER_NOUN_CHANGED, METRIC_DROPPED, CONTRIBUTION_WEAKENED, AWKWARD_LITERAL, KEYWORD_DROPPED, MECHANICAL_TONE.",
-            "The 'suggestedSentence' must be a perfectly natural Korean rewrite of translatedSentence."
+            "The 'suggestedSentence' must be a perfectly natural Korean rewrite of translatedSentence.",
+            "IMPORTANT PRODUCT RULE: do not create a new final draft. 'humanPatchedText' must be exactly the same as the input Washed Korean draft except for whitespace normalization if absolutely necessary."
     })
     @UserMessage("""
             Original AI draft: {{original}}
@@ -59,7 +60,7 @@ public interface WorkspacePatchAiService {
             - provide a precise noun or phrase suggestion, and a fully rewritten sentence as suggestedSentence.
 
             Create 'aiReviewReport.taggedOriginalText' and 'aiReviewReport.taggedWashedText' by taking the original texts and inserting `<mark data-mis-id="{id}">...</mark>` exactly where the flagged phrases are.
-            Draft 'humanPatchedText' by applying all the suggested fixes to the entire text naturally.
+            Set 'humanPatchedText' to the same Washed Korean draft. Do not apply the fixes into a rewritten final text.
             Return the JSON without markdown fences.
             """)
     DraftAnalysisResult analyzePatch(

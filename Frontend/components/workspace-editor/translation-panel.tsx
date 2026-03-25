@@ -165,7 +165,8 @@ export function TranslationPanel() {
       )
     : draft || ""
 
-  const washedContent = aiReviewReport?.taggedWashedText
+  const washedContent = normalizedWashedText
+    ? aiReviewReport?.taggedWashedText
     ? injectHighlightTags(
         ensureTaggedTitle(normalizedWashedText, aiReviewReport.taggedWashedText),
         mistranslations,
@@ -173,6 +174,7 @@ export function TranslationPanel() {
         false
       )
     : normalizedWashedText
+    : ""
 
   const displayedWashedText = getDisplayedWashedText(
     normalizedWashedText,
@@ -312,7 +314,7 @@ export function TranslationPanel() {
               }
               icon={<CheckCircle className="size-3.5 text-primary" />}
               content={washedContent}
-              renderHtml={Boolean(aiReviewReport?.taggedWashedText)}
+              renderHtml={Boolean(normalizedWashedText && aiReviewReport?.taggedWashedText)}
               onCopy={handleWashedDraftCopy}
               className="border-primary/20 bg-background shadow-lg ring-1 ring-primary/5"
               titleClassName="text-primary"
