@@ -1366,58 +1366,77 @@ export function ContextPanel() {
       </ScrollArea>
 
       <Dialog open={isTitleSuggestionDialogOpen} onOpenChange={setIsTitleSuggestionDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[88vh] w-[min(92vw,72rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b border-border/60 px-6 py-5 sm:px-7">
             <DialogTitle>제목 후보 추천</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="max-w-3xl leading-relaxed">
               AI가 문항 적합도 기준으로 후보를 정렬했습니다. 추천 1개를 기본 선택해두었고, 직접 골라 적용할 수 있습니다.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3">
+          <div className="flex min-h-0 flex-1 flex-col px-6 py-5 sm:px-7">
             {currentTitleLine ? (
-              <div className="rounded-2xl border border-border/70 bg-muted/40 px-4 py-3">
-                <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+              <div className="rounded-3xl border border-border/70 bg-muted/35 px-5 py-4 shadow-sm">
+                <p className="text-[11px] font-black uppercase tracking-[0.22em] text-muted-foreground">
                   현재 제목
                 </p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{currentTitleLine}</p>
+                <p className="mt-2 text-[15px] font-semibold leading-7 text-foreground sm:text-base">
+                  {currentTitleLine}
+                </p>
               </div>
             ) : null}
 
-            {titleSuggestions.length > 0 ? (
-              titleSuggestions.map((candidate, index) => {
-                const isSelected = selectedTitleSuggestion === candidate.title
+            <ScrollArea className="mt-4 min-h-0 flex-1 pr-2">
+              {titleSuggestions.length > 0 ? (
+                <div className="grid gap-4 pb-1 xl:grid-cols-2">
+                  {titleSuggestions.map((candidate, index) => {
+                    const isSelected = selectedTitleSuggestion === candidate.title
 
-                return (
-                  <button
-                    key={`${candidate.title}-${index}`}
-                    type="button"
-                    onClick={() => setSelectedTitleSuggestion(candidate.title)}
-                    className={`w-full rounded-2xl border px-4 py-4 text-left transition-all ${
-                      isSelected
-                        ? "border-primary bg-primary/5 shadow-sm"
-                        : "border-border/70 bg-background hover:border-primary/40 hover:bg-muted/30"
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={candidate.recommended ? "default" : "secondary"}>
-                        {candidate.recommended ? "AI 추천" : `${index + 1}순위`}
-                      </Badge>
-                      <Badge variant="outline">적합도 {candidate.score}</Badge>
-                    </div>
-                    <p className="mt-3 text-base font-semibold text-foreground">{candidate.title}</p>
-                    <p className="mt-2 text-sm text-muted-foreground">{candidate.reason}</p>
-                  </button>
-                )
-              })
-            ) : (
-              <div className="rounded-2xl border border-dashed border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
-                표시할 제목 후보를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.
-              </div>
-            )}
+                    return (
+                      <button
+                        key={`${candidate.title}-${index}`}
+                        type="button"
+                        onClick={() => setSelectedTitleSuggestion(candidate.title)}
+                        className={`group flex min-h-[196px] w-full flex-col rounded-3xl border px-5 py-5 text-left transition-all ${
+                          isSelected
+                            ? "border-primary/70 bg-primary/[0.07] shadow-[0_10px_30px_rgba(15,118,110,0.12)]"
+                            : "border-border/70 bg-background hover:border-primary/35 hover:bg-muted/20"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={candidate.recommended ? "default" : "secondary"}>
+                              {candidate.recommended ? "AI 추천" : `${index + 1}순위`}
+                            </Badge>
+                            <Badge variant="outline">적합도 {candidate.score}</Badge>
+                          </div>
+                          <span
+                            className={`text-xs font-semibold transition-colors ${
+                              isSelected ? "text-primary" : "text-muted-foreground group-hover:text-foreground/80"
+                            }`}
+                          >
+                            {isSelected ? "선택됨" : "클릭해서 선택"}
+                          </span>
+                        </div>
+                        <p className="mt-4 text-lg font-semibold leading-8 text-foreground">
+                          {candidate.title}
+                        </p>
+                        <p className="mt-3 text-sm leading-7 text-muted-foreground">
+                          {candidate.reason}
+                        </p>
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-dashed border-border/70 px-4 py-10 text-center text-sm text-muted-foreground">
+                  표시할 제목 후보를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.
+                </div>
+              )}
+            </ScrollArea>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t border-border/60 px-6 py-4 sm:px-7">
             <Button
               variant="outline"
               onClick={() => setIsTitleSuggestionDialogOpen(false)}
