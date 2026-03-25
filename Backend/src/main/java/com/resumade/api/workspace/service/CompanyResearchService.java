@@ -22,9 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class CompanyResearchService {
 
-    private static final String DEFAULT_VALUE = "\ubbf8\uc9c0\uc815";
-    private static final String DEFAULT_GOAL = "\uc9c0\uc6d0\ub3d9\uae30, \uc11c\ube44\uc2a4 \ud638\uac10\ub3c4, \uc9c1\ubb34 \uc801\ud569\ub3c4\ub97c \uc790\uc18c\uc11c\uc5d0 \uad6c\uccb4\uc801\uc73c\ub85c \ub179\uc77c \uc218 \uc788\uc744 \uc815\ub3c4\ub85c \ubd84\uc11d";
-    private static final String DEFAULT_JD = "JD \uc815\ubcf4 \uc5c6\uc74c";
+    private static final String FALLBACK = "미지정";
 
     private final GeminiCompanyResearchClient geminiCompanyResearchClient;
     private final ApplicationRepository applicationRepository;
@@ -35,9 +33,12 @@ public class CompanyResearchService {
         Application application = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new RuntimeException("Application not found: " + applicationId));
 
-        CompanyResearchRequest normalizedRequest = request != null ? request : new CompanyResearchRequest();
+        String additionalFocus = (request != null && request.getAdditionalFocus() != null)
+                ? request.getAdditionalFocus().trim()
+                : "";
+
         String uuid = UUID.randomUUID().toString();
-        researchCache.put(uuid, new ResearchJob(applicationId, application, normalizedRequest));
+        researchCache.put(uuid, new ResearchJob(applicationId, application, additionalFocus));
         log.info("Initialized company research for application {} with UUID {}", applicationId, uuid);
         return uuid;
     }
@@ -46,34 +47,21 @@ public class CompanyResearchService {
     public void processResearch(String uuid, SseEmitter emitter) {
         ResearchJob job = researchCache.remove(uuid);
         if (job == null) {
-            sendError(emitter, "\uc720\ud6a8\ud558\uc9c0 \uc54a\uac70\ub098 \ub9cc\ub8cc\ub41c \uae30\uc5c5 \ubd84\uc11d \uc138\uc158\uc785\ub2c8\ub2e4.");
+            sendError(emitter, "유효하지 않거나 만료된 기업 분석 세션입니다.");
             return;
         }
 
         try {
-            String company = valueOrFallback(job.application().getCompanyName(), DEFAULT_VALUE);
-            String position = valueOrFallback(job.application().getPosition(), DEFAULT_VALUE);
-            String businessUnit = valueOrFallback(job.request().getBusinessUnit(), DEFAULT_VALUE);
-            String targetService = valueOrFallback(job.request().getTargetService(), DEFAULT_VALUE);
-            String focusRole = valueOrFallback(job.request().getFocusRole(), position);
-            String techFocus = valueOrFallback(job.request().getTechFocus(), DEFAULT_VALUE);
-            String questionGoal = valueOrFallback(job.request().getQuestionGoal(), DEFAULT_GOAL);
-            String rawJd = valueOrFallback(job.application().getRawJd(), DEFAULT_JD);
+            String company  = blank(job.application().getCompanyName()) ? FALLBACK : job.application().getCompanyName();
+            String position = blank(job.application().getPosition())    ? FALLBACK : job.application().getPosition();
+            String rawJd    = blank(job.application().getRawJd())       ? "JD 정보 없음" : job.application().getRawJd();
 
-            sendEvent(emitter, "START", "\ud83d\udd0d \uae30\uc5c5\uacfc \uc9c1\ubb34 \ub9e5\ub77d\uc744 \uc815\ub9ac\ud560 \uc900\ube44\ub97c \ud558\uace0 \uc788\uc5b4\uc694.");
-            sendEvent(emitter, "ANALYZING", "\ud83e\udde0 \ud68c\uc0ac, \uc11c\ube44\uc2a4, \uc9c1\ubb34 \uc815\ubcf4\ub97c \uc790\uc18c\uc11c\uc5d0 \ub179\uc77c \uc218 \uc788\ub3c4\ub85d \uc2ec\uce35 \ubd84\uc11d\ud558\uace0 \uc788\uc5b4\uc694.");
+            sendEvent(emitter, "START",     "🔍 기업 및 직무 맥락을 파악하고 있어요.");
+            sendEvent(emitter, "ANALYZING", "📋 경력 공고와 기술 블로그를 검색하고 있어요.");
 
             CompanyResearchResponse response = geminiCompanyResearchClient.compose(
-                    company,
-                    position,
-                    businessUnit,
-                    targetService,
-                    focusRole,
-                    techFocus,
-                    questionGoal,
-                    rawJd
+                    company, position, rawJd, job.additionalFocus()
             );
-            response = applyFocusOverrides(response, job.request(), company, position);
 
             Application application = applicationRepository.findById(job.applicationId()).orElseThrow();
             application.setCompanyResearch(objectMapper.writeValueAsString(response));
@@ -109,39 +97,9 @@ public class CompanyResearchService {
         }
     }
 
-    private String valueOrFallback(String value, String fallback) {
-        return value == null || value.isBlank() ? fallback : value;
+    private boolean blank(String value) {
+        return value == null || value.isBlank();
     }
 
-    private CompanyResearchResponse applyFocusOverrides(
-            CompanyResearchResponse response,
-            CompanyResearchRequest request,
-            String company,
-            String position
-    ) {
-        CompanyResearchResponse safeResponse = response != null ? response : new CompanyResearchResponse();
-        CompanyResearchResponse.Focus focus = safeResponse.getFocus() != null
-                ? safeResponse.getFocus()
-                : new CompanyResearchResponse.Focus();
-
-        focus.setCompany(company);
-        focus.setPosition(position);
-        focus.setBusinessUnit(preferRequestValue(request.getBusinessUnit(), focus.getBusinessUnit()));
-        focus.setTargetService(preferRequestValue(request.getTargetService(), focus.getTargetService()));
-        focus.setFocusRole(preferRequestValue(request.getFocusRole(), valueOrFallback(focus.getFocusRole(), position)));
-        focus.setTechFocus(preferRequestValue(request.getTechFocus(), focus.getTechFocus()));
-        focus.setQuestionGoal(preferRequestValue(request.getQuestionGoal(), focus.getQuestionGoal()));
-
-        safeResponse.setFocus(focus);
-        return safeResponse;
-    }
-
-    private String preferRequestValue(String requestValue, String fallbackValue) {
-        return requestValue != null && !requestValue.isBlank()
-                ? requestValue.trim()
-                : valueOrFallback(fallbackValue, "");
-    }
-
-    private record ResearchJob(Long applicationId, Application application, CompanyResearchRequest request) {
-    }
+    private record ResearchJob(Long applicationId, Application application, String additionalFocus) {}
 }

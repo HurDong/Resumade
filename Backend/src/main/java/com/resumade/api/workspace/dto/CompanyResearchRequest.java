@@ -10,9 +10,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CompanyResearchRequest {
-    private String businessUnit;
-    private String targetService;
-    private String focusRole;
-    private String techFocus;
-    private String questionGoal;
+    /** 사용자가 특별히 궁금한 점 (선택). 없으면 AI가 JD만으로 자동 분석. */
+    private String additionalFocus;
 }
