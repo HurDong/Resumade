@@ -2,13 +2,20 @@
 
 import { useEffect, useState, type ReactNode } from "react"
 import {
+  AlertCircle,
+  BookOpen,
   Building2,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
   FileSearch,
   Lightbulb,
-  Loader2,
   MessageSquareQuote,
+  Loader2,
+  Search,
   Sparkles,
   Target,
+  Zap,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -24,6 +31,9 @@ import {
 import {
   parseCompanyResearch,
   type CompanyResearchData,
+  type TechConfidence,
+  type TechStackItem,
+  type SearchSource,
 } from "@/lib/application-intelligence"
 import { type Application } from "@/lib/mock-data"
 
@@ -32,19 +42,35 @@ interface CompanyResearchPanelProps {
   onUpdateApplication: (updates: Partial<Application>) => void
 }
 
-const DEFAULT_GOAL =
-  "지원동기, 서비스 호감도, 직무 적합도를 자소서에 구체적으로 녹일 수 있을 정도로 분석합니다."
+// 기술 스택 confidence 별 스타일
+const CONFIDENCE_STYLE: Record<TechConfidence, { badge: string; label: string }> = {
+  CONFIRMED: {
+    badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    label: "확인됨",
+  },
+  INFERRED: {
+    badge: "border-amber-200 bg-amber-50 text-amber-700",
+    label: "추정",
+  },
+  UNCERTAIN: {
+    badge: "border-gray-200 bg-gray-50 text-gray-500",
+    label: "불확실",
+  },
+}
+
+// 카테고리 표시 순서
+const CATEGORY_ORDER = [
+  "Backend", "Frontend", "Mobile", "Database",
+  "Infrastructure", "DevOps", "AI-ML",
+]
 
 export function CompanyResearchPanel({
   application,
   onUpdateApplication,
 }: CompanyResearchPanelProps) {
   const existingResearch = parseCompanyResearch(application.companyResearch)
-  const [businessUnit, setBusinessUnit] = useState("")
-  const [targetService, setTargetService] = useState("")
-  const [focusRole, setFocusRole] = useState(application.position || "")
-  const [techFocus, setTechFocus] = useState("")
-  const [questionGoal, setQuestionGoal] = useState(DEFAULT_GOAL)
+  const [additionalFocus, setAdditionalFocus] = useState("")
+  const [showFocusInput, setShowFocusInput] = useState(false)
   const [researchData, setResearchData] = useState<CompanyResearchData | null>(existingResearch)
   const [progressMessage, setProgressMessage] = useState("")
   const [isResearching, setIsResearching] = useState(false)
@@ -53,14 +79,9 @@ export function CompanyResearchPanel({
   useEffect(() => {
     const parsed = parseCompanyResearch(application.companyResearch)
     setResearchData(parsed)
-    setBusinessUnit(parsed?.focus.businessUnit || "")
-    setTargetService(parsed?.focus.targetService || "")
-    setFocusRole(parsed?.focus.focusRole || application.position || "")
-    setTechFocus(parsed?.focus.techFocus || "")
-    setQuestionGoal(parsed?.focus.questionGoal || DEFAULT_GOAL)
     setProgressMessage("")
     setError(null)
-  }, [application.id, application.companyResearch, application.position])
+  }, [application.id, application.companyResearch])
 
   const handleResearch = async () => {
     await prepareCompletionSound()
@@ -77,21 +98,13 @@ export function CompanyResearchPanel({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            businessUnit,
-            targetService,
-            focusRole,
-            techFocus,
-            questionGoal,
-          }),
+          body: JSON.stringify({ additionalFocus: additionalFocus.trim() || null }),
         }
       )
 
-      if (!initResponse.ok) {
-        throw new Error("기업 분석 초기화에 실패했습니다.")
-      }
+      if (!initResponse.ok) throw new Error("기업 분석 초기화에 실패했습니다.")
 
-      const { uuid } = await initResponse.json()
+      const { uuid } = await initResponse.json() as { uuid: string }
 
       await streamSse({
         url: toApiUrl(`/api/applications/company-research/stream/${uuid}`),
@@ -110,21 +123,10 @@ export function CompanyResearchPanel({
               setError("기업 분석 결과를 해석하지 못했습니다.")
               return
             }
-
-            const normalizedResearch = mergeResearchFocus(parsed, {
-              company: application.company,
-              position: application.position,
-              businessUnit,
-              targetService,
-              focusRole,
-              techFocus,
-              questionGoal,
-            })
-
             completed = true
-            setResearchData(normalizedResearch)
+            setResearchData(parsed)
             setProgressMessage("기업 분석이 완료되었습니다.")
-            onUpdateApplication({ companyResearch: JSON.stringify(normalizedResearch) })
+            onUpdateApplication({ companyResearch: JSON.stringify(parsed) })
             void playCompletionSound()
             return
           }
@@ -132,8 +134,8 @@ export function CompanyResearchPanel({
           if (normalizedEvent === "ERROR") {
             streamFailed = true
             try {
-              const parsedError = JSON.parse(data)
-              setError(parsedError.message || "기업 분석 중 오류가 발생했습니다.")
+              const parsedError = JSON.parse(data) as { message?: string }
+              setError(parsedError.message ?? "기업 분석 중 오류가 발생했습니다.")
             } catch {
               setError(data || "기업 분석 중 오류가 발생했습니다.")
             }
@@ -145,11 +147,7 @@ export function CompanyResearchPanel({
         setError("기업 분석 스트림이 예상보다 일찍 종료되었습니다.")
       }
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "기업 분석 요청에 실패했습니다."
-      )
+      setError(err instanceof Error ? err.message : "기업 분석 요청에 실패했습니다.")
     } finally {
       setIsResearching(false)
     }
@@ -157,90 +155,82 @@ export function CompanyResearchPanel({
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-5 overflow-visible">
+      {/* ── 분석 시작 카드 ── */}
       <Card className="w-full min-w-0 max-w-full overflow-hidden border-primary/15 bg-gradient-to-br from-primary/5 via-background to-background shadow-none">
-        <CardContent className="space-y-5 p-4 sm:p-5">
-          <div className="flex min-w-0 flex-col gap-4">
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="flex items-center gap-2 text-primary">
-                <FileSearch className="size-4 shrink-0" />
-                <span className="text-sm font-black uppercase tracking-[0.18em]">
-                  기업 분석
-                </span>
-              </div>
-              <p className="break-words text-sm leading-6 text-muted-foreground">
-                Gemini가 공고와 입력한 포커스를 바탕으로 회사와 직무 맥락을 자소서용으로 깊게 재구성합니다.
-                필요하면 공개된 최신 정보를 바탕으로 다시 분석할 수 있습니다.
-              </p>
+        <CardContent className="space-y-4 p-4 sm:p-5">
+          <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex items-center gap-2 text-primary">
+              <FileSearch className="size-4 shrink-0" />
+              <span className="text-sm font-black uppercase tracking-[0.18em]">기업 분석</span>
             </div>
-            <Button
-              onClick={handleResearch}
-              disabled={isResearching}
-              className="w-full shrink-0 gap-2 self-start rounded-full px-4 shadow-sm shadow-primary/20 sm:w-auto"
-            >
-              {isResearching ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Sparkles className="size-4" />
-              )}
-              {researchData ? "다시 분석" : "분석 시작"}
-            </Button>
-          </div>
-
-          <div className="grid min-w-0 gap-3 lg:grid-cols-2">
-            <FieldBlock
-              label="사업부 / 팀"
-              value={businessUnit}
-              onChange={setBusinessUnit}
-              placeholder="예: MX사업부, 병원 전산팀, AI 플랫폼 조직"
-            />
-            <FieldBlock
-              label="서비스 / 제품"
-              value={targetService}
-              onChange={setTargetService}
-              placeholder="예: 모바일 플랫폼, 병원 정보시스템, AI 지원 서비스"
-            />
-            <FieldBlock
-              label="직무 포커스"
-              value={focusRole}
-              onChange={setFocusRole}
-              placeholder="예: Java 백엔드, 의료 AI 운영, 플랫폼 자동화"
-            />
-            <FieldBlock
-              label="기술 포커스"
-              value={techFocus}
-              onChange={setTechFocus}
-              placeholder="예: Java, Spring, 보안, 인프라, 데이터 파이프라인, MLOps"
-            />
-          </div>
-
-          <div className="min-w-0 space-y-1.5">
-            <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-              분석 목표
+            <p className="break-words text-sm leading-6 text-muted-foreground">
+              JD를 바탕으로 AI가 사업부·제품을 자동 추론하고, 경력 공고·기술 블로그를 검색하여
+              실제 기술 스택과 자소서 전략을 도출합니다.
             </p>
-            <Textarea
-              value={questionGoal}
-              onChange={(event) => setQuestionGoal(event.target.value)}
-              placeholder="이 분석에서 어떤 답을 얻고 싶은지 적어주세요."
-              className="min-h-[110px] max-w-full resize-none overflow-hidden whitespace-pre-wrap break-all bg-background/80 text-sm leading-6 [overflow-wrap:anywhere]"
-            />
-          </div>
 
-          {(progressMessage || error) && (
-            <div
-              className={`rounded-2xl border px-4 py-3 text-sm leading-6 ${
-                error
-                  ? "border-destructive/20 bg-destructive/5 text-destructive"
-                  : "border-primary/10 bg-primary/5 text-foreground"
-              }`}
-            >
-              {error || progressMessage}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={handleResearch}
+                disabled={isResearching}
+                className="gap-2 rounded-full px-5 shadow-sm shadow-primary/20"
+              >
+                {isResearching ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Sparkles className="size-4" />
+                )}
+                {researchData ? "다시 분석" : "분석 시작"}
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-muted-foreground"
+                onClick={() => setShowFocusInput((prev) => !prev)}
+              >
+                {showFocusInput ? (
+                  <ChevronUp className="size-3.5" />
+                ) : (
+                  <ChevronDown className="size-3.5" />
+                )}
+                {showFocusInput ? "포커스 닫기" : "추가 포커스 설정"}
+              </Button>
             </div>
-          )}
+
+            {showFocusInput && (
+              <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                  분석 지시사항 <span className="font-normal normal-case">(선택 · 포함/제외 모두 가능)</span>
+                </p>
+                <Textarea
+                  value={additionalFocus}
+                  onChange={(e) => setAdditionalFocus(e.target.value)}
+                  placeholder={"예: 클라우드 인프라 쪽이 특히 궁금해요\n예: 모바일 관련은 찾지 말아줘\n예: AI 실제 프로덕트 위주로만 분석해줘"}
+                  className="min-h-[90px] resize-none bg-background/80 text-sm leading-6"
+                />
+              </div>
+            )}
+
+            {(progressMessage || error) && (
+              <div
+                className={`flex items-start gap-2 rounded-2xl border px-4 py-3 text-sm leading-6 ${
+                  error
+                    ? "border-destructive/20 bg-destructive/5 text-destructive"
+                    : "border-primary/10 bg-primary/5 text-foreground"
+                }`}
+              >
+                {error && <AlertCircle className="mt-0.5 size-4 shrink-0" />}
+                <span>{error || progressMessage}</span>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
       {researchData && (
         <div className="w-full min-w-0 max-w-full space-y-4 overflow-visible">
+
+          {/* ── 자동 발견 맥락 + 핵심 요약 ── */}
           <Card className="w-full min-w-0 max-w-full overflow-hidden border-none bg-muted/30 shadow-none">
             <CardContent className="space-y-4 p-4 sm:p-5">
               <div className="flex min-w-0 items-center gap-2">
@@ -252,28 +242,83 @@ export function CompanyResearchPanel({
               <p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground/90">
                 {researchData.executiveSummary}
               </p>
-              <div className="flex flex-wrap gap-2">
-                {Array.from(
-                  new Set(
-                    [
-                      researchData.focus.businessUnit,
-                      researchData.focus.targetService,
-                      researchData.focus.focusRole,
-                      researchData.focus.techFocus,
-                    ].filter(Boolean),
-                  ),
-                ).map((item, index) => (
-                    <Badge
-                      key={`${item}-${index}`}
-                      variant="outline"
-                      className="max-w-full whitespace-normal break-all border-primary/20 bg-background px-3 py-1 text-primary"
-                    >
-                      {item}
-                    </Badge>
-                  ))}
-              </div>
+
+              {/* AI 자동 발견 맥락 배지 */}
+              {researchData.discoveredContext && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                    AI 자동 추론
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {researchData.discoveredContext.businessUnit && (
+                      <Badge variant="outline" className="border-primary/20 bg-background px-3 py-1 text-primary">
+                        🏢 {researchData.discoveredContext.businessUnit}
+                      </Badge>
+                    )}
+                    {researchData.discoveredContext.product && (
+                      <Badge variant="outline" className="border-primary/20 bg-background px-3 py-1 text-primary">
+                        📦 {researchData.discoveredContext.product}
+                      </Badge>
+                    )}
+                  </div>
+                  {(researchData.discoveredContext.evidenceSources?.length ?? 0) > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      출처: {researchData.discoveredContext!.evidenceSources!.join(" · ")}
+                    </p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
+
+          {/* ── 실제 검색 출처 ── */}
+          {((researchData.searchSources?.length ?? 0) > 0 ||
+            (researchData.searchQueries?.length ?? 0) > 0) && (
+            <SourcesCard
+              queries={researchData.searchQueries ?? []}
+              sources={researchData.searchSources ?? []}
+            />
+          )}
+
+          {/* ── 기술 스택 (신규) ── */}
+          {(researchData.techStack?.length ?? 0) > 0 && (
+            <TechStackCard techStack={researchData.techStack!} />
+          )}
+
+          {/* ── 최근 기술 작업 (신규) ── */}
+          {(researchData.recentTechWork?.length ?? 0) > 0 && (
+            <Card className="w-full min-w-0 max-w-full overflow-hidden border-none bg-muted/30 shadow-none">
+              <CardContent className="space-y-3 p-4 sm:p-5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Zap className="size-4 shrink-0 text-primary" />
+                  <span className="text-sm font-black uppercase tracking-[0.16em] text-primary">
+                    최근 기술 작업
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {researchData.recentTechWork!.map((fact, index) => (
+                    <div
+                      key={index}
+                      className="rounded-2xl bg-background px-4 py-3 shadow-sm space-y-1"
+                    >
+                      <p className="text-sm font-semibold text-foreground/90">{fact.summary}</p>
+                      {fact.detail && (
+                        <p className="text-sm leading-6 text-muted-foreground">{fact.detail}</p>
+                      )}
+                      {fact.source && (
+                        <p className="text-xs text-muted-foreground/70">📎 {fact.source}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Fit 분석 (신규) ── */}
+          {researchData.fitAnalysis && (
+            <FitAnalysisCard fitAnalysis={researchData.fitAnalysis} />
+          )}
 
           <div className="grid min-w-0 gap-4">
             <InsightListCard
@@ -291,13 +336,9 @@ export function CompanyResearchPanel({
               title="직무 범위"
               items={researchData.roleScope}
             />
-            <InsightListCard
-              icon={<FileSearch className="size-4 text-primary" />}
-              title="기술 시그널"
-              items={researchData.techSignals}
-            />
           </div>
 
+          {/* ── 자소서 연결 포인트 ── */}
           <Card className="w-full min-w-0 max-w-full overflow-hidden border-primary/10 bg-primary/[0.03] shadow-none">
             <CardContent className="space-y-5 p-4 sm:p-5">
               <div className="flex min-w-0 items-center gap-2">
@@ -306,7 +347,6 @@ export function CompanyResearchPanel({
                   자소서 연결 포인트
                 </span>
               </div>
-
               <div className="grid gap-4">
                 <MiniList title="지원동기 포인트" items={researchData.motivationHooks} />
                 <MiniList title="서비스 관심 포인트" items={researchData.serviceHooks} />
@@ -348,78 +388,241 @@ export function CompanyResearchPanel({
   )
 }
 
-function mergeResearchFocus(
-  research: CompanyResearchData,
-  overrides: {
-    company?: string
-    position?: string
-    businessUnit?: string
-    targetService?: string
-    focusRole?: string
-    techFocus?: string
-    questionGoal?: string
-  },
-): CompanyResearchData {
-  return {
-    ...research,
-    focus: {
-      ...research.focus,
-      company: research.focus.company || overrides.company || "",
-      position: research.focus.position || overrides.position || "",
-      businessUnit: overrides.businessUnit?.trim() || research.focus.businessUnit || "",
-      targetService: overrides.targetService?.trim() || research.focus.targetService || "",
-      focusRole: overrides.focusRole?.trim() || research.focus.focusRole || overrides.position || "",
-      techFocus: overrides.techFocus?.trim() || research.focus.techFocus || "",
-      questionGoal: overrides.questionGoal?.trim() || research.focus.questionGoal || DEFAULT_GOAL,
-    },
-  }
-}
+// ── 실제 검색 출처 카드 ────────────────────────────────────────────
 
-function FieldBlock({
-  label,
-  value,
-  onChange,
-  placeholder,
+function SourcesCard({
+  queries,
+  sources,
 }: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  placeholder: string
+  queries: string[]
+  sources: SearchSource[]
 }) {
+  const [expanded, setExpanded] = useState(false)
+
   return (
-    <div className="min-w-0 space-y-1.5">
-      <p className="break-words text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      <Textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="min-h-[84px] max-w-full resize-none overflow-hidden whitespace-pre-wrap break-all bg-background/80 text-sm leading-6 [overflow-wrap:anywhere]"
-      />
-    </div>
+    <Card className="w-full min-w-0 max-w-full overflow-hidden border-none bg-muted/20 shadow-none">
+      <CardContent className="space-y-3 p-4 sm:p-5">
+        <button
+          onClick={() => setExpanded((prev) => !prev)}
+          className="flex w-full min-w-0 items-center justify-between gap-2 text-left"
+        >
+          <div className="flex items-center gap-2">
+            <Search className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Gemini가 실제로 참고한 출처
+            </span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+              {sources.length}
+            </span>
+          </div>
+          {expanded ? (
+            <ChevronUp className="size-3.5 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+          )}
+        </button>
+
+        {expanded && (
+          <div className="space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+            {/* 실제 검색 쿼리 */}
+            {queries.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  검색어
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {queries.map((q, i) => (
+                    <span
+                      key={i}
+                      className="rounded-full border border-border bg-background px-2.5 py-0.5 text-[11px] text-muted-foreground"
+                    >
+                      {q}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 실제 참고 URL */}
+            {sources.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  참고 페이지
+                </p>
+                <div className="space-y-1">
+                  {sources.map((src, i) => (
+                    <a
+                      key={i}
+                      href={src.uri}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-start gap-2 rounded-xl px-3 py-2 text-xs leading-5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <ExternalLink className="mt-0.5 size-3 shrink-0" />
+                      <span className="min-w-0 break-all">{src.title || src.uri}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
-function InsightListCard({
-  title,
-  items,
-  icon,
-}: {
-  title: string
-  items: string[]
-  icon: ReactNode
-}) {
-  if (items.length === 0) return null
+// ── 기술 스택 카드 ──────────────────────────────────────────────────
 
+function TechStackCard({ techStack }: { techStack: TechStackItem[] }) {
+  // 카테고리별 그룹핑
+  const grouped = CATEGORY_ORDER.reduce<Record<string, TechStackItem[]>>((acc, cat) => {
+    const items = techStack.filter((t) => t.category === cat)
+    if (items.length > 0) acc[cat] = items
+    return acc
+  }, {})
+
+  // CATEGORY_ORDER에 없는 기타 카테고리
+  const others = techStack.filter((t) => !CATEGORY_ORDER.includes(t.category))
+  if (others.length > 0) grouped["기타"] = others
+
+  const CATEGORY_LABEL: Record<string, string> = {
+    Backend: "백엔드", Frontend: "프론트엔드", Mobile: "모바일",
+    Database: "데이터베이스", Infrastructure: "인프라", DevOps: "DevOps", "AI-ML": "AI / ML",
+  }
+
+  return (
+    <Card className="w-full min-w-0 max-w-full overflow-hidden border-none bg-muted/30 shadow-none">
+      <CardContent className="space-y-4 p-4 sm:p-5">
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <BookOpen className="size-4 shrink-0 text-primary" />
+            <span className="text-sm font-black uppercase tracking-[0.16em] text-primary">
+              기술 스택
+            </span>
+          </div>
+          <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <span className="inline-block size-2 rounded-full bg-emerald-400" />확인됨
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block size-2 rounded-full bg-amber-400" />추정
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block size-2 rounded-full bg-gray-300" />불확실
+            </span>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {Object.entries(grouped).map(([category, items]) => (
+            <div key={category} className="space-y-1.5">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                {CATEGORY_LABEL[category] ?? category}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {items.map((tech, i) => {
+                  const style = CONFIDENCE_STYLE[tech.confidence] ?? CONFIDENCE_STYLE.UNCERTAIN
+                  return (
+                    <span
+                      key={i}
+                      title={`${style.label} · ${tech.source}`}
+                      className={`inline-flex cursor-default items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-opacity hover:opacity-80 ${style.badge}`}
+                    >
+                      {tech.name}
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── Fit 분석 카드 ───────────────────────────────────────────────────
+
+function FitAnalysisCard({ fitAnalysis }: { fitAnalysis: NonNullable<CompanyResearchData["fitAnalysis"]> }) {
+  return (
+    <Card className="w-full min-w-0 max-w-full overflow-hidden border-amber-100 bg-amber-50/40 shadow-none">
+      <CardContent className="space-y-4 p-4 sm:p-5">
+        <div className="flex min-w-0 items-center gap-2">
+          <Target className="size-4 shrink-0 text-amber-600" />
+          <span className="text-sm font-black uppercase tracking-[0.16em] text-amber-700">
+            Fit 분석
+          </span>
+        </div>
+
+        {fitAnalysis.gapAnalysis && (
+          <p className="whitespace-pre-wrap break-words rounded-2xl bg-background px-4 py-3 text-sm leading-7 text-foreground/90 shadow-sm">
+            {fitAnalysis.gapAnalysis}
+          </p>
+        )}
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {fitAnalysis.jdStatedRequirements.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                JD 명시 요구사항
+              </p>
+              <div className="space-y-1.5">
+                {fitAnalysis.jdStatedRequirements.map((item, i) => (
+                  <div key={i} className="rounded-xl bg-background px-3 py-2 text-xs leading-5 text-foreground/80 shadow-sm">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {fitAnalysis.actualTechStack.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                실제 파악된 기술
+              </p>
+              <div className="space-y-1.5">
+                {fitAnalysis.actualTechStack.map((item, i) => (
+                  <div key={i} className="rounded-xl bg-background px-3 py-2 text-xs leading-5 text-foreground/80 shadow-sm">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {fitAnalysis.coverLetterHints.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+              자소서 강조 포인트
+            </p>
+            <div className="space-y-1.5">
+              {fitAnalysis.coverLetterHints.map((hint, i) => (
+                <div key={i} className="flex items-start gap-2 rounded-xl bg-background px-3 py-2.5 text-sm leading-6 shadow-sm">
+                  <span className="mt-0.5 text-amber-500">✦</span>
+                  <span className="text-foreground/90">{hint}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── 공통 서브 컴포넌트 ──────────────────────────────────────────────
+
+function InsightListCard({ title, items, icon }: { title: string; items: string[]; icon: ReactNode }) {
+  if (items.length === 0) return null
   return (
     <Card className="w-full min-w-0 max-w-full overflow-hidden border-none bg-muted/30 shadow-none">
       <CardContent className="space-y-3 p-4 sm:p-5">
         <div className="flex min-w-0 items-center gap-2">
           {icon}
-          <span className="break-words text-sm font-black uppercase tracking-[0.16em] text-primary">
-            {title}
-          </span>
+          <span className="break-words text-sm font-black uppercase tracking-[0.16em] text-primary">{title}</span>
         </div>
         <MiniList items={items} />
       </CardContent>
@@ -429,13 +632,10 @@ function InsightListCard({
 
 function MiniList({ title, items }: { title?: string; items: string[] }) {
   if (items.length === 0) return null
-
   return (
     <div className="min-w-0 space-y-2">
       {title && (
-        <p className="break-words text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-          {title}
-        </p>
+        <p className="break-words text-[11px] font-black uppercase tracking-wider text-muted-foreground">{title}</p>
       )}
       <div className="min-w-0 space-y-2">
         {items.map((item, index) => (

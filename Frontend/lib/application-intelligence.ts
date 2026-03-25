@@ -7,23 +7,66 @@ export interface JdInsightData {
   }
 }
 
+// ── 기업 분석 타입 ─────────────────────────────────────────────────
+
 export interface CompanyResearchFocus {
   company?: string
   position?: string
+  /** AI가 추론한 사업부/팀 */
+  inferredBusinessUnit?: string
+  /** AI가 추론한 제품/서비스 */
+  inferredProduct?: string
+}
+
+export interface DiscoveredContext {
   businessUnit?: string
-  targetService?: string
-  focusRole?: string
-  techFocus?: string
-  questionGoal?: string
+  product?: string
+  evidenceSources?: string[]
+}
+
+export type TechConfidence = "CONFIRMED" | "INFERRED" | "UNCERTAIN"
+export type TechCategory =
+  | "Backend"
+  | "Frontend"
+  | "Database"
+  | "Infrastructure"
+  | "DevOps"
+  | "Mobile"
+  | "AI-ML"
+  | string
+
+export interface TechStackItem {
+  name: string
+  category: TechCategory
+  confidence: TechConfidence
+  source: string
+}
+
+export interface TechFact {
+  summary: string
+  detail: string
+  source: string
+}
+
+export interface FitAnalysis {
+  jdStatedRequirements: string[]
+  actualTechStack: string[]
+  gapAnalysis: string
+  coverLetterHints: string[]
+}
+
+export interface SearchSource {
+  title: string
+  uri: string
 }
 
 export interface CompanyResearchData {
   focus: CompanyResearchFocus
   executiveSummary: string
+  // 기존 섹션
   businessContext: string[]
   serviceLandscape: string[]
   roleScope: string[]
-  techSignals: string[]
   motivationHooks: string[]
   serviceHooks: string[]
   resumeAngles: string[]
@@ -31,7 +74,17 @@ export interface CompanyResearchData {
   recommendedNarrative: string
   followUpQuestions: string[]
   confidenceNotes: string[]
+  // 신규 구조화 섹션
+  discoveredContext?: DiscoveredContext
+  techStack?: TechStackItem[]
+  recentTechWork?: TechFact[]
+  fitAnalysis?: FitAnalysis
+  // Gemini 실제 검색 출처
+  searchQueries?: string[]
+  searchSources?: SearchSource[]
 }
+
+// ── 파서 ───────────────────────────────────────────────────────────
 
 export function parseJdInsight(raw?: string): JdInsightData | null {
   if (!raw?.trim()) return null
@@ -67,17 +120,13 @@ export function parseCompanyResearch(raw?: string): CompanyResearchData | null {
     focus: {
       company: asString(focus.company),
       position: asString(focus.position),
-      businessUnit: asString(focus.businessUnit),
-      targetService: asString(focus.targetService),
-      focusRole: asString(focus.focusRole),
-      techFocus: asString(focus.techFocus),
-      questionGoal: asString(focus.questionGoal),
+      inferredBusinessUnit: asString(focus.inferredBusinessUnit),
+      inferredProduct: asString(focus.inferredProduct),
     },
     executiveSummary: asString(record.executiveSummary),
     businessContext: asArray(record.businessContext),
     serviceLandscape: asArray(record.serviceLandscape),
     roleScope: asArray(record.roleScope),
-    techSignals: asArray(record.techSignals),
     motivationHooks: asArray(record.motivationHooks),
     serviceHooks: asArray(record.serviceHooks),
     resumeAngles: asArray(record.resumeAngles),
@@ -85,7 +134,70 @@ export function parseCompanyResearch(raw?: string): CompanyResearchData | null {
     recommendedNarrative: asString(record.recommendedNarrative),
     followUpQuestions: asArray(record.followUpQuestions),
     confidenceNotes: asArray(record.confidenceNotes),
+    discoveredContext: parseDiscoveredContext(record.discoveredContext),
+    techStack: parseTechStack(record.techStack),
+    recentTechWork: parseTechFacts(record.recentTechWork),
+    fitAnalysis: parseFitAnalysis(record.fitAnalysis),
+    searchQueries: asArray(record.searchQueries),
+    searchSources: parseSearchSources(record.searchSources),
   }
+}
+
+function parseDiscoveredContext(raw: unknown): DiscoveredContext | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  return {
+    businessUnit: asString(r.businessUnit),
+    product: asString(r.product),
+    evidenceSources: asArray(r.evidenceSources),
+  }
+}
+
+function parseTechStack(raw: unknown): TechStackItem[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  return raw
+    .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    .map((item) => ({
+      name: asString(item.name),
+      category: asString(item.category) as TechCategory,
+      confidence: (asString(item.confidence) as TechConfidence) || "UNCERTAIN",
+      source: asString(item.source),
+    }))
+    .filter((item) => item.name.length > 0)
+}
+
+function parseTechFacts(raw: unknown): TechFact[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  return raw
+    .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    .map((item) => ({
+      summary: asString(item.summary),
+      detail: asString(item.detail),
+      source: asString(item.source),
+    }))
+    .filter((item) => item.summary.length > 0)
+}
+
+function parseFitAnalysis(raw: unknown): FitAnalysis | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  return {
+    jdStatedRequirements: asArray(r.jdStatedRequirements),
+    actualTechStack: asArray(r.actualTechStack),
+    gapAnalysis: asString(r.gapAnalysis),
+    coverLetterHints: asArray(r.coverLetterHints),
+  }
+}
+
+function parseSearchSources(raw: unknown): SearchSource[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  return raw
+    .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    .map((item) => ({
+      title: asString(item.title),
+      uri: asString(item.uri),
+    }))
+    .filter((item) => item.uri.length > 0)
 }
 
 function buildFallbackCompanyResearch(raw: string): CompanyResearchData {
@@ -95,7 +207,6 @@ function buildFallbackCompanyResearch(raw: string): CompanyResearchData {
     businessContext: [],
     serviceLandscape: [],
     roleScope: [],
-    techSignals: [],
     motivationHooks: [],
     serviceHooks: [],
     resumeAngles: [],
@@ -105,6 +216,8 @@ function buildFallbackCompanyResearch(raw: string): CompanyResearchData {
     confidenceNotes: [],
   }
 }
+
+// ── 유틸 ───────────────────────────────────────────────────────────
 
 function asString(value: unknown) {
   return typeof value === "string" ? normalizeLooseText(value) : ""
@@ -131,46 +244,29 @@ function decodeUnicodeEscapes(value: string) {
 
 function normalizeLooseText(value: string) {
   let current = value.trim()
-
   for (let i = 0; i < 4; i += 1) {
     const unwrapped = unwrapQuotedString(current)
     const normalizedEscapes = decodeLooseEscapes(unwrapped)
-
-    if (normalizedEscapes === current) {
-      break
-    }
-
+    if (normalizedEscapes === current) break
     current = normalizedEscapes.trim()
   }
-
   return current
 }
 
 function unwrapPossiblyEscapedJson(raw: string) {
   let current: unknown = raw.trim()
-
   for (let i = 0; i < 4; i += 1) {
-    if (typeof current !== "string") {
-      return current
-    }
-
+    if (typeof current !== "string") return current
     const trimmed = current.trim()
-    if (!trimmed) {
-      return null
-    }
-
+    if (!trimmed) return null
     try {
       current = JSON.parse(trimmed)
-      continue
     } catch {
       const decoded = decodeLooseEscapes(trimmed)
-      if (decoded === trimmed) {
-        return null
-      }
+      if (decoded === trimmed) return null
       current = decoded
     }
   }
-
   return typeof current === "string" ? null : current
 }
 
