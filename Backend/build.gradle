@@ -38,6 +38,9 @@ dependencies {
 	
 	// Tesseract OCR for Image Text Extraction
 	implementation 'net.sourceforge.tess4j:tess4j:5.11.0'
+
+	// Apache PDFBox for PDF Text Extraction
+	implementation 'org.apache.pdfbox:pdfbox:3.0.3'
 	
 	// JSON Processing
 	implementation 'com.fasterxml.jackson.core:jackson-databind'
@@ -61,7 +64,7 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 bootRun {
-	jvmArgs = ['-Dfile.encoding=UTF-8']
+	jvmArgs = ['-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8']
 
 	if (file("../.env").exists()) {
 		file("../.env").readLines().each { line ->
