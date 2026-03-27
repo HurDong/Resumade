@@ -389,8 +389,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       set({
         isProcessing: false,
         pipelineStage: "IDLE",
-        progressMessage: "Error",
-        processingIssue: "Failed to load application data.",
+        progressMessage: "오류",
+        processingIssue: "지원 정보를 불러오는 데 실패했습니다.",
         processingIssueSeverity: "error",
       });
     }
@@ -400,11 +400,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const state = get();
     const activeQ = await ensureQuestionPersisted(state);
     if (!activeQ?.dbId) {
-      state.setError("Could not find a valid question ID.");
+      state.setError("유효한 문항 ID를 찾을 수 없습니다.");
       return;
     }
 
-    if (!confirm("Delete this question?")) return;
+    if (!confirm("이 문항을 삭제하시겠습니까?")) return;
 
     try {
       const response = await fetch(`/api/applications/questions/${activeQ.dbId}`, {
@@ -419,7 +419,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       });
     } catch (err) {
       console.error(err);
-      alert("Failed to delete the question.");
+      alert("문항 삭제에 실패했습니다.");
     }
   },
 
@@ -451,7 +451,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   startProcessing: () => {
     get().activeStreamController?.abort();
 
-    const initialMessage = "Waiting for server response...";
+    const initialMessage = "서버 응답을 기다리는 중...";
     set({
       isProcessing: true,
       pipelineStage: "RAG",
@@ -539,7 +539,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   setError: (error) =>
     set((state) => {
-      const message = error || "An error occurred.";
+      const message = error || "오류가 발생했습니다.";
       return {
         isProcessing: false,
         pipelineStage: "IDLE",
@@ -554,7 +554,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   setWarning: (warning) =>
     set((state) => {
-      const message = warning || "A warning occurred.";
+      const message = warning || "경고가 발생했습니다.";
       return {
         progressMessage: message,
         progressHistory: appendProgressHistory(state.progressHistory, message),
@@ -578,11 +578,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       activeQ = await ensureQuestionPersisted(state);
     } catch (error) {
       console.error("Failed to persist question before draft generation", error);
-      state.setError("An error occurred while saving the question.");
+      state.setError("문항 저장 중 오류가 발생했습니다.");
       return;
     }
     if (!activeQ?.dbId) {
-      state.setError("Could not find a valid question ID.");
+      state.setError("유효한 문항 ID를 찾을 수 없습니다.");
       return;
     }
 
@@ -606,7 +606,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ),
       set,
       get,
-      errorFallbackMessage: "An error occurred while generating the draft.",
+      errorFallbackMessage: "초안 생성 중 오류가 발생했습니다.",
     });
   },
 
@@ -617,11 +617,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       activeQ = await ensureQuestionPersisted(state);
     } catch (error) {
       console.error("Failed to persist question before refinement", error);
-      state.setError("An error occurred while saving the question.");
+      state.setError("문항 저장 중 오류가 발생했습니다.");
       return;
     }
     if (!activeQ?.dbId) {
-      state.setError("Could not find a valid question ID.");
+      state.setError("유효한 문항 ID를 찾을 수 없습니다.");
       return;
     }
 
@@ -640,7 +640,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ),
       set,
       get,
-      errorFallbackMessage: "An error occurred while refining the draft.",
+      errorFallbackMessage: "초안 다듬기 중 오류가 발생했습니다.",
     });
   },
 
@@ -652,12 +652,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       activeQ = await ensureQuestionPersisted(state);
     } catch (error) {
       console.error("Failed to persist question before title rewrite", error);
-      state.setError("An error occurred while saving the question.");
+      state.setError("문항 저장 중 오류가 발생했습니다.");
       return emptyResponse;
     }
 
     if (!activeQ?.dbId) {
-      state.setError("Could not find a valid question ID.");
+      state.setError("유효한 문항 ID를 찾을 수 없습니다.");
       return emptyResponse;
     }
 
@@ -670,7 +670,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return (await response.json()) as TitleSuggestionResponse;
     } catch (error) {
       console.error("Title suggestion fetch failed", error);
-      state.setError("An error occurred while loading title suggestions.");
+      state.setError("제목 추천을 불러오는 중 오류가 발생했습니다.");
       return emptyResponse;
     }
   },
@@ -682,12 +682,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       activeQ = await ensureQuestionPersisted(state);
     } catch (error) {
       console.error("Failed to persist question before title apply", error);
-      state.setError("An error occurred while saving the question.");
+      state.setError("문항 저장 중 오류가 발생했습니다.");
       return;
     }
 
     if (!activeQ?.dbId) {
-      state.setError("Could not find a valid question ID.");
+      state.setError("유효한 문항 ID를 찾을 수 없습니다.");
       return;
     }
 
@@ -726,7 +726,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const state = get();
     const activeQ = findActiveQuestion(state);
     if (!activeQ?.dbId) {
-      state.setError("Could not find a valid question ID.");
+      state.setError("유효한 문항 ID를 찾을 수 없습니다.");
       return;
     }
 
@@ -745,7 +745,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const state = get();
     const activeQ = findActiveQuestion(state);
     if (!activeQ?.dbId) {
-      state.setError("Could not find a valid question ID.");
+      state.setError("유효한 문항 ID를 찾을 수 없습니다.");
       return;
     }
 
