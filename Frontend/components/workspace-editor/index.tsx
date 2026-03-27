@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "@/lib/store/workspace-store"
 
 interface WorkspaceEditorProps {
   applicationId?: string
+  initialQuestionDbId?: number
 }
 
 function WorkspacePanelSkeleton() {
@@ -38,14 +39,14 @@ const TranslationPanel = dynamic(
   }
 )
 
-export function WorkspaceEditor({ applicationId }: WorkspaceEditorProps) {
+export function WorkspaceEditor({ applicationId, initialQuestionDbId }: WorkspaceEditorProps) {
   const { fetchApplicationData } = useWorkspaceStore()
 
   useEffect(() => {
     if (applicationId) {
-      fetchApplicationData(applicationId)
+      fetchApplicationData(applicationId, initialQuestionDbId)
     }
-  }, [applicationId, fetchApplicationData])
+  }, [applicationId, initialQuestionDbId, fetchApplicationData])
 
   if (!applicationId) {
     return <WorkspaceSelector />

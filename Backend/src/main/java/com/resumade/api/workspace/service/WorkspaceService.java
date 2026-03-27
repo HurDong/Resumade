@@ -5,6 +5,8 @@ import com.resumade.api.experience.domain.Experience;
 import com.resumade.api.experience.domain.ExperienceRepository;
 import com.resumade.api.experience.service.ExperienceVectorRetrievalService;
 import com.resumade.api.infra.sse.Utf8SseSupport;
+import com.resumade.api.workspace.domain.QuestionSnapshotRepository;
+import com.resumade.api.workspace.domain.SnapshotType;
 import com.resumade.api.workspace.domain.WorkspaceQuestion;
 import com.resumade.api.workspace.domain.WorkspaceQuestionRepository;
 import com.resumade.api.workspace.dto.DraftAnalysisResult;
@@ -115,6 +117,7 @@ public class WorkspaceService {
     private final TranslationService translationService;
     private final ObjectMapper objectMapper;
     private final WorkspaceQuestionRepository questionRepository;
+    private final QuestionSnapshotService questionSnapshotService;
     private final ExperienceVectorRetrievalService experienceVectorRetrievalService;
 
     public List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> getMatchedExperiences(
@@ -334,7 +337,9 @@ public class WorkspaceService {
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setWashedKr(washedKr);
+            question.setFinalText(null); // 새 세탁본 생성 시 이전 다림질 내용 초기화
             questionRepository.save(question);
+            questionSnapshotService.saveSnapshot(questionId, SnapshotType.WASHED, washedKr);
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
@@ -514,7 +519,9 @@ public class WorkspaceService {
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setWashedKr(washedKr);
+            question.setFinalText(null); // 새 세탁본 생성 시 이전 다림질 내용 초기화
             questionRepository.save(question);
+            questionSnapshotService.saveSnapshot(questionId, SnapshotType.WASHED, washedKr);
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
@@ -645,7 +652,9 @@ public class WorkspaceService {
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setWashedKr(washedKr);
+            question.setFinalText(null); // 재세탁 시 이전 다림질 내용 초기화
             questionRepository.save(question);
+            questionSnapshotService.saveSnapshot(questionId, SnapshotType.WASHED, washedKr);
             sendSse(emitter, "washed_intermediate", washedKr);
 
             paceProcessing();
@@ -762,6 +771,7 @@ public class WorkspaceService {
         question.setAiReview(objectMapper.writeValueAsString(analysis.getAiReviewReport()));
         question.setWashedKr(washedKr);
         questionRepository.save(question);
+        questionSnapshotService.saveSnapshot(questionId, SnapshotType.WASHED, washedKr);
 
         String responseDraft = (analysis.getHumanPatchedText() != null && !analysis.getHumanPatchedText().isBlank())
                 ? analysis.getHumanPatchedText()
@@ -1028,7 +1038,7 @@ public class WorkspaceService {
 
         List<TitleSuggestionResponse.TitleCandidate> ranked = deduped.values().stream()
                 .sorted(Comparator.comparingInt(TitleSuggestionResponse.TitleCandidate::getScore).reversed())
-                .limit(5)
+                .limit(3)
                 .collect(Collectors.toCollection(ArrayList::new));
 
         if (!ranked.isEmpty()) {
@@ -1582,15 +1592,11 @@ public class WorkspaceService {
         }
 
         int finalLength = countResumeCharacters(bestCandidate);
-        log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군={} | 시도=- | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
+        log.warn("{} DRAFT F{}#- │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {}",
                 resolveStageIcon("DRAFT", "FAILED"),
-                toKoreanStage("DRAFT"),
-                toKoreanStatus("FAILED"),
                 MINIMUM_LENGTH_DRAFT_FAMILIES,
-                finalLength,
-                minTargetChars,
-                preferredTargetChars,
-                maxLength,
+                finalLength, resolveStatusIndicator("FAILED"),
+                minTargetChars, preferredTargetChars, maxLength,
                 toKoreanNextAction("ABORT"));
         return bestCandidate;
     }
@@ -1618,16 +1624,11 @@ public class WorkspaceService {
             boolean underMin = candidateLength < minTargetChars;
             String stage = underMin ? "EXPAND" : "SHORTEN";
             String status = underMin ? "UNDER_MIN" : "OVER_LIMIT";
-            log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군={} | 시도={} | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
+            log.warn("{} {} F{}#{} │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {}",
                     resolveStageIcon(stage, status),
-                    toKoreanStage(stage),
-                    toKoreanStatus(status),
-                    family,
-                    attempt,
-                    candidateLength,
-                    minTargetChars,
-                    preferredTargetChars,
-                    maxLength,
+                    stage.toUpperCase(), family, attempt,
+                    candidateLength, resolveStatusIndicator(status),
+                    minTargetChars, preferredTargetChars, maxLength,
                     toKoreanNextAction(underMin ? "EXPAND_RETRY" : "SHORTEN_RETRY"));
             try {
                 String adjustedCandidate = underMin
@@ -1669,33 +1670,21 @@ public class WorkspaceService {
                     return candidate;
                 }
             } catch (Exception e) {
-                log.warn(
-                        "{} 워크스페이스 | 단계={} | 상태={} | 초안군={} | 시도={} | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={} | 이유=확장 호출 실패",
+                log.warn("{} EXPAND F{}#{} │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {} [이유=확장 호출 실패]",
                         resolveStageIcon("EXPAND", "ERROR"),
-                        toKoreanStage("EXPAND"),
-                        toKoreanStatus("ERROR"),
-                        family,
-                        attempt,
-                        countResumeCharacters(candidate),
-                        minTargetChars,
-                        preferredTargetChars,
-                        maxLength,
-                        toKoreanNextAction("EXPAND_RETRY"),
-                        e);
+                        family, attempt,
+                        countResumeCharacters(candidate), resolveStatusIndicator("ERROR"),
+                        minTargetChars, preferredTargetChars, maxLength,
+                        toKoreanNextAction("EXPAND_RETRY"), e);
             }
         }
 
         int finalLength = countResumeCharacters(candidate);
-        log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군={} | 시도={} | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
+        log.warn("{} EXPAND F{}#{} │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {}",
                 resolveStageIcon("EXPAND", "FAMILY_FAILED"),
-                toKoreanStage("EXPAND"),
-                toKoreanStatus("FAMILY_FAILED"),
-                family,
-                MINIMUM_LENGTH_EXPANSION_ATTEMPTS,
-                finalLength,
-                minTargetChars,
-                preferredTargetChars,
-                maxLength,
+                family, MINIMUM_LENGTH_EXPANSION_ATTEMPTS,
+                finalLength, resolveStatusIndicator("FAMILY_FAILED"),
+                minTargetChars, preferredTargetChars, maxLength,
                 toKoreanNextAction("NEW_FAMILY"));
         return candidate;
     }
@@ -1714,16 +1703,10 @@ public class WorkspaceService {
             String directive,
             int family) {
         int previousLength = countResumeCharacters(previousBestDraft);
-        log.warn(
-                "{} 워크스페이스 | 단계={} | 상태={} | 초안군={} | 시도=- | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
+        log.warn("{} REGENERATE F{}#- │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {}",
                 resolveStageIcon("REGENERATE", "START"),
-                toKoreanStage("REGENERATE"),
-                toKoreanStatus("START"),
-                family,
-                previousLength,
-                minTargetChars,
-                preferredTargetChars,
-                maxLength,
+                family, previousLength, resolveStatusIndicator("START"),
+                minTargetChars, preferredTargetChars, maxLength,
                 toKoreanNextAction("GENERATE_FRESH_FAMILY"));
 
         try {
@@ -1754,18 +1737,11 @@ public class WorkspaceService {
                     context,
                     others);
         } catch (Exception e) {
-            log.warn(
-                    "{} 워크스페이스 | 단계={} | 상태={} | 초안군={} | 시도=- | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={} | 이유=재생성 실패",
+            log.warn("{} REGENERATE F{}#- │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {} [이유=재생성 실패]",
                     resolveStageIcon("REGENERATE", "ERROR"),
-                    toKoreanStage("REGENERATE"),
-                    toKoreanStatus("ERROR"),
-                    family,
-                    previousLength,
-                    minTargetChars,
-                    preferredTargetChars,
-                    maxLength,
-                    toKoreanNextAction("KEEP_PREVIOUS_BEST"),
-                    e);
+                    family, previousLength, resolveStatusIndicator("ERROR"),
+                    minTargetChars, preferredTargetChars, maxLength,
+                    toKoreanNextAction("KEEP_PREVIOUS_BEST"), e);
             return previousBestDraft;
         }
     }
@@ -2256,14 +2232,10 @@ public class WorkspaceService {
                 Math.max(Math.max(1, minTargetChars), preferredTargetChars > 0 ? preferredTargetChars : maxLength)
         };
         logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], normalized, 0);
-        log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군=- | 시도=0 | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
+        log.warn("{} SHORTEN #0 │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {}",
                 resolveStageIcon("SHORTEN", "OVER_LIMIT"),
-                toKoreanStage("SHORTEN"),
-                toKoreanStatus("OVER_LIMIT"),
-                countResumeCharacters(normalized),
-                defaultRange[0],
-                defaultRange[1],
-                maxLength,
+                countResumeCharacters(normalized), resolveStatusIndicator("OVER_LIMIT"),
+                defaultRange[0], defaultRange[1], maxLength,
                 toKoreanNextAction("SHORTEN_RETRY"));
 
         String safeCompany = safeTrim(company);
@@ -2283,14 +2255,10 @@ public class WorkspaceService {
                     safeOthers);
 
             if (shortened == null || shortened.text == null || shortened.text.isBlank()) {
-                log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군=- | 시도=1 | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
+                log.warn("{} SHORTEN #1 │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {}",
                         resolveStageIcon("SHORTEN", "EMPTY_RESULT"),
-                        toKoreanStage("SHORTEN"),
-                        toKoreanStatus("EMPTY_RESULT"),
-                        countResumeCharacters(normalized),
-                        defaultRange[0],
-                        defaultRange[1],
-                        maxLength,
+                        countResumeCharacters(normalized), resolveStatusIndicator("EMPTY_RESULT"),
+                        defaultRange[0], defaultRange[1], maxLength,
                         toKoreanNextAction("HARD_TRIM"));
                 String trimmed = hardTrimToLimit(normalized, maxLength);
                 logTraceLength("lengthLimit.hardTrimFromEmpty", trimmed, maxLength, defaultRange[0], defaultRange[1]);
@@ -2307,14 +2275,10 @@ public class WorkspaceService {
             }
 
             String retryStatus = candidateLength > maxLength ? "OVER_LIMIT" : "UNDER_MIN";
-            log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군=- | 시도=1 | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}",
+            log.warn("{} SHORTEN #1 │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {}",
                     resolveStageIcon("SHORTEN", retryStatus),
-                    toKoreanStage("SHORTEN"),
-                    toKoreanStatus(retryStatus),
-                    candidateLength,
-                    defaultRange[0],
-                    defaultRange[1],
-                    maxLength,
+                    candidateLength, resolveStatusIndicator(retryStatus),
+                    defaultRange[0], defaultRange[1], maxLength,
                     toKoreanNextAction("HARD_TRIM"));
             String trimSource = "UNDER_MIN".equals(retryStatus) ? normalized : candidate;
             String trimmed = hardTrimToLimit(trimSource, maxLength);
@@ -2322,16 +2286,11 @@ public class WorkspaceService {
             logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], trimmed, 2);
             return trimmed;
         } catch (Exception e) {
-            log.warn("{} 워크스페이스 | 단계={} | 상태={} | 초안군=- | 시도=1 | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={} | 이유=줄이기 호출 실패",
+            log.warn("{} SHORTEN #1 │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {} [이유=줄이기 호출 실패]",
                     resolveStageIcon("SHORTEN", "ERROR"),
-                    toKoreanStage("SHORTEN"),
-                    toKoreanStatus("ERROR"),
-                    countResumeCharacters(normalized),
-                    defaultRange[0],
-                    defaultRange[1],
-                    maxLength,
-                    toKoreanNextAction("HARD_TRIM"),
-                    e);
+                    countResumeCharacters(normalized), resolveStatusIndicator("ERROR"),
+                    defaultRange[0], defaultRange[1], maxLength,
+                    toKoreanNextAction("HARD_TRIM"), e);
             String trimmed = hardTrimToLimit(normalized, maxLength);
             logTraceLength("lengthLimit.hardTrimFromError", trimmed, maxLength, defaultRange[0], defaultRange[1]);
             logLengthMetrics("shorten", maxLength, defaultRange[0], defaultRange[1], trimmed, 2);
@@ -2477,9 +2436,10 @@ public class WorkspaceService {
         String next = resolvePipelineNextAction(stage, status);
         String normalizedStage = stage == null ? "" : stage.trim().toUpperCase();
         String icon = resolveStageIcon(normalizedStage, status);
-        String message = "{} 워크스페이스 | 단계={} | 상태={} | 초안군=- | 시도={} | 글자수={}자 | 목표={}~{}자 | 제한={}자 | 다음={}";
-        Object[] args = {icon, toKoreanStage(normalizedStage), toKoreanStatus(status), attempt,
-                actualChars, minimumTarget, preferredTarget, hardLimit, toKoreanNextAction(next)};
+        String indicator = resolveStatusIndicator(status);
+        String message = "{} {} #{} │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {}";
+        Object[] args = {icon, normalizedStage, attempt, actualChars, indicator,
+                minimumTarget, preferredTarget, hardLimit, toKoreanNextAction(next)};
         boolean isWarn = switch (status) {
             case "OVER_LIMIT", "UNDER_MIN", "ERROR", "FAILED", "FAMILY_FAILED", "EMPTY_RESULT" -> true;
             default -> false;
@@ -2584,6 +2544,21 @@ public class WorkspaceService {
             case "WASH" -> "[WASH]";
             case "FINAL" -> "[DONE]";
             default -> "[STEP]";
+        };
+    }
+
+    private String resolveStatusIndicator(String status) {
+        return switch (status) {
+            case "IN_RANGE"        -> "✓";
+            case "ABOVE_PREFERRED" -> "~";
+            case "OVER_LIMIT"      -> "↑ 초과";
+            case "UNDER_MIN"       -> "↓ 미달";
+            case "START"           -> "▶";
+            case "ERROR"           -> "✗ 오류";
+            case "FAILED"          -> "✗ 실패";
+            case "FAMILY_FAILED"   -> "✗ 계열실패";
+            case "EMPTY_RESULT"    -> "✗ 빈결과";
+            default                -> status;
         };
     }
 

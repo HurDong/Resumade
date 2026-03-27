@@ -30,7 +30,7 @@ export function BatchPlanDialog({
 }: BatchPlanDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl rounded-[28px] border-border/70 p-0">
+      <DialogContent className="w-[90vw] max-w-5xl sm:max-w-5xl rounded-[28px] border-border/70 p-0">
         <DialogHeader className="border-b border-border/60 px-6 py-5 sm:px-7">
           <DialogTitle className="text-2xl font-black tracking-tight">자소서 전략 미리보기</DialogTitle>
           <DialogDescription className="text-sm leading-6">
@@ -52,48 +52,46 @@ export function BatchPlanDialog({
           ) : null}
         </DialogHeader>
 
-        <ScrollArea className="max-h-[65vh] px-6 py-5 sm:px-7">
-          <div className="space-y-4">
+        <ScrollArea className="max-h-[65vh]">
+          <div className="space-y-4 px-6 py-5 sm:px-7">
             {plan?.assignments?.map((assignment, index) => (
               <div
                 key={`${assignment.questionId}-${index}`}
                 className="rounded-3xl border border-border/60 bg-muted/20 p-5"
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <div className="text-xs font-black uppercase tracking-[0.2em] text-primary/70">
-                      Question {index + 1}
-                    </div>
-                    <div className="text-base font-black leading-snug text-foreground">
-                      {assignment.questionTitle}
-                    </div>
+                <div className="space-y-2">
+                  <div className="text-xs font-black uppercase tracking-[0.2em] text-primary/70">
+                    Question {index + 1}
                   </div>
-                  <Badge className="rounded-full px-3 py-1 text-[11px] font-bold">
+                  <div className="text-base font-black leading-snug text-foreground">
+                    {assignment.questionTitle}
+                  </div>
+                  <Badge className="h-auto max-w-full whitespace-normal rounded-full px-3 py-1.5 text-[11px] font-bold leading-relaxed">
                     {assignment.angle}
                   </Badge>
                 </div>
 
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
                       사용할 경험
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {assignment.primaryExperiences.map((experience) => (
-                        <Badge key={experience} variant="outline" className="rounded-full px-3 py-1 text-xs">
+                        <Badge key={experience} variant="outline" className="h-auto max-w-full whitespace-normal rounded-full px-3 py-1 text-xs leading-snug">
                           {experience}
                         </Badge>
                       ))}
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
                       강조할 배운점
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {assignment.learningPoints.map((point) => (
-                        <Badge key={point} variant="secondary" className="rounded-full px-3 py-1 text-xs">
+                        <Badge key={point} variant="secondary" className="h-auto max-w-full whitespace-normal rounded-full px-3 py-1 text-xs leading-snug">
                           {point}
                         </Badge>
                       ))}

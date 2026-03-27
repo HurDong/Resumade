@@ -93,7 +93,7 @@ interface WorkspaceState {
   updateMistranslationSuggestion: (mistranslationId: string, suggestion: string) => void;
   dismissMistranslation: (mistranslationId: string) => void;
 
-  fetchApplicationData: (id: string) => Promise<void>;
+  fetchApplicationData: (id: string, initialDbId?: number) => Promise<void>;
   fetchRAGContext: (questionId: number, query?: string) => Promise<void>;
 
   deleteActiveQuestion: () => Promise<void>;
@@ -336,7 +336,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     state.updateActiveQuestion({ mistranslations: newMistranslations });
   },
 
-  fetchApplicationData: async (id) => {
+  fetchApplicationData: async (id, initialDbId) => {
     const loadingMessage = "Loading application data...";
     set({
       isProcessing: true,
@@ -354,6 +354,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
       const mappedQuestions: WorkspaceQuestion[] = data.questions.map(mapStoredQuestion);
 
+      // initialDbId가 있으면 해당 문항을 활성화, 없으면 첫 번째 문항
+      const targetQuestion = initialDbId
+        ? mappedQuestions.find((q) => q.dbId === initialDbId)
+        : null;
+      const initialActiveId = targetQuestion?.id
+        ?? (mappedQuestions.length > 0 ? mappedQuestions[0].id : "q-default");
+
       set({
         applicationId: id,
         company: data.companyName,
@@ -361,7 +368,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         aiInsight: data.aiInsight || "",
         companyResearch: data.companyResearch || "",
         questions: mappedQuestions.length > 0 ? mappedQuestions : [defaultQuestion],
-        activeQuestionId: mappedQuestions.length > 0 ? mappedQuestions[0].id : "q-default",
+        activeQuestionId: initialActiveId,
         batchPlan: null,
         batchPlanError: null,
         isBatchPlanLoading: false,
@@ -373,8 +380,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         processingIssueSeverity: null,
       });
 
-      if (mappedQuestions.length > 0 && mappedQuestions[0].dbId) {
-        get().fetchRAGContext(mappedQuestions[0].dbId, mappedQuestions[0].title);
+      const activeForRag = targetQuestion ?? (mappedQuestions.length > 0 ? mappedQuestions[0] : null);
+      if (activeForRag?.dbId) {
+        get().fetchRAGContext(activeForRag.dbId, activeForRag.title);
       }
     } catch (err) {
       console.error(err);

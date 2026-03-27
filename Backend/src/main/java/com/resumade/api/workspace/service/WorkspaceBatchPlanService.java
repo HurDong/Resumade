@@ -46,7 +46,9 @@ public class WorkspaceBatchPlanService {
             Important: project-title overlap is allowed.
             The real overlap risk is reusing the same detailed topic inside a project: the same technical decision, failure, troubleshooting point, architecture tradeoff, metric cluster, learning point, or action-result arc.
             If the same project appears in multiple questions, assign clearly different detail slices and different lessons.
-            If a question naturally benefits from multiple projects, you may assign 2 to 3 projects, but each project must contribute a distinct point rather than a loose list.
+            Default rule: assign exactly 1 primary experience per question. One focused project yields deeper, more interview-verifiable answers than a loose multi-project list.
+            Exception: if a question's userDirective explicitly requests a list-style answer or multiple experiences, you may assign 2 to 3 projects — but each must contribute a distinct, interview-verifiable point rather than a loose enumeration.
+            userDirective always takes priority over this 1-project default.
             Prefer concrete, interview-verifiable focus details over broad themes.
             Avoid generic plans like "show collaboration" unless paired with concrete evidence anchors.
             Keep coverageSummary concise.
@@ -162,12 +164,13 @@ public class WorkspaceBatchPlanService {
                 %s
 
                 Planning rules:
+                - userDirective always takes the highest priority. Read each question's userDirective first and honor it exactly before applying any default rule.
+                - Default: assign exactly 1 primary experience per question for depth and focus. Only assign multiple experiences when the question's userDirective explicitly requests a list-style answer or multiple experiences.
                 - Same project may appear in multiple questions when the detailed topic is different.
                 - The main anti-overlap unit is detail-level evidence, not project name.
                 - Spread out technical topics, learned lessons, and result evidence across questions.
                 - If one question uses a project's architecture choice, another question should not reuse that same choice unless there is no credible alternative.
                 - If one question uses a project's troubleshooting lesson, another question may still use the same project for leadership, collaboration, prioritization, or a different technical sub-problem.
-                - Respect each question's own intent and any user directive already attached to it.
                 - Avoid assigning the exact same lesson, metric cluster, or evidence arc to multiple questions.
                 - Return assignments in the same order as the question list.
                 """.formatted(
