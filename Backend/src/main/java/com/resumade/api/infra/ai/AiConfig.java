@@ -1,6 +1,7 @@
 package com.resumade.api.infra.ai;
 
 import com.resumade.api.experience.service.ExperienceAiService;
+import com.resumade.api.workspace.service.FinalEditorAiService;
 import com.resumade.api.workspace.service.JdTextAiService;
 import com.resumade.api.workspace.service.JdVisionAiService;
 import com.resumade.api.workspace.service.OpenAiResponsesWorkspaceDraftService;
@@ -42,6 +43,9 @@ public class AiConfig {
 
     @Value("${openai.models.jd-vision:gpt-4o}")
     private String jdVisionModelName;
+
+    @Value("${openai.models.final-editor:gpt-4o-mini}")
+    private String finalEditorModelName;
 
     @PostConstruct
     public void logSelectedModels() {
@@ -100,6 +104,16 @@ public class AiConfig {
                 .build();
     }
 
+    /**
+     * 최종 편집기 AI — plain text 출력이 필요하므로 JSON 포맷 없이 구성
+     */
+    @Bean
+    public FinalEditorAiService finalEditorAiService() {
+        return AiServices.builder(FinalEditorAiService.class)
+                .chatLanguageModel(buildTextChatModel(finalEditorModelName))
+                .build();
+    }
+
     private OpenAiChatModel buildChatModel(String modelName) {
         return OpenAiChatModel.builder()
                 .apiKey(openAiApiKey)
@@ -108,6 +122,19 @@ public class AiConfig {
                 .maxRetries(0)
                 .timeout(openAiTimeout)
                 .responseFormat("json_object")
+                .logRequests(false)
+                .logResponses(false)
+                .build();
+    }
+
+    /** plain text 응답용 (responseFormat 미설정) */
+    private OpenAiChatModel buildTextChatModel(String modelName) {
+        return OpenAiChatModel.builder()
+                .apiKey(openAiApiKey)
+                .modelName(modelName)
+                .temperature(0.7)
+                .maxRetries(0)
+                .timeout(openAiTimeout)
                 .logRequests(false)
                 .logResponses(false)
                 .build();

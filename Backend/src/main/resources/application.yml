@@ -43,6 +43,7 @@ openai:
     workspace-patch: ${OPENAI_WORKSPACE_PATCH_MODEL:gpt-4o-mini}
     jd-text: ${OPENAI_JD_TEXT_MODEL:gpt-4o-mini}
     jd-vision: ${OPENAI_JD_VISION_MODEL:gpt-5.4-mini}
+    final-editor: ${OPENAI_FINAL_EDITOR_MODEL:gpt-4o-mini}
 
 gemini:
   api:
