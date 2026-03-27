@@ -552,8 +552,8 @@ export function ContextPanel() {
   const [titleSuggestions, setTitleSuggestions] = useState<TitleSuggestion[]>([])
   const [selectedTitleSuggestion, setSelectedTitleSuggestion] = useState("")
   const [currentTitleLine, setCurrentTitleLine] = useState("")
-  const [isCompanyInsightOpen, setIsCompanyInsightOpen] = useState(true)
-  const [isRagContextOpen, setIsRagContextOpen] = useState(true)
+  const [isCompanyInsightOpen, setIsCompanyInsightOpen] = useState(false)
+  const [isRagContextOpen, setIsRagContextOpen] = useState(false)
   const topRef = useRef<HTMLDivElement>(null)
   const isDirectiveComposingRef = useRef(false)
 
@@ -1252,45 +1252,12 @@ export function ContextPanel() {
           </section>
 
           <section className="min-w-0 overflow-hidden">
-            <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Wand2 className="size-4 text-primary" />
-                  <h3 className="text-sm font-black uppercase tracking-wider text-primary">AI 초안 작업장</h3>
-                </div>
-              <div className="flex items-center gap-2">
-                <Button 
-                  size="sm" 
-                  variant="default" 
-                  onClick={handleInitialGenerate}
-                  disabled={isProcessing}
-                  className="gap-2 shadow-sm rounded-full px-4 font-bold"
-                >
-                  {isProcessing ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <Sparkles className="size-3" />
-                  )}
-                  {"새로 생성"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleRegenerate}
-                  disabled={isProcessing || !hasDraft}
-                  className="gap-2 shadow-sm rounded-full px-4 font-bold"
-                >
-                  {isProcessing ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <Wand2 className="size-3" />
-                  )}
-                  {"다듬기"}
-                </Button>
-              </div>
-            </div>
-
             {/* AI 작성 가이드 (Directives) */}
-            <div className="min-w-0 space-y-4 overflow-hidden pt-2">
+            <div className="mb-4 flex items-center gap-2">
+              <Wand2 className="size-4 text-primary" />
+              <h3 className="text-sm font-black uppercase tracking-wider text-primary">생성 설정</h3>
+            </div>
+            <div className="min-w-0 space-y-4 overflow-hidden">
               <div className="rounded-xl border border-primary/15 bg-primary/[0.03] p-4">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <label className="text-sm font-semibold text-primary">희망 글자수</label>
@@ -1360,20 +1327,6 @@ export function ContextPanel() {
               </p>
             </div>
 
-            <Separator className="bg-primary/10" />
-
-            <div className="relative min-w-0 overflow-hidden">
-              <div className="absolute top-3 left-3 flex items-center gap-1.5 pointer-events-none opacity-70">
-                <FileText className="size-4 text-primary" />
-                <span className="text-[10px] font-black uppercase tracking-tighter text-primary">초안 편집</span>
-              </div>
-              <Textarea
-                value={activeQuestion.content}
-                onChange={(e) => updateActiveQuestion({ content: e.target.value })}
-                className={`min-h-[400px] w-full max-w-full resize-none overflow-x-hidden whitespace-pre-wrap break-words bg-muted/20 border-none focus-visible:ring-1 focus-visible:ring-primary/20 p-8 pt-12 text-sm leading-relaxed rounded-2xl placeholder:opacity-70 text-foreground font-medium transition-all ${hoveredMistranslationId ? 'ring-2 ring-primary/40 bg-primary/5 scale-[1.01]' : ''}`}
-                placeholder="나의 경험 데이터를 기반으로 AI가 초안을 작성합니다. 직접 내용을 입력하거나 수정할 수도 있습니다."
-              />
-            </div>
           </section>
         </>
       ) : (
