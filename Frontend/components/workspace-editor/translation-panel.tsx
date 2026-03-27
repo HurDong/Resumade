@@ -1,13 +1,18 @@
 "use client"
 
+import { useState } from "react"
 import type { ClipboardEvent, MouseEvent, ReactNode } from "react"
+import Link from "next/link"
 import {
   AlertTriangle,
   CheckCircle,
   Copy,
   FileText,
+  History,
+  PenLine,
   RefreshCw,
   ScanSearch,
+  Sparkles,
   Wand2,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -23,6 +28,7 @@ import {
   sanitizeWashedText,
 } from "@/lib/workspace/translation-panel-helpers"
 import { useWorkspaceStore } from "@/lib/store/workspace-store"
+import { VersionHistoryPanel } from "./version-history-panel"
 
 interface ProcessingOverlayProps {
   label: string
@@ -128,6 +134,8 @@ function DraftCard({
 }
 
 export function TranslationPanel() {
+  const [historyOpen, setHistoryOpen] = useState(false)
+
   const {
     questions,
     activeQuestionId,
@@ -248,6 +256,16 @@ export function TranslationPanel() {
                 size="sm"
                 variant="outline"
                 className="h-8 gap-2 rounded-lg border-primary/20 px-3 text-[11px] font-bold shadow-sm transition-all hover:bg-primary/5"
+                onClick={() => setHistoryOpen(true)}
+                disabled={!activeQuestion?.dbId}
+              >
+                <History className="size-3.5" />
+                버전 히스토리
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-2 rounded-lg border-primary/20 px-3 text-[11px] font-bold shadow-sm transition-all hover:bg-primary/5"
                 onClick={() => void rerunWash()}
                 disabled={!draft || isProcessing}
               >
@@ -288,6 +306,7 @@ export function TranslationPanel() {
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <DraftCard
               title="원본 초안"
+
               icon={<FileText className="size-3.5" />}
               content={originalContent}
               renderHtml={Boolean(aiReviewReport?.taggedOriginalText)}
@@ -333,8 +352,52 @@ export function TranslationPanel() {
               }
             />
           </div>
+
+          {/* ── 퇴고 CTA ─────────────────────────────────────────────────── */}
+          {washedKr && !isProcessing && activeQuestion.dbId && (
+            <div className="animate-in fade-in slide-in-from-bottom-3 duration-500">
+              <div className="flex flex-col items-center gap-5 rounded-2xl border border-dashed border-emerald-200 bg-gradient-to-b from-emerald-50/60 to-primary/5 px-8 py-10 text-center">
+
+                {/* 완료 아이콘 뱃지 */}
+                <div className="relative">
+                  <div className="absolute inset-0 rounded-full bg-emerald-400/20 blur-xl" />
+                  <div className="relative flex size-14 items-center justify-center rounded-full border border-emerald-200 bg-white shadow-sm">
+                    <CheckCircle className="size-7 text-emerald-500" />
+                  </div>
+                  {/* 반짝이 데코 */}
+                  <Sparkles className="absolute -right-1 -top-1 size-4 text-amber-400" />
+                </div>
+
+                {/* 카피 */}
+                <div className="space-y-1.5">
+                  <p className="text-sm font-bold tracking-tight">세탁이 끝났어요!</p>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    세탁된 원고, 이제 구김만 펴면 완성이에요.
+                    <br />
+                    다림질 편집기에서 직접 손질해 보세요.
+                  </p>
+                </div>
+
+                {/* 다림질 버튼 */}
+                <Link href={`/workspace/edit/${activeQuestion.dbId}`}>
+                  <Button className="gap-2 rounded-full px-7 shadow-md hover:shadow-lg transition-shadow">
+                    <PenLine className="size-4" />
+                    다림질하기
+                  </Button>
+                </Link>
+
+              </div>
+            </div>
+          )}
+
         </div>
       </ScrollArea>
+
+      <VersionHistoryPanel
+        questionId={activeQuestion?.dbId ?? null}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
     </div>
   )
 }
