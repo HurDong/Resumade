@@ -5,9 +5,17 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { WorkspaceEditor } from "@/components/workspace-editor"
 
-export default function WorkspaceDynamicPage({ params }: { params: Promise<{ id: string }> }) {
+export default function WorkspaceDynamicPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ questionId?: string }>
+}) {
   const resolvedParams = use(params)
+  const resolvedSearch = use(searchParams)
   const id = resolvedParams.id
+  const initialQuestionDbId = resolvedSearch.questionId ? Number(resolvedSearch.questionId) : undefined
 
   return (
     <SidebarProvider>
@@ -23,7 +31,7 @@ export default function WorkspaceDynamicPage({ params }: { params: Promise<{ id:
             </div>
           </header>
           <main className="flex-1 overflow-hidden">
-            <WorkspaceEditor applicationId={id} />
+            <WorkspaceEditor applicationId={id} initialQuestionDbId={initialQuestionDbId} />
           </main>
         </div>
       </SidebarInset>
