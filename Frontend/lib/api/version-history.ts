@@ -1,6 +1,6 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"
 
-export type SnapshotType = "DRAFT_GENERATED" | "WASHED" | "FINAL_EDIT"
+export type SnapshotType = "DRAFT_GENERATED" | "WASHED"
 
 export interface Snapshot {
   id: number

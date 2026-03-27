@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { History, X, RotateCcw, FileText, Languages, CheckCheck, Loader2, ClipboardCopy } from "lucide-react"
+import { History, X, RotateCcw, FileText, Languages, Loader2, ClipboardCopy } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,11 +23,6 @@ const TYPE_META: Record<SnapshotType, { label: string; color: string; icon: Reac
     label: "세탁본",
     color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300",
     icon: Languages,
-  },
-  FINAL_EDIT: {
-    label: "최종 저장",
-    color: "bg-primary/10 text-primary",
-    icon: CheckCheck,
   },
 }
 
@@ -199,7 +194,7 @@ export function VersionHistoryPanel({
                 {/* 세로 타임라인 선 */}
                 <div className="absolute left-[22px] top-4 bottom-4 w-px bg-border" />
 
-                {snapshots.map((snapshot, index) => (
+                {snapshots.filter(s => s.snapshotType in TYPE_META).map((snapshot, index) => (
                   <SnapshotCard
                     key={snapshot.id}
                     snapshot={snapshot}
