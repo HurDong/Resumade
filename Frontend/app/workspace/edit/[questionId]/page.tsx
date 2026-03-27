@@ -387,7 +387,7 @@ export default function FinalEditorPage() {
   const [titleCandidates, setTitleCandidates]     = useState<TitleCandidate[]>([])
   const [selectedTitle, setSelectedTitle]         = useState<string>("")
   const [isRefreshingTitle, setIsRefreshingTitle] = useState(false)
-  const [isTitleLoading, setIsTitleLoading]       = useState(true)
+  const [isTitleLoading, setIsTitleLoading]       = useState(false)
 
   // ── 하이라이트 ───────────────────────────────────────────────────────────
   const [activeParagraphIdx, setActiveParagraphIdx] = useState<number | null>(null)
@@ -413,6 +413,9 @@ export default function FinalEditorPage() {
         // 백엔드 텍스트 정규화 적용 (줄바꿈·제목 구분 보정)
         setFinalText(normalizeDisplayText(d.finalText ?? d.washedDraft ?? ""))
         setSelectedTitle(d.selectedTitle ?? "")
+        if (d.titleCandidates && d.titleCandidates.length > 0) {
+          setTitleCandidates(d.titleCandidates)
+        }
         setLoadError(null)
       })
       .then(() => {
@@ -422,25 +425,6 @@ export default function FinalEditorPage() {
       })
       .catch((e) => setLoadError(e.message))
       .finally(() => setIsLoading(false))
-  }, [questionId])
-
-  // ── 제목 추천 초기 로드 ──────────────────────────────────────────────────
-  useEffect(() => {
-    if (!questionId) return
-    const controller = new AbortController()
-    setIsTitleLoading(true)
-    fetchTitleSuggestions(questionId)
-      .then((d) => {
-        if (controller.signal.aborted) return
-        setTitleCandidates(d.candidates ?? [])
-        if (!selectedTitle && d.candidates?.[0]) {
-          setSelectedTitle(d.candidates[0].title)
-        }
-      })
-      .catch(() => { /* 실패 시 무시 — 제목 추천은 선택 사항 */ })
-      .finally(() => { if (!controller.signal.aborted) setIsTitleLoading(false) })
-    return () => controller.abort()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionId])
 
   // ── 형제 문항 목록 로드 ──────────────────────────────────────────────────
@@ -760,7 +744,7 @@ export default function FinalEditorPage() {
                   disabled={isRefreshingTitle}
                 >
                   {isRefreshingTitle ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-                  AI 제목 다시 추천
+                  {titleCandidates.length > 0 ? "AI 제목 다시 추천" : "AI 제목 추천"}
                 </Button>
               </div>
 

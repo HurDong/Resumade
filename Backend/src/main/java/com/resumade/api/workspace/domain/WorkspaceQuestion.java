@@ -70,6 +70,11 @@ public class WorkspaceQuestion {
     @Column(length = 500)
     private String selectedTitle;
 
+    /** AI 제목 추천 결과 캐시 (JSON 직렬화) */
+    @Lob
+    @Column(length = 16777215)
+    private String titleCandidatesJson;
+
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime createdAt;

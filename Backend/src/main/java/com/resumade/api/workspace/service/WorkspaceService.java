@@ -165,6 +165,12 @@ public class WorkspaceService {
                 candidates.size(),
                 safeSnippet(normalizeTitleLine(extractActualTitleLine(currentDraft)), 80));
 
+        try {
+            question.setTitleCandidatesJson(objectMapper.writeValueAsString(candidates));
+        } catch (Exception e) {
+            log.warn("제목 추천 캐시 저장 실패: questionId={}", questionId);
+        }
+
         return TitleSuggestionResponse.builder()
                 .currentTitle(normalizeTitleLine(extractActualTitleLine(currentDraft)))
                 .candidates(candidates)

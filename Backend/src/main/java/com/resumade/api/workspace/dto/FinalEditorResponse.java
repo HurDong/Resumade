@@ -1,6 +1,7 @@
 package com.resumade.api.workspace.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record FinalEditorResponse(
         Long questionId,
@@ -13,5 +14,6 @@ public record FinalEditorResponse(
         String companyName,
         String position,
         Long applicationId,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        List<TitleSuggestionResponse.TitleCandidate> titleCandidates
 ) {}

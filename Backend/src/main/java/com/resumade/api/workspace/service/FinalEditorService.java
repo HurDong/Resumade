@@ -2,21 +2,24 @@ package com.resumade.api.workspace.service;
 
 import com.resumade.api.experience.service.ExperienceVectorRetrievalService;
 import com.resumade.api.workspace.domain.Application;
-import com.resumade.api.workspace.domain.SnapshotType;
 import com.resumade.api.workspace.domain.WorkspaceQuestion;
 import com.resumade.api.workspace.domain.WorkspaceQuestionRepository;
 import com.resumade.api.workspace.dto.EditActionRequest;
 import com.resumade.api.workspace.dto.EditActionResponse;
 import com.resumade.api.workspace.dto.ExperienceContextResponse;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.resumade.api.workspace.dto.FinalEditorResponse;
 import com.resumade.api.workspace.dto.FinalSaveRequest;
 import com.resumade.api.workspace.dto.FinalSaveResponse;
 import com.resumade.api.workspace.dto.QuestionNavItem;
+import com.resumade.api.workspace.dto.TitleSuggestionResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -32,7 +35,7 @@ public class FinalEditorService {
     private final FinalEditorAiService finalEditorAiService;
     private final ExperienceVectorRetrievalService experienceVectorRetrievalService;
     private final TranslationService translationService;
-    private final QuestionSnapshotService questionSnapshotService;
+    private final ObjectMapper objectMapper;
 
     // ── 최종 편집기 초기 데이터 로드 ─────────────────────────────────────────
 
@@ -47,6 +50,18 @@ public class FinalEditorService {
         // finalText가 없으면 washedKr을 초기값으로 제공
         String finalText = q.getFinalText() != null ? q.getFinalText() : q.getWashedKr();
 
+        List<TitleSuggestionResponse.TitleCandidate> titleCandidates = Collections.emptyList();
+        if (q.getTitleCandidatesJson() != null && !q.getTitleCandidatesJson().isBlank()) {
+            try {
+                titleCandidates = objectMapper.readValue(
+                        q.getTitleCandidatesJson(),
+                        new TypeReference<List<TitleSuggestionResponse.TitleCandidate>>() {}
+                );
+            } catch (Exception e) {
+                log.warn("제목 추천 캐시 역직렬화 실패: questionId={}", questionId);
+            }
+        }
+
         return new FinalEditorResponse(
                 q.getId(),
                 q.getTitle(),
@@ -58,7 +73,8 @@ public class FinalEditorService {
                 companyName,
                 position,
                 applicationId,
-                q.getUpdatedAt()
+                q.getUpdatedAt(),
+                titleCandidates
         );
     }
 
@@ -79,10 +95,6 @@ public class FinalEditorService {
         log.debug("Final text saved: questionId={}, chars={}",
                 questionId,
                 request.finalText() != null ? request.finalText().length() : 0);
-
-        if (request.finalText() != null && !request.finalText().isBlank()) {
-            questionSnapshotService.saveSnapshot(questionId, SnapshotType.FINAL_EDIT, request.finalText());
-        }
 
         return new FinalSaveResponse(saved.getUpdatedAt());
     }

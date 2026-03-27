@@ -14,6 +14,7 @@ export interface FinalEditorData {
   position: string | null
   applicationId: number | null
   updatedAt: string | null
+  titleCandidates?: TitleCandidate[]
 }
 
 export interface FinalSaveResponse {
