@@ -1,6 +1,8 @@
 ﻿"use client"
 
 import { useState, useEffect, useRef } from "react"
+import { motion, useMotionValue, useMotionTemplate } from "framer-motion"
+import confetti from "canvas-confetti"
 import {
   Settings,
   Building2,
@@ -281,12 +283,13 @@ const buildRefineDirective = (fields: DirectiveFields): string => {
 };
 
 const NATURAL_DIRECTIVE_PRESETS = [
-  { label: "담백하게", value: "전체 톤을 과장 없이 담백하고 차분하게 정리해줘." },
-  { label: "자신감 있게", value: "근거는 유지하되 더 자신감 있고 단단한 문장으로 다듬어줘." },
-  { label: "성과 강조", value: "수치, 개선 결과, 기여도가 더 명확하게 보이게 해줘." },
-  { label: "문제 해결", value: "어떤 문제를 어떻게 판단하고 해결했는지 흐름이 드러나게 해줘." },
-  { label: "수치 유지", value: "들어간 수치, 기술명, 산출물은 최대한 유지해줘." },
-  { label: "추상어 줄이기", value: "열정, 노력 같은 추상어는 줄이고 구체적인 행동과 근거 중심으로 써줘." },
+  { label: "담백하게", value: "전체 톤을 과장 없이 담백하고 차분하게 정리해줘.", category: "톤" },
+  { label: "자신감 있게", value: "근거는 유지하되 더 자신감 있고 단단한 문장으로 다듬어줘.", category: "톤" },
+  { label: "두괄식으로", value: "핵심 결론과 성과를 먼저 쓰고, 이유와 과정을 뒤에 배치해줘.", category: "구조" },
+  { label: "STAR 구조", value: "상황(Situation) → 과제(Task) → 행동(Action) → 결과(Result) 순서로 구조화해줘.", category: "구조" },
+  { label: "성과 강조", value: "수치, 개선 결과, 기여도가 더 명확하게 보이게 해줘.", category: "강조" },
+  { label: "추상어 줄이기", value: "열정, 노력 같은 추상어는 줄이고 구체적인 행동과 근거 중심으로 써줘.", category: "필터" },
+  { label: "수치 유지", value: "들어간 수치, 기술명, 산출물은 최대한 유지해줘.", category: "필터" },
 ];
 
 const PLACEHOLDER_FOCUS_VALUES = new Set(["미정", "N/A", "n/a", "-", ""]);
@@ -554,6 +557,12 @@ export function ContextPanel() {
   const [currentTitleLine, setCurrentTitleLine] = useState("")
   const [isCompanyInsightOpen, setIsCompanyInsightOpen] = useState(false)
   const [isRagContextOpen, setIsRagContextOpen] = useState(false)
+  const [justCompleted, setJustCompleted] = useState(false)
+  const completionBtnRef = useRef<HTMLDivElement>(null)
+  const batchBtnRef = useRef<HTMLDivElement>(null)
+  const batchMouseX = useMotionValue(0)
+  const batchMouseY = useMotionValue(0)
+  const batchSpotlight = useMotionTemplate`radial-gradient(circle at ${batchMouseX}px ${batchMouseY}px, rgba(255,255,255,0.28) 0%, transparent 65%)`
   const topRef = useRef<HTMLDivElement>(null)
   const isDirectiveComposingRef = useRef(false)
 
@@ -702,26 +711,26 @@ export function ContextPanel() {
     <div className="flex h-full min-w-0 flex-col border-r border-border bg-background min-h-0 overflow-hidden">
       {/* Header Context */}
       <div className="shrink-0 border-b border-border bg-muted/20 p-6">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6 min-w-0">
           <Settings className="size-4 shrink-0 text-muted-foreground/60" />
           {!company && isProcessing ? (
-            <div className="h-5 w-24 bg-muted animate-pulse rounded-md" />
+            <div className="h-5 w-24 bg-muted animate-pulse rounded-md shrink-0" />
           ) : (
             <input
               value={company}
               onChange={(e) => setCompany(e.target.value)}
-              className="bg-transparent border-none p-0 focus:ring-0 w-24 font-bold text-foreground"
+              className="bg-transparent border-none p-0 focus:ring-0 font-bold text-foreground min-w-0 max-w-[45%] truncate"
               placeholder="회사명"
             />
           )}
-          <span className="text-muted-foreground/40">|</span>
+          <span className="text-muted-foreground/40 shrink-0">|</span>
           {!company && isProcessing ? (
             <div className="h-5 w-32 bg-muted animate-pulse rounded-md" />
           ) : (
             <input
               value={position}
               onChange={(e) => setPosition(e.target.value)}
-              className="bg-transparent border-none p-0 focus:ring-0 flex-1 text-muted-foreground/80"
+              className="bg-transparent border-none p-0 focus:ring-0 flex-1 min-w-0 text-muted-foreground/80"
               placeholder="지원 직무"
             />
           )}
@@ -780,31 +789,53 @@ export function ContextPanel() {
           {questions.some((q) => q.dbId && q.title.trim().length > 0) && !(!company && isProcessing) && (
             isBatchRunning ? (
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="shrink-0 gap-1.5 h-8 rounded-full hover:bg-destructive/10 hover:text-destructive transition-colors ml-auto text-[11px] font-black"
+                className="shrink-0 gap-1.5 h-8 rounded-full border-destructive/30 text-destructive hover:bg-destructive/10 transition-all ml-auto text-[11px] font-black"
                 onClick={cancelBatch}
-                title="전체 생성 취소"
               >
                 <X className="size-3.5" />
-                취소
+                생성 중지
               </Button>
             ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="shrink-0 gap-1.5 h-8 rounded-full hover:bg-primary/10 hover:text-primary transition-colors ml-auto text-[11px] font-black"
-                onClick={handleOpenBatchPlan}
-                disabled={isProcessing || isBatchPlanLoading}
-                title="모든 문항 동시 생성"
+              <motion.div
+                ref={batchBtnRef}
+                className="relative ml-auto shrink-0 overflow-hidden rounded-full"
+                onMouseMove={(e) => {
+                  const rect = batchBtnRef.current?.getBoundingClientRect()
+                  if (rect) {
+                    batchMouseX.set(e.clientX - rect.left)
+                    batchMouseY.set(e.clientY - rect.top)
+                  }
+                }}
+                whileHover={{ scale: 1.06 }}
+                whileTap={{ scale: 0.94 }}
+                transition={{ type: "spring", stiffness: 420, damping: 22 }}
               >
-                {isBatchPlanLoading ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Zap className="size-3.5" />
-                )}
-                {isBatchPlanLoading ? "전략 수립 중" : "전체 생성"}
-              </Button>
+                <motion.div
+                  className="pointer-events-none absolute inset-0 rounded-full"
+                  style={{ background: batchSpotlight }}
+                />
+                <Button
+                  size="sm"
+                  className="relative gap-1.5 h-8 rounded-full px-4 font-black text-[11px] bg-gradient-to-r from-primary to-primary/80 border-0 shadow-md"
+                  onClick={handleOpenBatchPlan}
+                  disabled={isProcessing || isBatchPlanLoading}
+                  title="모든 문항 동시 생성"
+                >
+                  {isBatchPlanLoading ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <motion.div
+                      animate={{ rotate: [0, -28, 24, -18, 12, -6, 0], y: [0, -2, 1, -1, 0] }}
+                      transition={{ duration: 0.55, repeat: Infinity, repeatDelay: 2.5, ease: "easeInOut" }}
+                    >
+                      <Zap className="size-3.5 fill-current" />
+                    </motion.div>
+                  )}
+                  {isBatchPlanLoading ? "전략 수립 중" : "전체 생성"}
+                </Button>
+              </motion.div>
             )
           )}
           {questions.length > 1 && !(!company && isProcessing) && !isBatchRunning && (
@@ -828,16 +859,65 @@ export function ContextPanel() {
           ) : null}
 
           <div className="flex items-start gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`size-10 shrink-0 rounded-xl transition-all border ${activeQuestion.isCompleted ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-background text-muted-foreground border-border'}`}
-              onClick={() => toggleActiveQuestionCompletion()}
-              disabled={!company && isProcessing}
-              title={activeQuestion.isCompleted ? "작성 완료 취소" : "작성 완료로 표시"}
-            >
-              <CheckCircle2 className={`size-5 ${activeQuestion.isCompleted ? 'fill-emerald-600/10' : ''}`} />
-            </Button>
+            <div className="relative shrink-0" ref={completionBtnRef}>
+              <motion.div
+                animate={justCompleted
+                  ? { scale: [1, 1.55, 0.78, 1.18, 0.96, 1], rotate: [0, -14, 8, -5, 2, 0] }
+                  : { scale: 1, rotate: 0 }
+                }
+                transition={{ duration: 0.52, ease: [0.34, 1.56, 0.64, 1] }}
+              >
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`size-10 rounded-xl transition-colors duration-300 border ${
+                    activeQuestion.isCompleted
+                      ? 'bg-emerald-50 text-emerald-600 border-emerald-200 shadow-sm shadow-emerald-100'
+                      : 'bg-background text-muted-foreground border-border hover:border-emerald-300 hover:text-emerald-500'
+                  }`}
+                  onClick={() => {
+                    if (!activeQuestion.isCompleted) {
+                      const rect = completionBtnRef.current?.getBoundingClientRect()
+                      if (rect) {
+                        void confetti({
+                          particleCount: 65,
+                          spread: 75,
+                          origin: {
+                            x: (rect.left + rect.width / 2) / window.innerWidth,
+                            y: (rect.top + rect.height / 2) / window.innerHeight,
+                          },
+                          colors: ['#34d399', '#6ee7b7', '#a7f3d0', '#ffffff', '#059669', '#fbbf24'],
+                          ticks: 90,
+                          gravity: 1.1,
+                          scalar: 0.72,
+                          startVelocity: 22,
+                        })
+                      }
+                      setJustCompleted(true)
+                      setTimeout(() => setJustCompleted(false), 600)
+                    }
+                    toggleActiveQuestionCompletion()
+                  }}
+                  disabled={!company && isProcessing}
+                  title={activeQuestion.isCompleted ? "작성 완료 취소" : "작성 완료로 표시"}
+                >
+                  <motion.div
+                    animate={activeQuestion.isCompleted ? { scale: 1.12, rotate: 0 } : { scale: 1 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 18 }}
+                  >
+                    <CheckCircle2 className={`size-5 ${activeQuestion.isCompleted ? 'fill-emerald-600/15 text-emerald-600' : ''}`} />
+                  </motion.div>
+                </Button>
+              </motion.div>
+              {justCompleted && (
+                <motion.span
+                  className="pointer-events-none absolute inset-0 rounded-xl border-2 border-emerald-400"
+                  initial={{ scale: 1, opacity: 0.9 }}
+                  animate={{ scale: 2.8, opacity: 0 }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                />
+              )}
+            </div>
             {!company && isProcessing ? (
               <div className="flex-1 space-y-2 py-2">
                 <div className="h-4 w-full bg-muted animate-pulse rounded-md" />
@@ -876,10 +956,14 @@ export function ContextPanel() {
                 </div>
                 <div className="flex flex-col gap-2 min-w-[140px]">
                   <div className="relative">
-                    <Input 
-                      type="number" 
-                      value={activeQuestion.maxLength} 
-                      onChange={(e) => updateActiveQuestion({ maxLength: parseInt(e.target.value) || 0 })}
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={activeQuestion.maxLength}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9]/g, "")
+                        updateActiveQuestion({ maxLength: parseInt(val) || 0 })
+                      }}
                       className="w-full h-8 pl-3 pr-8 text-[11px] font-black bg-background border-primary/10 focus-visible:ring-primary/20 rounded-lg"
                     />
                     <span className="absolute right-2.5 top-1/2 -translate-y-1/2 font-black text-[10px] text-muted-foreground/40">자</span>
@@ -926,102 +1010,60 @@ export function ContextPanel() {
         </div>
       </div>
 
-      {/* Mode Switcher */}
-      <div className="bg-muted/5 border-b border-border px-6 py-2 shrink-0">
-        <Tabs value={leftPanelTab} onValueChange={(v) => setLeftPanelTab(v as any)} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 bg-muted/20">
-            <TabsTrigger value="context" className="text-xs font-bold uppercase tracking-tighter gap-2">
-              <FileText className="size-3" />
-              작성 가이드
-            </TabsTrigger>
-            <TabsTrigger value="report" className="text-xs font-bold uppercase tracking-tighter gap-2" disabled={!aiReviewReport}>
-              <Sparkles className="size-3" />
-              AI 분석 리포트
-              {aiReviewReport && <div className="size-1.5 rounded-full bg-primary" />}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
+      {/* Mode Switcher + Action Bar (merged) */}
+      <div className="shrink-0 border-b border-border bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex items-center gap-2">
+          <Tabs value={leftPanelTab} onValueChange={(v) => setLeftPanelTab(v as any)}>
+            <TabsList className="h-8 bg-muted/30 gap-0.5">
+              <TabsTrigger value="context" className="h-7 px-3 text-[11px] font-bold gap-1.5 rounded-md">
+                <FileText className="size-3" />
+                작성 가이드
+              </TabsTrigger>
+              <TabsTrigger value="report" className="h-7 px-3 text-[11px] font-bold gap-1.5 rounded-md" disabled={!aiReviewReport}>
+                <Sparkles className="size-3" />
+                AI 분석
+                {aiReviewReport && <div className="size-1.5 rounded-full bg-primary" />}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-      <div className="shrink-0 border-b border-border bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-[11px] font-black uppercase tracking-wider text-primary">
-              {"\uc791\uc5c5 \uc561\uc158"}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {"\uae30\uc5c5 \ubd84\uc11d\uacfc \uacbd\ud5d8 \ucee8\ud14d\uc2a4\ud2b8\ub97c \ubcf4\uba74\uc11c \ubc14\ub85c \ucd08\uc548 \uc0dd\uc131\uacfc \uc138\ud0c1\uc744 \uc2e4\ud589\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4."}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <ApplicationInfoQuickCopyDialog
-              trigger={
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-2 rounded-full px-4 font-bold shadow-sm"
-                >
-                  <Copy className="size-3.5" />
-                  {"지원 정보"}
-                </Button>
-              }
-            />
+          <div className="ml-auto flex items-center gap-1">
             {isProcessing ? (
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={cancelSingle}
-                className="gap-2 rounded-full px-4 font-bold shadow-sm animate-in fade-in"
-              >
-                <X className="size-3.5" />
-                {"취소"}
+              <Button size="sm" variant="destructive" onClick={cancelSingle} className="h-8 gap-1.5 rounded-lg px-3 text-xs font-bold animate-in fade-in">
+                <X className="size-3.5" />취소
               </Button>
             ) : (
-              <Button
-                size="sm"
-                onClick={handleInitialGenerate}
-                disabled={isBatchRunning}
-                className="gap-2 rounded-full px-4 font-bold shadow-sm"
-              >
-                <Sparkles className="size-3.5" />
-                {"\uc0c8\ub85c \uc0dd\uc131"}
+              <Button size="sm" onClick={handleInitialGenerate} disabled={isBatchRunning} className="h-8 gap-1.5 rounded-lg px-3 text-xs font-bold">
+                <Sparkles className="size-3.5" />새로 생성
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleRegenerate}
-              disabled={isProcessing || isBatchRunning || !hasDraft}
-              className="gap-2 rounded-full px-4 font-bold shadow-sm"
-            >
-              {isProcessing ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Wand2 className="size-3.5" />
-              )}
-              {"\ub2e4\ub4ec\uae30"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void handleRewriteTitle()}
-              disabled={isProcessing || isBatchRunning || isTitleSuggestionLoading || !hasDraft}
-              className="gap-2 rounded-full px-4 font-bold shadow-sm"
-            >
-              {isTitleSuggestionLoading ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Lightbulb className="size-3.5" />
-              )}
-              {"\uc81c\ubaa9 \ub2e4\ub4ec\uae30"}
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button size="sm" variant="outline" onClick={handleRegenerate} disabled={isProcessing || isBatchRunning || !hasDraft} className="size-8 rounded-lg p-0">
+                    {isProcessing ? <Loader2 className="size-3.5 animate-spin" /> : <Wand2 className="size-3.5" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom"><p className="text-[11px]">다듬기</p></TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button size="sm" variant="outline" onClick={() => void handleRewriteTitle()} disabled={isProcessing || isBatchRunning || isTitleSuggestionLoading || !hasDraft} className="size-8 rounded-lg p-0">
+                    {isTitleSuggestionLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Lightbulb className="size-3.5" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom"><p className="text-[11px]">제목 다듬기</p></TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
       </div>
 
       <ScrollArea className="flex-1 h-full min-h-0 overflow-x-hidden px-6 py-4">
         <div ref={topRef} />
-        <div className="min-w-0 space-y-8 overflow-x-hidden pb-10">
+        <div className="min-w-0 space-y-3 overflow-x-hidden pb-6">
           {leftPanelTab === "context" ? (
             <>
           {/* Batch progress overlay for active question */}
@@ -1137,7 +1179,7 @@ export function ContextPanel() {
               <button
                 type="button"
                 onClick={() => setIsCompanyInsightOpen((prev) => !prev)}
-                className="mb-4 flex w-full items-center justify-between rounded-2xl border border-primary/15 bg-gradient-to-r from-primary/[0.08] via-background to-background px-4 py-3 text-left shadow-sm transition-all hover:border-primary/30 hover:bg-primary/[0.06]"
+                className="mb-3 flex w-full items-center justify-between rounded-2xl border border-primary/15 bg-gradient-to-r from-primary/[0.08] via-background to-background px-4 py-2.5 text-left shadow-sm transition-all hover:border-primary/30 hover:bg-primary/[0.06]"
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -1209,7 +1251,7 @@ export function ContextPanel() {
             <button
               type="button"
               onClick={() => setIsRagContextOpen((prev) => !prev)}
-              className="mb-4 flex w-full items-center justify-between rounded-2xl border border-primary/15 bg-gradient-to-r from-background via-primary/[0.03] to-background px-4 py-3 text-left shadow-sm transition-all hover:border-primary/30 hover:bg-primary/[0.04]"
+              className="mb-3 flex w-full items-center justify-between rounded-2xl border border-primary/15 bg-gradient-to-r from-background via-primary/[0.03] to-background px-4 py-2.5 text-left shadow-sm transition-all hover:border-primary/30 hover:bg-primary/[0.04]"
             >
               <div className="flex min-w-0 items-center gap-3">
                 <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -1220,7 +1262,12 @@ export function ContextPanel() {
                   <h3 className="truncate text-sm font-black tracking-tight text-foreground">연결된 경험 컨텍스트</h3>
                 </div>
               </div>
-              <div className="flex items-center gap-3 pl-4">
+              <div className="flex items-center gap-2 pl-4 shrink-0">
+                {!isRagContextOpen && extractedContext.length > 0 && (
+                  <Badge variant="secondary" className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-primary/15 bg-primary/[0.06] text-primary/80">
+                    {extractedContext.length}개 연결됨
+                  </Badge>
+                )}
                 <span className="hidden text-[11px] font-bold text-muted-foreground sm:inline">
                   {isRagContextOpen ? "접기" : "펼치기"}
                 </span>
@@ -1253,78 +1300,125 @@ export function ContextPanel() {
 
           <section className="min-w-0 overflow-hidden">
             {/* AI 작성 가이드 (Directives) */}
-            <div className="mb-4 flex items-center gap-2">
-              <Wand2 className="size-4 text-primary" />
-              <h3 className="text-sm font-black uppercase tracking-wider text-primary">생성 설정</h3>
+            <div className="mb-3 flex items-center gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <Wand2 className="size-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-primary/70">초안 생성</p>
+                <h3 className="truncate text-sm font-black tracking-tight text-foreground">생성 설정</h3>
+              </div>
             </div>
             <div className="min-w-0 space-y-4 overflow-hidden">
-              <div className="rounded-xl border border-primary/15 bg-primary/[0.03] p-4">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <label className="text-sm font-semibold text-primary">희망 글자수</label>
-                  <span className="text-[11px] text-muted-foreground">
-                    미입력 시 자동으로 최대 글자수의 80% 이상을 목표로 생성합니다.
+              {/* 희망 글자수 */}
+              <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-sm font-bold text-foreground">희망 글자수</label>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={lengthTargetDraft}
+                      onChange={(e) => setLengthTargetDraft(e.target.value.replace(/[^0-9]/g, ""))}
+                      onBlur={commitLengthTargetDraft}
+                      placeholder={`${Math.floor((activeQuestion.maxLength || 1000) * 0.8)}`}
+                      className="h-9 w-[88px] text-sm text-center font-bold border-primary/30 bg-background focus:border-primary"
+                    />
+                    <span className="text-sm font-bold text-muted-foreground whitespace-nowrap">
+                      / {activeQuestion.maxLength.toLocaleString()}자
+                    </span>
+                  </div>
+                </div>
+                {/* progress bar */}
+                <div className="space-y-1">
+                  <div className="h-2 w-full rounded-full bg-border/50 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-300"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          ((Number(lengthTargetDraft) || Math.floor((activeQuestion.maxLength || 1000) * 0.8)) /
+                            Math.max(1, activeQuestion.maxLength)) * 100
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground/70">
+                    {lengthTargetDraft ? `목표 ${Number(lengthTargetDraft).toLocaleString()}자` : "미입력 시 최대의 80% 자동 적용"}
+                  </p>
+                </div>
+              </div>
+              {/* 추가 요청 */}
+              <div className="space-y-3">
+                {/* 헤더 */}
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-bold text-foreground flex items-center gap-2">
+                    <MessageSquare className="size-4 text-primary" />
+                    AI에게 추가 지시
+                  </label>
+                  <span className={`text-[11px] font-bold tabular-nums transition-colors ${directiveDraft.length > 200 ? 'text-amber-500' : 'text-muted-foreground/50'}`}>
+                    {directiveDraft.length}자
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={Math.max(1, activeQuestion.maxLength)}
-                    value={lengthTargetDraft}
-                    onChange={(e) => setLengthTargetDraft(e.target.value)}
-                    onBlur={commitLengthTargetDraft}
-                    placeholder={`예: ${Math.floor((activeQuestion.maxLength || 1000) * 0.8)}`}
-                    className="h-9 w-full max-w-[220px]"
+                {/* 카테고리별 프리셋 */}
+                <div className="space-y-2">
+                  {(["톤", "구조", "강조", "필터"] as const).map((cat) => {
+                    const items = NATURAL_DIRECTIVE_PRESETS.filter(p => p.category === cat)
+                    if (!items.length) return null
+                    const catLabels: Record<string, string> = { 톤: "톤", 구조: "구조", 강조: "강조", 필터: "필터" }
+                    return (
+                      <div key={cat} className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground/40 w-8 shrink-0">{catLabels[cat]}</span>
+                        {items.map((preset) => (
+                          <Button
+                            key={preset.label}
+                            type="button"
+                            size="sm"
+                            variant={directiveDraft.includes(preset.value.slice(0, 8)) ? "default" : "outline"}
+                            className="h-7 rounded-full px-3 text-[11px] font-bold transition-all"
+                            onClick={() => handleDirectivePreset(preset.value)}
+                          >
+                            {preset.label}
+                          </Button>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+                {/* 텍스트 에리아 */}
+                <div className="relative">
+                  <Textarea
+                    value={directiveDraft}
+                    onChange={(e) => handleDirectiveChange(e.target.value)}
+                    onBlur={() => {
+                      if (!isDirectiveComposingRef.current) {
+                        commitDirectiveDraft()
+                      }
+                    }}
+                    onCompositionStart={() => {
+                      isDirectiveComposingRef.current = true
+                    }}
+                    onCompositionEnd={(e) => {
+                      isDirectiveComposingRef.current = false
+                      handleDirectiveChange(e.currentTarget.value)
+                    }}
+                    placeholder={`자유롭게 지시사항을 입력하세요.\n\n예) B 프로젝트만 다룰 것. A 프로젝트 언급 금지.\n\n구조 지정 시 각 줄에 하나씩:\n1단락: 문제 상황과 배경\n2단락: 내가 취한 기술적 판단\n3단락: 성과와 수치`}
+                    className="min-h-[120px] w-full resize-none text-sm leading-7 bg-muted/20 border border-border/50 focus:border-primary/40 focus:bg-background rounded-2xl transition-all duration-200"
                   />
-                  <span className="text-xs text-muted-foreground">
-                    최대 {activeQuestion.maxLength.toLocaleString()}자
-                  </span>
+                  {directiveDraft && (
+                    <button
+                      type="button"
+                      onClick={() => { handleDirectiveChange(""); commitDirectiveDraft() }}
+                      className="absolute top-3 right-3 size-5 rounded-full bg-muted hover:bg-muted-foreground/20 flex items-center justify-center transition-colors"
+                    >
+                      <X className="size-3 text-muted-foreground" />
+                    </button>
+                  )}
                 </div>
+                <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
+                  각 줄을 독립 지시로 인식 · 사실성·글자수 규칙 우선
+                </p>
               </div>
-              <div className="flex min-w-0 items-center justify-between gap-3">
-                <label className="text-sm font-semibold flex items-center gap-2 text-primary">
-                  <MessageSquare className="w-4 h-4" />
-                  추가 요청
-                </label>
-                <span className="min-w-0 break-words text-right text-[11px] text-muted-foreground">
-                  원하는 방향을 자연스럽게 적어주세요.
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {NATURAL_DIRECTIVE_PRESETS.map((preset) => (
-                  <Button
-                    key={preset.label}
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 rounded-full border-primary/20 bg-background/70 px-3 text-[11px] font-bold hover:bg-primary/5"
-                    onClick={() => handleDirectivePreset(preset.value)}
-                  >
-                    {preset.label}
-                  </Button>
-                ))}
-              </div>
-              <Textarea
-                value={directiveDraft}
-                onChange={(e) => handleDirectiveChange(e.target.value)}
-                onBlur={() => {
-                  if (!isDirectiveComposingRef.current) {
-                    commitDirectiveDraft()
-                  }
-                }}
-                onCompositionStart={() => {
-                  isDirectiveComposingRef.current = true
-                }}
-                onCompositionEnd={(e) => {
-                  isDirectiveComposingRef.current = false
-                  handleDirectiveChange(e.currentTarget.value)
-                }}
-                placeholder={`예) B 프로젝트(결제 시스템 개편)만 다룰 것. A 프로젝트 언급 금지.\n\n또는 구조를 지정하려면 각 줄에 하나씩:\n1단락: 문제 상황과 배경\n2단락: 내가 취한 기술적 판단과 행동\n3단락: 성과와 수치`}
-                className="min-h-[150px] w-full max-w-full resize-none overflow-x-hidden whitespace-pre-wrap break-words text-sm leading-7 bg-background/50 focus:bg-background border border-border/40 focus:border-primary/40 transition-all duration-300"
-              />
-              <p className="break-words text-[11px] text-muted-foreground leading-relaxed">
-                구조를 지정할 때는 <span className="font-bold text-foreground/70">각 줄에 하나씩</span> 작성하면 AI가 줄마다 독립적인 지시로 인식합니다. 사실성·글자수 규칙과 충돌하지 않는 한 모든 줄을 따릅니다.
-              </p>
             </div>
 
           </section>
