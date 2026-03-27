@@ -79,7 +79,10 @@ RESUMADE는 구직자를 위한 '개인화된 지능형 서류 작성 및 채용
 - **Safety Net**: `COMMIT_MSG.txt` is strictly ignored in `.gitignore`.
 
 ### 7.2. 🛠️ Zero Build Error Policy (Mandatory Build Verification)
-> **IMPORTANT**: 백엔드와 프론트엔드 서버는 사용자가 이미 직접 실행하고 있습니다. Claude는 서버를 직접 실행하거나 `dev` 모드로 띄우려 하지 말고, **빌드 명령어만 실행하여 컴파일/타입 에러 여부만 확인**하면 됩니다.
+> **IMPORTANT**: 프론트엔드(localhost:3000)와 백엔드(localhost:8080) 서버는 사용자가 **항상** 직접 실행하고 있습니다.
+> - Claude는 절대 `dev` 서버를 새로 띄우거나 `preview_start`를 호출하지 않습니다.
+> - 빌드 명령어만 실행하여 컴파일/타입 에러 여부를 확인합니다.
+> - 시각적 확인이 필요한 경우, `mcp__Claude_in_Chrome` 도구로 `localhost:3000`에 접속하여 스크린샷을 찍습니다.
 
 - **Constraint**: 모든 코드 변경 후 다음 태스크로 넘어가거나 커밋하기 전에 반드시 빌드로 에러 여부를 확인합니다.
 - **Process**:
