@@ -22,6 +22,10 @@ import {
   Zap,
   X,
   CheckCheck,
+  Calendar,
+  User,
+  Code2,
+  BarChart3,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -95,6 +99,133 @@ const SECTION_MATCHERS: Record<DirectiveFieldKey, RegExp> = {
   avoid: /(avoid|skip|remove)/i,
   note: /(note|additional|comment)/i,
 };
+
+// ── 경험 컨텍스트 relevantPart 파서 ─────────────────────────────────────────
+interface ParsedRelevantPart {
+  role?: string
+  period?: string
+  stack?: string[]
+  outcome?: string
+  detail?: string
+}
+
+function parseRelevantPart(raw: string): ParsedRelevantPart {
+  const result: ParsedRelevantPart = {}
+  // "Role: X | Period: Y | Stack: X | Outcome: X | Relevant detail: X"
+  const segments = raw.split(/\s*\|\s*/)
+  for (const seg of segments) {
+    const colonIdx = seg.indexOf(": ")
+    if (colonIdx === -1) continue
+    const key = seg.slice(0, colonIdx).trim().toLowerCase()
+    const val = seg.slice(colonIdx + 2).trim()
+    if (!val) continue
+    if (key === "role") result.role = val
+    else if (key === "period") result.period = val
+    else if (key === "stack") result.stack = val.split(/,\s*/).filter(Boolean)
+    else if (key === "outcome") result.outcome = val
+    else if (key === "relevant detail") result.detail = cleanDetailText(val)
+  }
+  // fallback: if nothing parsed, treat whole string as detail
+  if (!result.role && !result.period && !result.stack && !result.outcome) {
+    result.detail = cleanDetailText(raw)
+  }
+  return result
+}
+
+function cleanDetailText(text: string): string {
+  return text
+    .replace(/##\s*[^\n]+\n?/g, "")          // ## 마크다운 헤더 제거
+    .replace(/제목:\s*[^\n]+\n?/g, "")         // "제목: X" 제거
+    .replace(/역할:\s*[^\n]+\n?/g, "")         // "역할: X" 제거
+    .replace(/기간:\s*[^\n]+\n?/g, "")         // "기간: X" 제거
+    .replace(/상세내용:\s*/g, "")               // "상세내용:" 레이블 제거
+    .replace(/\n+/g, " ")
+    .trim()
+}
+
+function RelevantPartCard({ relevantPart, relevanceScore }: { relevantPart: string; relevanceScore: number }) {
+  const parsed = parseRelevantPart(relevantPart)
+  const scoreColor =
+    relevanceScore >= 60
+      ? "text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-800"
+      : relevanceScore >= 35
+      ? "text-amber-600 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800"
+      : "text-muted-foreground bg-muted/50 border-border"
+
+  return (
+    <div className="space-y-2.5">
+      {/* Role + Period row */}
+      {(parsed.role || parsed.period) && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {parsed.role && (
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <User className="size-3 shrink-0" />
+              {parsed.role}
+            </span>
+          )}
+          {parsed.period && (
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Calendar className="size-3 shrink-0" />
+              {parsed.period}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Tech Stack */}
+      {parsed.stack && parsed.stack.length > 0 && (
+        <div className="flex items-start gap-1.5">
+          <Code2 className="mt-0.5 size-3 shrink-0 text-primary/60" />
+          <div className="flex flex-wrap gap-1">
+            {parsed.stack.slice(0, 6).map((tech) => (
+              <span
+                key={tech}
+                className="rounded-md bg-primary/8 px-1.5 py-0.5 text-[10px] font-semibold text-primary/80"
+              >
+                {tech}
+              </span>
+            ))}
+            {parsed.stack.length > 6 && (
+              <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                +{parsed.stack.length - 6}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Outcome */}
+      {parsed.outcome && (
+        <div className="flex items-start gap-1.5">
+          <BarChart3 className="mt-0.5 size-3 shrink-0 text-emerald-500" />
+          <p className="text-[11px] font-semibold leading-relaxed text-emerald-700 dark:text-emerald-400">
+            {parsed.outcome}
+          </p>
+        </div>
+      )}
+
+      {/* Detail */}
+      {parsed.detail && (
+        <p className="text-[11px] leading-relaxed text-foreground/70">
+          {parsed.detail}
+        </p>
+      )}
+
+      {/* Relevance score bar */}
+      <div className="flex items-center gap-2 pt-1">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-border">
+          <div
+            className="h-full rounded-full bg-primary/60 transition-all"
+            style={{ width: `${relevanceScore}%` }}
+          />
+        </div>
+        <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${scoreColor}`}>
+          {relevanceScore}% 일치
+        </span>
+      </div>
+    </div>
+  )
+}
 
 const parseRefineDirective = (raw?: string): DirectiveFields => {
   if (!raw) {
@@ -1103,18 +1234,16 @@ export function ContextPanel() {
                 {extractedContext.map((ctx, index) => (
                   <Card
                     key={`${ctx.id ?? "ctx"}-${ctx.experienceTitle}-${index}`}
-                    className="min-w-0 overflow-hidden bg-muted/40 border-none shadow-none group hover:bg-primary/5 transition-colors"
+                    className="min-w-0 overflow-hidden border border-border/60 bg-background shadow-sm group hover:border-primary/30 hover:shadow-md transition-all"
                   >
                     <CardContent className="p-4">
-                      <div className="flex min-w-0 items-center justify-between gap-2 mb-2">
-                        <span className="min-w-0 break-words text-sm font-black group-hover:text-primary transition-colors text-foreground">{ctx.experienceTitle}</span>
-                        <Badge variant="outline" className="text-[10px] bg-background border-primary/20 text-primary font-bold">
-                          {ctx.relevanceScore}% 일치
-                        </Badge>
-                      </div>
-                      <p className="break-words text-xs text-foreground/90 leading-relaxed font-medium">
-                        {ctx.relevantPart}
+                      <p className="mb-3 min-w-0 break-words text-sm font-black group-hover:text-primary transition-colors text-foreground">
+                        {ctx.experienceTitle}
                       </p>
+                      <RelevantPartCard
+                        relevantPart={ctx.relevantPart}
+                        relevanceScore={ctx.relevanceScore}
+                      />
                     </CardContent>
                   </Card>
                 ))}
