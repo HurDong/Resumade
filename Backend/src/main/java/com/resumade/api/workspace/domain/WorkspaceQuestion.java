@@ -61,6 +61,15 @@ public class WorkspaceQuestion {
     @Column(length = 16777215)
     private String batchStrategyDirective;
 
+    /** 사용자가 최종 편집한 텍스트 */
+    @Lob
+    @Column(length = 16777215)
+    private String finalText;
+
+    /** 사용자가 선택/적용한 제목 */
+    @Column(length = 500)
+    private String selectedTitle;
+
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime createdAt;
