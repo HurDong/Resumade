@@ -222,11 +222,11 @@ export const applicationInfoCategoryDefinitions: Record<
   activity: {
     id: "activity",
     label: "활동",
-    description: "활동 구분, 기간, 역할, 설명을 정리해 즉시 복사합니다.",
+    description: "활동 구분, 기간, 교육시간, 역할, 설명을 정리해 즉시 복사합니다.",
     toneClassName:
       "border-rose-200 bg-rose-50/80 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200",
     primaryFieldKey: "organization",
-    summaryKeys: ["activityType", "startDate", "endDate", "role"],
+    summaryKeys: ["activityType", "startDate", "endDate", "hours"],
     fields: [
       {
         key: "activityType",
@@ -236,7 +236,7 @@ export const applicationInfoCategoryDefinitions: Record<
       {
         key: "organization",
         label: "기관 및 조직명",
-        placeholder: "삼성 청년 SW 아카데미 11기",
+        placeholder: "KB IT'S YOUR LIFE 4기",
       },
       {
         key: "startDate",
@@ -250,11 +250,16 @@ export const applicationInfoCategoryDefinitions: Record<
         placeholder: "2024-12-19",
         inputType: "date",
       },
+      {
+        key: "hours",
+        label: "교육시간 (H)",
+        placeholder: "480",
+      },
       { key: "role", label: "직위 또는 역할", placeholder: "교육생" },
       {
         key: "description",
         label: "활동내역",
-        placeholder: "Spring Framework와 Vue.js를 활용한 프로젝트 개발",
+        placeholder: "데이터 분석 및 AI 모델 개발 프로젝트 수행",
         multiline: true,
       },
     ],
@@ -360,23 +365,96 @@ export function getApplicationInfoEntrySummary(entry: ApplicationInfoEntry) {
   return fallbackValues.join(" · ");
 }
 
+function formatDateKr(dateStr: string): string {
+  if (!dateStr?.trim()) return "";
+  return dateStr.trim().replace(/-/g, ".");
+}
+
 export function getApplicationInfoCopyText(
   entry: ApplicationInfoEntry,
   mode: "summary" | "detail" = "detail"
-) {
+): string {
+  const v = entry.values;
   const definition = getApplicationInfoDefinition(entry.category);
   const title = getApplicationInfoEntryTitle(entry);
-  const summary = getApplicationInfoEntrySummary(entry);
-  const fields = getApplicationInfoEntryFields(entry);
 
   if (mode === "summary") {
-    return [title, summary].filter(Boolean).join(" | ");
+    switch (entry.category) {
+      case "certification":
+        return [v.certificateName, v.issuer, formatDateKr(v.acquiredAt)]
+          .filter(Boolean)
+          .join(" | ");
+      case "languageTest":
+        return [v.examName, v.scoreOrGrade, formatDateKr(v.acquiredAt)]
+          .filter(Boolean)
+          .join(" | ");
+      case "award":
+        return [v.awardName, v.issuer, formatDateKr(v.awardedAt)]
+          .filter(Boolean)
+          .join(" | ");
+      case "activity": {
+        const period = [formatDateKr(v.startDate), formatDateKr(v.endDate)]
+          .filter(Boolean)
+          .join(" ~ ");
+        const hours = v.hours ? `${v.hours}H` : "";
+        return [v.organization, period, hours].filter(Boolean).join(" | ");
+      }
+      default: {
+        const summary = getApplicationInfoEntrySummary(entry);
+        return [title, summary].filter(Boolean).join(" | ");
+      }
+    }
   }
 
-  return [
-    `[${definition.label}] ${title}`,
-    ...fields.map((field) => `${field.label}: ${field.value}`),
-  ].join("\n");
+  // ── detail mode ───────────────────────────────────────────────────────────
+  switch (entry.category) {
+    case "certification": {
+      const lines = [`[${definition.label}] ${title}`];
+      if (v.certificateName) lines.push(`자격증명: ${v.certificateName}`);
+      if (v.issuer) lines.push(`발급기관: ${v.issuer}`);
+      if (v.registrationNumber) lines.push(`등록번호: ${v.registrationNumber}`);
+      if (v.acquiredAt) lines.push(`취득일: ${formatDateKr(v.acquiredAt)}`);
+      if (v.notes) lines.push(`비고: ${v.notes}`);
+      return lines.join("\n");
+    }
+    case "languageTest": {
+      const lines = [`[${definition.label}] ${title}`];
+      if (v.examName) lines.push(`시험명: ${v.examName}`);
+      if (v.scoreOrGrade) lines.push(`등급/점수: ${v.scoreOrGrade}`);
+      if (v.acquiredAt) lines.push(`취득일: ${formatDateKr(v.acquiredAt)}`);
+      if (v.registrationNumber) lines.push(`등록번호: ${v.registrationNumber}`);
+      if (v.notes) lines.push(`메모: ${v.notes}`);
+      return lines.join("\n");
+    }
+    case "award": {
+      const lines = [`[${definition.label}] ${title}`];
+      if (v.awardName) lines.push(`수상명: ${v.awardName}`);
+      if (v.issuer) lines.push(`수여기관: ${v.issuer}`);
+      if (v.awardedAt) lines.push(`수상일자: ${formatDateKr(v.awardedAt)}`);
+      if (v.description) lines.push(`수상내역: ${v.description}`);
+      return lines.join("\n");
+    }
+    case "activity": {
+      const lines = [`[${definition.label}] ${title}`];
+      if (v.activityType) lines.push(`활동구분: ${v.activityType}`);
+      if (v.organization) lines.push(`기관명: ${v.organization}`);
+      const period = [formatDateKr(v.startDate), formatDateKr(v.endDate)]
+        .filter(Boolean)
+        .join(" ~ ");
+      if (period) lines.push(`기간: ${period}`);
+      if (v.hours) lines.push(`교육시간: ${v.hours}H`);
+      if (v.role) lines.push(`역할: ${v.role}`);
+      if (v.description) lines.push(`활동내역: ${v.description}`);
+      return lines.join("\n");
+    }
+    default: {
+      const fields = getApplicationInfoEntryFields(entry);
+      return [
+        `[${definition.label}] ${title}`,
+        ...fields.map((field) => `${field.label}: ${field.value}`),
+      ].join("\n");
+    }
+  }
 }
 
 export function matchesApplicationInfoSearch(
