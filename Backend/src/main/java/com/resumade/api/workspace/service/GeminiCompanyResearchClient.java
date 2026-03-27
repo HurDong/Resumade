@@ -79,7 +79,8 @@ public class GeminiCompanyResearchClient {
                             Map.of("google_search", Map.of())
                     ),
                     "generationConfig", Map.of(
-                            "temperature", 0.1
+                            "temperature", 0.1,
+                            "thinkingConfig", Map.of("thinkingBudget", 0)
                     )
             ));
 
@@ -99,9 +100,29 @@ public class GeminiCompanyResearchClient {
             }
 
             JsonNode root = objectMapper.readTree(response.body());
+
+            // candidates 비어있는지 먼저 확인 (safety filter 등)
+            JsonNode candidates = root.path("candidates");
+            if (!candidates.isArray() || candidates.isEmpty()) {
+                JsonNode feedback = root.path("promptFeedback");
+                String blockReason = feedback.path("blockReason").asText("UNKNOWN");
+                log.error("Gemini 기업조사 응답에 candidates 없음: blockReason={}, feedback={}",
+                        blockReason, feedback);
+                throw new IllegalStateException("Gemini 응답에 candidates가 없습니다. blockReason=" + blockReason);
+            }
+
+            // finishReason 확인
+            String finishReason = candidates.path(0).path("finishReason").asText("");
+            if (!finishReason.isBlank() && !"STOP".equals(finishReason) && !"MAX_TOKENS".equals(finishReason)) {
+                log.warn("Gemini 기업조사 비정상 종료: finishReason={}", finishReason);
+            }
+
             String text = extractResponseText(root);
             if (text.isBlank()) {
-                throw new IllegalStateException("Gemini returned an empty company research response.");
+                JsonNode candidate0 = candidates.path(0);
+                log.error("Gemini 기업조사 텍스트 비어있음: finishReason={}, candidate0={}",
+                        finishReason, candidate0);
+                throw new IllegalStateException("Gemini 기업조사 응답의 텍스트가 비어있습니다. finishReason=" + finishReason);
             }
 
             CompanyResearchResponse researchResponse = parseResearchResponse(text);
@@ -220,6 +241,8 @@ public class GeminiCompanyResearchClient {
         Iterator<JsonNode> iterator = parts.elements();
         while (iterator.hasNext()) {
             JsonNode part = iterator.next();
+            // thinking 모델의 내부 사고 파트(thought: true)는 제외
+            if (part.path("thought").asBoolean(false)) continue;
             String value = part.path("text").asText("");
             if (!value.isBlank()) {
                 if (!text.isEmpty()) text.append('\n');
