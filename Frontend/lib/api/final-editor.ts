@@ -37,6 +37,16 @@ export interface EditActionResult {
   transformedText: string
 }
 
+export interface SpellCorrection {
+  errorWord: string
+  suggestedWord: string
+  reason: string
+}
+
+export interface SpellCheckResult {
+  corrections: SpellCorrection[]
+}
+
 export interface QuestionNavItem {
   id: number
   index: number
@@ -93,6 +103,17 @@ export async function rewashSelection(
     body: JSON.stringify({ selectedText }),
   })
   if (!res.ok) throw new Error(`Rewash failed: ${res.status}`)
+  return res.json()
+}
+
+/** 맞춤법 검사 — 현재 에디터 텍스트 전체의 오류 제안 목록 반환 */
+export async function checkSpelling(questionId: number, text: string): Promise<SpellCheckResult> {
+  const res = await fetch(toApiUrl(`/api/v1/workspace/final/${questionId}/spell-check`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  })
+  if (!res.ok) throw new Error(`Spell check failed: ${res.status}`)
   return res.json()
 }
 
