@@ -244,7 +244,7 @@ public class WorkspaceService {
         return question;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public void processRefinement(Long questionId, String directive, Integer targetChars, SseEmitter emitter) {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
@@ -416,7 +416,7 @@ public class WorkspaceService {
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public void processHumanPatch(Long questionId, boolean useDirective, Integer targetChars, SseEmitter emitter) {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
@@ -621,7 +621,7 @@ public class WorkspaceService {
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public void processRewash(Long questionId, SseEmitter emitter) {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
@@ -719,7 +719,7 @@ public class WorkspaceService {
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public void processRepatch(Long questionId, SseEmitter emitter) {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
