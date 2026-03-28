@@ -370,6 +370,7 @@ export default function FinalEditorPage() {
   const params = useParams()
   const questionId = Number(params.questionId)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const spellResultRef = useRef<HTMLDivElement>(null)
   // 초기 로드 완료 여부 — true 이후부터만 자동저장 활성화
   const isInitialized = useRef(false)
 
@@ -585,6 +586,13 @@ export default function FinalEditorPage() {
       setIsRewashing(false)
     }
   }, [selection, isRewashing, questionId, finalText])
+
+  // ── 맞춤법 결과 자동 스크롤 ─────────────────────────────────────────────
+  useEffect(() => {
+    if (spellCorrections !== null && spellResultRef.current) {
+      spellResultRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" })
+    }
+  }, [spellCorrections])
 
   // ── 맞춤법 검사 ─────────────────────────────────────────────────────────
   const handleSpellCheck = useCallback(async () => {
@@ -885,55 +893,82 @@ export default function FinalEditorPage() {
 
                       {/* 결과 패널 */}
                       {spellCorrections !== null && (
-                        <div className="rounded-xl border border-border/60 bg-background overflow-hidden shadow-sm">
+                        <div ref={spellResultRef} className="rounded-xl border border-border/60 bg-background overflow-hidden shadow-sm">
                           {spellCorrections.length === 0 ? (
                             <div className="flex items-center gap-2 px-3 py-3">
                               <Check className="size-3.5 text-emerald-500 shrink-0" />
                               <p className="text-xs text-muted-foreground">맞춤법 오류가 없습니다</p>
                             </div>
                           ) : (
-                            <div className="divide-y divide-border/40">
+                            <div>
                               {/* 결과 헤더 */}
-                              <div className="flex items-center justify-between px-3 py-2 bg-rose-50/60">
-                                <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider">
-                                  {spellCorrections.length}개 오류
-                                </span>
+                              <div className="flex items-center justify-between px-3 py-2 bg-rose-50 border-b border-rose-100">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="flex size-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
+                                    {spellCorrections.length}
+                                  </span>
+                                  <span className="text-[11px] font-bold text-rose-700">
+                                    개 오류 발견
+                                  </span>
+                                </div>
                                 <button
                                   type="button"
                                   onClick={applyAllCorrections}
-                                  className="text-[10px] font-bold text-primary hover:underline transition-colors"
+                                  className="rounded-full bg-primary px-2.5 py-1 text-[10px] font-bold text-white transition-colors hover:bg-primary/90"
                                 >
                                   전체 수정
                                 </button>
                               </div>
 
                               {/* 개별 교정 카드 */}
-                              {spellCorrections.map((c, i) => (
-                                <button
-                                  key={`${c.errorWord}-${i}`}
-                                  type="button"
-                                  onClick={() => applyCorrection(c)}
-                                  className="group w-full px-3 py-2.5 text-left transition-colors hover:bg-muted/30"
-                                >
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-xs font-semibold text-red-600 line-through decoration-red-400">
-                                      {c.errorWord}
-                                    </span>
-                                    <span className="text-[10px] text-muted-foreground">→</span>
-                                    <span className="text-xs font-semibold text-emerald-700">
-                                      {c.suggestedWord}
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 flex items-center gap-1.5">
-                                    <span className="rounded-full bg-amber-100 border border-amber-200 px-1.5 py-0 text-[9px] font-bold text-amber-700">
-                                      {c.reason}
-                                    </span>
-                                    <span className="text-[10px] text-muted-foreground/60 group-hover:text-muted-foreground transition-colors">
-                                      클릭하여 수정
-                                    </span>
-                                  </div>
-                                </button>
-                              ))}
+                              <div className="divide-y divide-border/30">
+                                {spellCorrections.map((c, i) => {
+                                  const reasonColor: Record<string, string> = {
+                                    "맞춤법 오류":   "bg-red-100 text-red-700 border-red-200",
+                                    "띄어쓰기 오류": "bg-blue-100 text-blue-700 border-blue-200",
+                                    "어미 오류":     "bg-orange-100 text-orange-700 border-orange-200",
+                                    "조사 오류":     "bg-violet-100 text-violet-700 border-violet-200",
+                                    "비단어 오류":   "bg-rose-100 text-rose-700 border-rose-200",
+                                  }
+                                  const badgeClass = reasonColor[c.reason] ?? "bg-muted text-muted-foreground border-border"
+                                  const isDeletion = !c.suggestedWord
+
+                                  return (
+                                    <button
+                                      key={`${c.errorWord}-${i}`}
+                                      type="button"
+                                      onClick={() => applyCorrection(c)}
+                                      className="group w-full px-3 py-3 text-left transition-colors hover:bg-muted/40"
+                                    >
+                                      {/* 오류 → 교정 흐름 */}
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="rounded bg-red-50 border border-red-200 px-1.5 py-0.5 text-xs font-bold text-red-600 line-through decoration-red-400">
+                                          {c.errorWord}
+                                        </span>
+                                        <span className="text-[10px] text-muted-foreground shrink-0">→</span>
+                                        {isDeletion ? (
+                                          <span className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 italic">
+                                            삭제 권고
+                                          </span>
+                                        ) : (
+                                          <span className="rounded bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 text-xs font-bold text-emerald-700">
+                                            {c.suggestedWord}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {/* 사유 + 액션 힌트 */}
+                                      <div className="mt-1.5 flex items-center justify-between gap-1.5">
+                                        <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${badgeClass}`}>
+                                          {c.reason}
+                                        </span>
+                                        <span className="text-[10px] text-muted-foreground/50 group-hover:text-muted-foreground transition-colors shrink-0">
+                                          클릭하여 적용
+                                        </span>
+                                      </div>
+                                    </button>
+                                  )
+                                })}
+                              </div>
                             </div>
                           )}
                         </div>
