@@ -6,6 +6,7 @@ import com.resumade.api.workspace.service.FinalEditorAiService;
 import com.resumade.api.workspace.service.JdTextAiService;
 import com.resumade.api.workspace.service.JdVisionAiService;
 import com.resumade.api.workspace.service.OpenAiResponsesWorkspaceDraftService;
+import com.resumade.api.workspace.service.SpellCheckAiService;
 import com.resumade.api.workspace.service.WorkspaceDraftAiService;
 import com.resumade.api.workspace.service.WorkspacePatchAiService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -160,6 +161,30 @@ public class AiConfig {
                 .build();
         return AiServices.builder(ClassifierAiService.class)
                 .chatLanguageModel(classifierModel)
+                .build();
+    }
+
+    // -------------------------------------------------------------------------
+
+    /**
+     * 맞춤법 검사 전용 AI 서비스.
+     * temperature=0.0 — 맞춤법은 창의성이 아닌 정확성이 기준이므로 결정론적으로 실행한다.
+     * finalEditorModelName(gpt-4o-mini) 을 공유하여 별도 모델 설정 없이 재사용한다.
+     */
+    @Bean
+    public SpellCheckAiService spellCheckAiService() {
+        OpenAiChatModel spellCheckModel = OpenAiChatModel.builder()
+                .apiKey(openAiApiKey)
+                .modelName(finalEditorModelName)   // gpt-4o-mini
+                .temperature(0.0)                  // 맞춤법 교정은 결정론적으로
+                .maxRetries(1)
+                .timeout(openAiTimeout)
+                .responseFormat("json_object")     // Structured Output 강제
+                .logRequests(false)
+                .logResponses(false)
+                .build();
+        return AiServices.builder(SpellCheckAiService.class)
+                .chatLanguageModel(spellCheckModel)
                 .build();
     }
 
