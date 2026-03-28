@@ -1,5 +1,6 @@
 package com.resumade.api.workspace.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.resumade.api.workspace.dto.SpellCheckResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +29,7 @@ public class SpellCheckService {
     private static final int MAX_TEXT_LENGTH = 3_000;
 
     private final SpellCheckAiService spellCheckAiService;
+    private final ObjectMapper objectMapper;
 
     /**
      * 주어진 텍스트의 맞춤법·띄어쓰기 오류를 감지하여 제안 목록을 반환한다.
@@ -45,20 +47,36 @@ public class SpellCheckService {
             return SpellCheckResponse.empty();
         }
 
+        log.info("[SpellCheck] calling LLM, textLength={}", text.length());
         try {
-            SpellCheckResponse response = spellCheckAiService.check(text);
+            // String 반환으로 LangChain4j PojoOutputParser 스키마 주입 차단
+            String raw = spellCheckAiService.check(text);
+            log.info("[SpellCheck] raw LLM response: {}", raw);
 
-            // LLM 이 null 또는 비어있는 응답을 반환한 경우 방어 처리
-            if (response == null || response.getCorrections() == null) {
+            if (raw == null || raw.isBlank()) {
+                log.warn("[SpellCheck] empty raw response → fallback");
                 return SpellCheckResponse.empty();
             }
 
-            log.info("SpellCheck completed: corrections={}", response.getCorrections().size());
+            // 코드 블록 래퍼 제거 (LLM이 ```json ... ``` 로 감싸는 경우 대비)
+            String json = raw.strip();
+            if (json.startsWith("```")) {
+                json = json.replaceAll("(?s)^```[a-zA-Z]*\\n?", "").replaceAll("```$", "").strip();
+            }
+
+            SpellCheckResponse response = objectMapper.readValue(json, SpellCheckResponse.class);
+
+            if (response == null || response.getCorrections() == null) {
+                log.warn("[SpellCheck] deserialization produced null → fallback");
+                return SpellCheckResponse.empty();
+            }
+
+            log.info("[SpellCheck] completed: corrections={}, items={}",
+                    response.getCorrections().size(), response.getCorrections());
             return response;
 
         } catch (Exception e) {
-            // LLM 호출 실패는 기능 오류가 아닌 서비스 저하(Degradation)로 처리
-            log.error("SpellCheck AI call failed, returning empty result", e);
+            log.error("[SpellCheck] AI call failed", e);
             return SpellCheckResponse.empty();
         }
     }

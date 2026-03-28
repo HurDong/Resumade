@@ -180,8 +180,8 @@ public class AiConfig {
                 .maxRetries(1)
                 .timeout(openAiTimeout)
                 .responseFormat("json_object")     // Structured Output 강제
-                .logRequests(false)
-                .logResponses(false)
+                .logRequests(true)   // 디버그: 실제 전송 프롬프트 확인
+                .logResponses(true)  // 디버그: LLM 원문 응답 확인
                 .build();
         return AiServices.builder(SpellCheckAiService.class)
                 .chatLanguageModel(spellCheckModel)

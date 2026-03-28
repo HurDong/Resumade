@@ -1,6 +1,5 @@
 package com.resumade.api.workspace.service;
 
-import com.resumade.api.workspace.dto.SpellCheckResponse;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
@@ -16,7 +15,8 @@ import dev.langchain4j.service.V;
  * <ul>
  *   <li>오지랖 금지 — 확신이 없으면 교정하지 않는다.</li>
  *   <li>IT 도메인 특화 — 영문 기술 용어·고유명사를 절대 훼손하지 않는다.</li>
- *   <li>Structured Output — 응답은 항상 {@link SpellCheckResponse} JSON 구조여야 한다.</li>
+ *   <li>반환 타입을 {@code String}으로 선언하여 LangChain4j PojoOutputParser의
+ *       스키마 주입을 차단한다. JSON 파싱은 {@code SpellCheckService}에서 직접 수행.</li>
  * </ul>
  * </p>
  */
@@ -92,5 +92,5 @@ public interface SpellCheckAiService {
             </Examples>
             """)
     @UserMessage("교정 대상 텍스트:\n{{text}}")
-    SpellCheckResponse check(@V("text") String text);
+    String check(@V("text") String text);
 }
