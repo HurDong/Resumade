@@ -1,6 +1,7 @@
 package com.resumade.api.infra.ai;
 
 import com.resumade.api.experience.service.ExperienceAiService;
+import com.resumade.api.workspace.service.ClassifierAiService;
 import com.resumade.api.workspace.service.FinalEditorAiService;
 import com.resumade.api.workspace.service.JdTextAiService;
 import com.resumade.api.workspace.service.JdVisionAiService;
@@ -8,6 +9,7 @@ import com.resumade.api.workspace.service.OpenAiResponsesWorkspaceDraftService;
 import com.resumade.api.workspace.service.WorkspaceDraftAiService;
 import com.resumade.api.workspace.service.WorkspacePatchAiService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.service.AiServices;
 import jakarta.annotation.PostConstruct;
@@ -126,6 +128,42 @@ public class AiConfig {
                 .logResponses(false)
                 .build();
     }
+
+    // -------------------------------------------------------------------------
+    // 신규: PromptStrategy 파이프라인용 빈
+    // -------------------------------------------------------------------------
+
+    /**
+     * StrategyDraftGeneratorService가 사용하는 ChatLanguageModel.
+     * workspaceDraftAiService와 동일한 모델을 공유하되, AiServices 래퍼 없이 직접 사용합니다.
+     */
+    @Bean(name = "workspaceDraftChatModel")
+    public ChatLanguageModel workspaceDraftChatModel() {
+        return buildChatModel(workspaceDraftModelName);
+    }
+
+    /**
+     * 문항 분류 전용 소형 모델 서비스.
+     * 빠른 분류를 위해 experienceModel (gpt-4o-mini)과 동일 모델을 재사용합니다.
+     */
+    @Bean
+    public ClassifierAiService classifierAiService() {
+        // 분류는 짧은 응답만 필요하므로 가장 가벼운 모델 사용
+        OpenAiChatModel classifierModel = OpenAiChatModel.builder()
+                .apiKey(openAiApiKey)
+                .modelName(experienceModelName)   // gpt-4o-mini
+                .temperature(0.0)                 // 분류는 결정론적으로
+                .maxRetries(1)
+                .timeout(openAiTimeout)
+                .logRequests(false)
+                .logResponses(false)
+                .build();
+        return AiServices.builder(ClassifierAiService.class)
+                .chatLanguageModel(classifierModel)
+                .build();
+    }
+
+    // -------------------------------------------------------------------------
 
     /** plain text 응답용 (responseFormat 미설정) */
     private OpenAiChatModel buildTextChatModel(String modelName) {

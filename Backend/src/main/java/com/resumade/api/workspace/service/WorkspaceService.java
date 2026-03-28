@@ -11,6 +11,10 @@ import com.resumade.api.workspace.domain.WorkspaceQuestion;
 import com.resumade.api.workspace.domain.WorkspaceQuestionRepository;
 import com.resumade.api.workspace.dto.DraftAnalysisResult;
 import com.resumade.api.workspace.dto.TitleSuggestionResponse;
+import com.resumade.api.workspace.prompt.DraftParams;
+import com.resumade.api.workspace.prompt.PromptFactory;
+import com.resumade.api.workspace.prompt.QuestionCategory;
+import dev.langchain4j.data.message.ChatMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -119,6 +123,11 @@ public class WorkspaceService {
     private final WorkspaceQuestionRepository questionRepository;
     private final QuestionSnapshotService questionSnapshotService;
     private final ExperienceVectorRetrievalService experienceVectorRetrievalService;
+
+    // ── 1차 고도화: Prompt Strategy + Classifier 파이프라인 ──────────────────
+    private final QuestionClassifierService questionClassifierService;
+    private final PromptFactory promptFactory;
+    private final StrategyDraftGeneratorService strategyDraftGeneratorService;
 
     public List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> getMatchedExperiences(
             Long questionId, String customQuery) {
@@ -423,8 +432,16 @@ public class WorkspaceService {
 
             sendProgress(emitter, STAGE_RAG, "자기소개서 생성을 위해 기업 분석 데이터와 문항을 준비하고 있어요. 🧭");
 
+            // ── [STEP 1] 문항 카테고리 분류 ──────────────────────────────────
+            // 경량 LLM 호출로 문항 유형을 판별합니다. 실패 시 DEFAULT로 자동 fallback합니다.
+            QuestionCategory category = questionClassifierService.classify(questionTitle);
+            sendProgress(emitter, STAGE_RAG,
+                    String.format("문항 유형 분석 완료 (%s). 맞춤 전략을 적용합니다. 🎯", category.getDisplayName()));
+
             paceProcessing();
 
+            // ── [STEP 2] 카테고리 인식 RAG 검색 ─────────────────────────────
+            // 판별된 카테고리에 따라 Elasticsearch 키워드 필드 가중치를 동적으로 조정합니다.
             sendProgress(emitter, STAGE_RAG, "질문 의도와 글자 수 조건을 먼저 맞춰 초안 방향을 정리하고 있습니다. 📐");
 
             List<Experience> allExperiences = experienceRepository.findAll();
@@ -432,7 +449,8 @@ public class WorkspaceService {
 
             sendProgress(emitter, STAGE_RAG, "문항에 가장 잘 맞는 핵심 경험만 골라 연결하고 있어요. 🧩");
 
-            String context = buildFilteredContext(initialQuestion, questionId, allExperiences);
+            // 카테고리 부스팅 적용 — buildFilteredContext에 category 전달
+            String context = buildFilteredContext(initialQuestion, questionId, allExperiences, category);
 
             paceProcessing();
             sendProgress(emitter, STAGE_DRAFT, "엄선한 경험 데이터를 바탕으로 새로운 초안을 생성 중입니다. ✍️");
@@ -452,17 +470,26 @@ public class WorkspaceService {
                     DEFAULT_TARGET_MAX_RATIO);
             int minTargetChars = targetRange[0];
             int preferredTargetChars = targetRange[1];
-            WorkspaceDraftAiService.DraftResponse draftResponse = workspaceDraftAiService.generateDraft(
-                    company,
-                    position,
-                    questionTitle,
-                    companyContext,
-                    maxLengthGen,
-                    minTargetChars,
-                    preferredTargetChars,
-                    context,
-                    others,
-                    directiveForPrompt);
+
+            // ── [STEP 3] Prompt Strategy 기반 초안 생성 ──────────────────────
+            // PromptFactory가 카테고리에 맞는 전략(XML 구조 프롬프트 + Few-shot)을 조립하고,
+            // StrategyDraftGeneratorService가 ChatLanguageModel.generate()로 직접 실행합니다.
+            DraftParams draftParams = DraftParams.builder()
+                    .company(company)
+                    .position(position)
+                    .questionTitle(questionTitle)
+                    .companyContext(companyContext)
+                    .maxLength(maxLengthGen)
+                    .minTarget(minTargetChars)
+                    .maxTarget(preferredTargetChars)
+                    .experienceContext(context)
+                    .othersContext(others)
+                    .directive(directiveForPrompt)
+                    .build();
+
+            List<ChatMessage> strategyMessages = promptFactory.buildMessages(category, draftParams);
+            WorkspaceDraftAiService.DraftResponse draftResponse =
+                    strategyDraftGeneratorService.generate(strategyMessages);
             logLengthMetrics("generate", maxLengthGen, minTargetChars, preferredTargetChars, draftResponse.text, 0);
 
             String pipelineDraft = expandToMinimumLength(
@@ -2150,15 +2177,30 @@ public class WorkspaceService {
         return normalized.substring(0, maxLength).trim();
     }
 
+    /**
+     * 기존 호환용 오버로드 — 카테고리 없이 호출 시 DEFAULT로 처리합니다.
+     */
     private String buildFilteredContext(WorkspaceQuestion initialQuestion, Long questionId,
             List<Experience> allExperiences) {
+        return buildFilteredContext(initialQuestion, questionId, allExperiences, QuestionCategory.DEFAULT);
+    }
+
+    /**
+     * 카테고리 인식 경험 컨텍스트 빌더.
+     *
+     * <p>판별된 {@link QuestionCategory}를 {@link ExperienceVectorRetrievalService}로 전달하여
+     * 카테고리에 특화된 필드 가중치로 관련 경험을 검색합니다.
+     */
+    private String buildFilteredContext(WorkspaceQuestion initialQuestion, Long questionId,
+            List<Experience> allExperiences, QuestionCategory category) {
         Set<Long> excludedExperienceIds = extractUsedExperienceIds(initialQuestion, questionId, allExperiences);
         List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> selectedContext = experienceVectorRetrievalService
                 .search(
                         initialQuestion.getTitle(),
                         4,
                         excludedExperienceIds,
-                        buildSupportingQueries(initialQuestion, initialQuestion.getTitle()));
+                        buildSupportingQueries(initialQuestion, initialQuestion.getTitle()),
+                        category);   // 카테고리 전달 → 필드 부스팅 적용
 
         if (!selectedContext.isEmpty()) {
             return selectedContext.stream()
