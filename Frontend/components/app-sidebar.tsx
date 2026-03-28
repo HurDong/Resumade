@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { LayoutDashboard, Archive, PenTool, Moon, Sun, Settings, LogOut, ChevronUp } from "lucide-react"
+import { LayoutDashboard, Archive, PenTool, Moon, Sun, Library, LogOut, ChevronUp } from "lucide-react"
 import { useTheme } from "next-themes"
 
 import {
@@ -30,6 +30,12 @@ const navigation = [
     href: "/",
     icon: LayoutDashboard,
     description: "칸반 보드",
+  },
+  {
+    title: "스펙 라이브러리",
+    href: "/settings",
+    icon: Library,
+    description: "자격 & 이력 관리",
   },
   {
     title: "경험 보관소",
@@ -116,13 +122,6 @@ export function AppSidebar() {
             sideOffset={8}
           >
             <div className="space-y-1">
-              <Link
-                href="/settings"
-                className="flex w-full items-center gap-3 px-3 py-2.5 rounded-md hover:bg-accent transition-all duration-150 text-sm group"
-              >
-                <Settings className="size-4 transition-transform duration-200 group-hover:rotate-45" />
-                <span>설정</span>
-              </Link>
               <button
                 onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                 className="flex w-full items-center gap-3 px-3 py-2.5 rounded-md hover:bg-accent transition-all duration-150 text-sm group"

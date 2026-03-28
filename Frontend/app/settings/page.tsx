@@ -13,7 +13,7 @@ export default function SettingsPage() {
           <header className="flex h-16 shrink-0 items-center gap-4 border-b border-border bg-background px-8">
             <div>
               <h1 className="text-xl font-black tracking-tight">
-                지원 기본 정보
+                스펙 라이브러리
               </h1>
               <p className="text-sm text-muted-foreground">
                 자격증, 어학, 수상, 교육 이력을 정리하고 필요한 필드만 바로 복사합니다.

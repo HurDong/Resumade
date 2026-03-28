@@ -90,7 +90,7 @@ export function ApplicationInfoQuickCopyDialog({
             </div>
             <Button asChild variant="outline" className="rounded-full">
               <Link href="/settings">
-                설정에서 관리
+                스펙 라이브러리에서 관리
                 <ExternalLink className="size-4" />
               </Link>
             </Button>
@@ -142,10 +142,10 @@ export function ApplicationInfoQuickCopyDialog({
                   아직 저장된 지원 정보가 없습니다.
                 </p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  설정 화면에서 자격증, 활동, 수상 내역을 먼저 등록하면 여기서 바로 복사할 수 있습니다.
+                  스펙 라이브러리에서 자격증, 활동, 수상 내역을 먼저 등록하면 여기서 바로 복사할 수 있습니다.
                 </p>
                 <Button asChild className="mt-6 rounded-full px-5">
-                  <Link href="/settings">지원 정보 등록하러 가기</Link>
+                  <Link href="/settings">스펙 라이브러리로 이동</Link>
                 </Button>
               </div>
             ) : null}
@@ -156,7 +156,7 @@ export function ApplicationInfoQuickCopyDialog({
                   검색 결과가 없습니다.
                 </p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  다른 키워드로 검색하거나 설정 화면에서 항목을 추가해 주세요.
+                  다른 키워드로 검색하거나 스펙 라이브러리에서 항목을 추가해 주세요.
                 </p>
               </div>
             ) : null}
