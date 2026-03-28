@@ -44,6 +44,9 @@ public class Experience {
     @Column(length = 100)
     private String role;
 
+    @Column(length = 200)
+    private String organization;
+
     @Column(columnDefinition = "TEXT")
     private String rawContent;
 
@@ -58,7 +61,7 @@ public class Experience {
     private LocalDateTime updatedAt;
 
     @Builder
-    public Experience(String title, String category, String description, String techStack, String metrics, String period, String role, String rawContent, String originalFileName) {
+    public Experience(String title, String category, String description, String techStack, String metrics, String period, String role, String organization, String rawContent, String originalFileName) {
         this.title = title;
         this.category = category;
         this.description = description;
@@ -66,11 +69,12 @@ public class Experience {
         this.metrics = metrics;
         this.period = period;
         this.role = role;
+        this.organization = organization;
         this.rawContent = rawContent;
         this.originalFileName = originalFileName;
     }
 
-    public void updateFromAi(String title, String category, String description, String techStack, String metrics, String period, String role) {
+    public void updateFromAi(String title, String category, String description, String techStack, String metrics, String period, String role, String organization) {
         this.title = title;
         this.category = category;
         this.description = description;
@@ -78,15 +82,17 @@ public class Experience {
         this.metrics = metrics;
         this.period = period;
         this.role = role;
+        this.organization = organization;
     }
 
-    public void updateFromMarkdown(String title, String description, String techStack, String metrics, String period, String role, String rawContent) {
+    public void updateFromMarkdown(String title, String description, String techStack, String metrics, String period, String role, String organization, String rawContent) {
         this.title = title;
         this.description = description;
         this.techStack = techStack;
         this.metrics = metrics;
         this.period = period;
         this.role = role;
+        this.organization = organization;
         this.rawContent = rawContent;
     }
 }

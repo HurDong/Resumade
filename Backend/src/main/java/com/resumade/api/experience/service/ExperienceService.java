@@ -64,6 +64,7 @@ public class ExperienceService {
                 .metrics(objectMapper.writeValueAsString(aiResult.getMetrics()))
                 .period(aiResult.getPeriod() != null ? aiResult.getPeriod() : period)
                 .role(aiResult.getRole() != null ? aiResult.getRole() : role)
+                .organization(aiResult.getOrganization())
                 .rawContent(content)
                 .originalFileName(file.getOriginalFilename())
                 .build();
@@ -100,7 +101,8 @@ public class ExperienceService {
                     objectMapper.writeValueAsString(aiResult.getTechStack()),
                     objectMapper.writeValueAsString(aiResult.getMetrics()),
                     aiResult.getPeriod(),
-                    aiResult.getRole()
+                    aiResult.getRole(),
+                    aiResult.getOrganization()
             );
             experienceRepository.save(experience);
             // Update ES index when reclassifying
@@ -220,6 +222,7 @@ public class ExperienceService {
                 metricsJson,
                 snapshot.period().isBlank() ? experience.getPeriod() : snapshot.period(),
                 snapshot.role().isBlank() ? experience.getRole() : snapshot.role(),
+                snapshot.organization().isBlank() ? experience.getOrganization() : snapshot.organization(),
                 normalizedRawContent
         );
 
@@ -304,8 +307,9 @@ public class ExperienceService {
         List<String> metrics = extractList(sections, "주요성과", "성과", "metrics");
         String period = extractSingleLine(sections, "프로젝트기간", "기간", "period");
         String role = extractSingleLine(sections, "담당역할", "역할", "role");
+        String organization = extractSingleLine(sections, "소속기관", "소속", "organization", "기관");
 
-        return new MarkdownSnapshot(title, description, techStack, metrics, period, role);
+        return new MarkdownSnapshot(title, description, techStack, metrics, period, role, organization);
     }
 
     private String normalizeHeading(String heading) {
@@ -363,6 +367,9 @@ public class ExperienceService {
     private String buildNarrativeText(Experience exp, List<String> techStack, List<String> metrics) {
         StringBuilder sb = new StringBuilder();
         sb.append("제목: ").append(exp.getTitle()).append("\n");
+        if (exp.getOrganization() != null && !exp.getOrganization().isBlank()) {
+            sb.append("소속/맥락: ").append(exp.getOrganization()).append("\n");
+        }
         if (exp.getRole() != null && !exp.getRole().isBlank()) {
             sb.append("역할: ").append(exp.getRole()).append("\n");
         }
@@ -387,7 +394,8 @@ public class ExperienceService {
             List<String> techStack,
             List<String> metrics,
             String period,
-            String role
+            String role,
+            String organization
     ) {
     }
 }

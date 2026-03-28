@@ -276,6 +276,7 @@ public class WorkspaceBatchPlanService {
         return """
                 [EXPERIENCE]
                 title: %s
+                organization: %s
                 role: %s
                 period: %s
                 category: %s
@@ -285,6 +286,7 @@ public class WorkspaceBatchPlanService {
                 raw details: %s
                 """.formatted(
                 safe(experience.getTitle()),
+                safe(experience.getOrganization()),
                 safe(experience.getRole()),
                 safe(experience.getPeriod()),
                 safe(experience.getCategory()),
