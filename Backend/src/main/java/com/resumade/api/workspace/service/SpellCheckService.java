@@ -49,11 +49,11 @@ public class SpellCheckService {
             SpellCheckResponse response = spellCheckAiService.check(text);
 
             // LLM 이 null 또는 비어있는 응답을 반환한 경우 방어 처리
-            if (response == null || response.corrections() == null) {
+            if (response == null || response.getCorrections() == null) {
                 return SpellCheckResponse.empty();
             }
 
-            log.info("SpellCheck completed: corrections={}", response.corrections().size());
+            log.info("SpellCheck completed: corrections={}", response.getCorrections().size());
             return response;
 
         } catch (Exception e) {
