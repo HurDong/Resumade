@@ -432,19 +432,71 @@ public class WorkspaceBatchPlanService {
 
     private String inferFallbackIntentTag(String questionTitle) {
         String normalized = safe(questionTitle).toLowerCase(Locale.ROOT);
-        if (normalized.contains("지원동기") || normalized.contains("관심") || normalized.contains("입사 후")) {
+        if (isMotivationQuestion(normalized)) {
             return "[도메인 관심도]";
         }
-        if (normalized.contains("협업") || normalized.contains("갈등") || normalized.contains("팀") || normalized.contains("소통")) {
+        if (isCollaborationQuestion(normalized)) {
             return "[소프트스킬/협업]";
         }
-        if (normalized.contains("성장") || normalized.contains("배운") || normalized.contains("학습")) {
+        if (isGrowthQuestion(normalized)) {
             return "[성장/학습]";
         }
-        if (normalized.contains("윤리") || normalized.contains("실패") || normalized.contains("어려움")) {
+        if (isEthicsQuestion(normalized)) {
             return "[직업윤리]";
         }
+        if (isCapabilityQuestion(normalized)) {
+            return "[직무 하드스킬]";
+        }
         return "[직무 하드스킬]";
+    }
+
+    // ── Intent keyword helpers ────────────────────────────────────────────────
+
+    private boolean isMotivationQuestion(String normalized) {
+        return normalized.contains("지원동기")
+                || normalized.contains("지원 동기")
+                || normalized.contains("동기와")
+                || normalized.contains("동기를")
+                || normalized.contains("동기가")
+                || normalized.contains("입사 후")
+                || normalized.contains("입사후")
+                || normalized.contains("포부")
+                || normalized.contains("관심")
+                || normalized.contains("왜 지원");
+    }
+
+    private boolean isCollaborationQuestion(String normalized) {
+        return normalized.contains("협업")
+                || normalized.contains("갈등")
+                || normalized.contains("팀워크")
+                || normalized.contains("팀 프로젝트")
+                || normalized.contains("소통")
+                || normalized.contains("커뮤니케이션");
+    }
+
+    private boolean isGrowthQuestion(String normalized) {
+        return normalized.contains("성장")
+                || normalized.contains("배운")
+                || normalized.contains("학습")
+                || normalized.contains("발전")
+                || normalized.contains("개선한");
+    }
+
+    private boolean isEthicsQuestion(String normalized) {
+        return normalized.contains("윤리")
+                || normalized.contains("실패")
+                || normalized.contains("어려움")
+                || normalized.contains("극복");
+    }
+
+    private boolean isCapabilityQuestion(String normalized) {
+        return normalized.contains("역량")
+                || normalized.contains("경험 및 경력")
+                || normalized.contains("직무수행")
+                || normalized.contains("수행계획")
+                || normalized.contains("보유한")
+                || normalized.contains("강점")
+                || normalized.contains("전문성");
     }
 
     private List<String> inferFallbackFocusDetails(String questionTitle, List<Experience> experiences, int index) {
@@ -458,14 +510,14 @@ public class WorkspaceBatchPlanService {
         }
 
         String normalized = safe(questionTitle).toLowerCase(Locale.ROOT);
-        if (normalized.contains("협업") || normalized.contains("팀")) {
+        if (isCollaborationQuestion(normalized)) {
             candidates.add("협업 과정에서 맡은 역할과 조율 방식");
-        }
-        if (normalized.contains("성장") || normalized.contains("배운")) {
+        } else if (isGrowthQuestion(normalized)) {
             candidates.add("실패나 시행착오 뒤에 바뀐 판단 기준");
-        }
-        if (normalized.contains("지원동기") || normalized.contains("왜")) {
-            candidates.add("경험에서 직무 적합성으로 연결되는 기술 선택 기준");
+        } else if (isMotivationQuestion(normalized)) {
+            candidates.add("지원 기업 도메인과 내 경험이 맞닿은 구체적 접점");
+        } else if (isCapabilityQuestion(normalized)) {
+            candidates.add("직무에서 즉시 발휘 가능한 기술 판단과 실행 이력");
         }
 
         return normalizeList(candidates).stream().limit(3).toList();
@@ -473,28 +525,37 @@ public class WorkspaceBatchPlanService {
 
     private List<String> inferFallbackLearningPoints(String questionTitle) {
         String normalized = safe(questionTitle).toLowerCase(Locale.ROOT);
-        if (normalized.contains("협업") || normalized.contains("팀")) {
+        if (isCollaborationQuestion(normalized)) {
             return List.of("기술 설명을 팀 상황에 맞게 조정하는 능력");
         }
-        if (normalized.contains("성장") || normalized.contains("배운")) {
+        if (isGrowthQuestion(normalized)) {
             return List.of("문제 원인을 구조적으로 다시 보는 습관");
         }
-        if (normalized.contains("지원동기") || normalized.contains("왜")) {
+        if (isMotivationQuestion(normalized)) {
             return List.of("기술 선택을 사용자 가치와 연결하는 기준");
+        }
+        if (isCapabilityQuestion(normalized)) {
+            return List.of("기술 역량이 실제 비즈니스 임팩트로 이어진 경로");
         }
         return List.of("문제 해결 경험을 직무 역량으로 번역하는 시각");
     }
 
     private String inferFallbackAngle(String questionTitle) {
         String normalized = safe(questionTitle).toLowerCase(Locale.ROOT);
-        if (normalized.contains("협업") || normalized.contains("팀")) {
+        if (isMotivationQuestion(normalized)) {
+            return "이 기업의 도메인과 내 경험이 맞닿은 접점에서 출발하는 지원동기 각도";
+        }
+        if (isCollaborationQuestion(normalized)) {
             return "협업 과정에서 기술 판단과 조율 역량을 증명하는 각도";
         }
-        if (normalized.contains("성장") || normalized.contains("배운")) {
+        if (isGrowthQuestion(normalized)) {
             return "시행착오를 통해 판단 기준이 정교해진 성장 각도";
         }
-        if (normalized.contains("지원동기") || normalized.contains("왜")) {
-            return "과거 경험을 직무 적합성으로 연결하는 지원동기 각도";
+        if (isEthicsQuestion(normalized)) {
+            return "가치 판단이 흔들린 순간 내린 결정과 그 기준을 보여주는 각도";
+        }
+        if (isCapabilityQuestion(normalized)) {
+            return "보유 역량과 실행 이력을 직무 수행 청사진으로 연결하는 역량 어필 각도";
         }
         return "핵심 문제를 해결하며 만든 판단과 실행의 차별점을 보여주는 각도";
     }
