@@ -40,19 +40,88 @@ public class WorkspaceBatchPlanService {
     private static final int MAX_EXPERIENCE_RAW_CHARS = 380;
     private static final int MAX_CURRENT_DRAFT_CHARS = 220;
     private static final String SYSTEM_PROMPT = """
-            You design a batch-writing strategy for Korean self-introduction questions.
-            Return JSON only and follow the schema exactly.
-            Optimize for question-to-question differentiation.
-            Important: project-title overlap is allowed.
-            The real overlap risk is reusing the same detailed topic inside a project: the same technical decision, failure, troubleshooting point, architecture tradeoff, metric cluster, learning point, or action-result arc.
-            If the same project appears in multiple questions, assign clearly different detail slices and different lessons.
-            Default rule: assign exactly 1 primary experience per question. One focused project yields deeper, more interview-verifiable answers than a loose multi-project list.
-            Exception: if a question's userDirective explicitly requests a list-style answer or multiple experiences, you may assign 2 to 3 projects — but each must contribute a distinct, interview-verifiable point rather than a loose enumeration.
-            userDirective always takes priority over this 1-project default.
-            Prefer concrete, interview-verifiable focus details over broad themes.
-            Avoid generic plans like "show collaboration" unless paired with concrete evidence anchors.
-            Keep coverageSummary concise.
-            Keep each list short and specific.
+            You are a senior cover-letter strategy architect for Korean self-introduction questions.
+            Your task: design a differentiated, interview-verifiable writing strategy for EVERY question in one batch.
+            Work through all four reasoning steps below IN ORDER before writing any assignment.
+            Return valid JSON only. Follow the schema exactly.
+
+            <Step1_IntentClassification>
+            Before assigning any experience, classify EACH question's core evaluation intent.
+            Use EXACTLY ONE tag from this list per question:
+
+              [도메인 관심도]   – evaluates passion for the industry/company domain (지원동기, 입사 후 포부)
+              [직무 하드스킬]   – evaluates technical depth and engineering judgment (기술 경험, 프로젝트)
+              [소프트스킬/협업] – evaluates communication, conflict resolution, teamwork
+              [직업윤리]        – evaluates values, integrity, failure/mistake handling
+              [성장/학습]       – evaluates self-awareness, learning agility, growth trajectory
+
+            Rules:
+            - If a question title mentions 지원동기, 관심, 입사 후 → tag [도메인 관심도]
+            - If a question title mentions 협업, 갈등, 팀, 소통 → tag [소프트스킬/협업]
+            - For [도메인 관심도] questions: NEVER lead with technical stack.
+              The answer must start from company domain interest, then bridge to your technical evidence.
+            - For [직업윤리] questions: NEVER use performance metrics as the main story. Use a values-driven narrative.
+            Write the intentTag and a 1-sentence intentRationale for EVERY question before moving to Step 2.
+            </Step1_IntentClassification>
+
+            <Step2_FacetMapping>
+            Do NOT map an entire project to a question.
+            Instead, identify a SPECIFIC EVENT or DECISION inside that project — a "facet".
+
+            A valid facet looks like:
+              ✅ "Tikkle – 인프라팀과 배포 지연 원인에 대한 이견 조율 과정"
+              ✅ "CodeArena – Judge 서버 부하 급증 시 Circuit Breaker 전환 결정"
+              ✅ "Fastats – MySQL Full-Text vs Elasticsearch 선택 기준 수립"
+
+            An invalid facet looks like:
+              ❌ "Tikkle 프로젝트 전반"
+              ❌ "CodeArena에서의 성능 개선 경험"
+
+            For EACH assignment, produce 1–3 experienceFacets (event-level strings).
+            If the question's intentTag is [도메인 관심도], the facet must point to a moment
+            where you realized alignment between your work and this company's business domain.
+            </Step2_FacetMapping>
+
+            <Step3_DomainBridge>
+            For EVERY assignment, write a domainBridge: a 1–2 sentence logical bridge that connects
+            your technical achievement to this specific company's business value.
+
+            Format: "[technical outcome] → [why it matters for THIS company's domain]"
+
+            Examples:
+              "검색 응답속도 95ms 단축 → 식품안전정보원의 국민 데이터 접근성과 신뢰도 직결"
+              "결제 API 타임아웃 방어 로직 → 금융 서비스 SLA 달성과 고객 신뢰 유지에 직결"
+
+            If the question is [소프트스킬/협업], the bridge must connect the collaboration outcome
+            to team velocity or product quality, not technical architecture.
+            </Step3_DomainBridge>
+
+            <Step4_AntiOverlapValidation>
+            After drafting ALL assignments, perform a cross-check:
+
+            1. List every tech topic used as a CORE element across all assignments (e.g., Redis, Kafka, JPA N+1).
+            2. List every lesson/learning used as a CORE takeaway across all assignments.
+            3. List every metric cluster used as primary evidence across all assignments.
+
+            If ANY tech topic, lesson, or metric appears as the core element in 2 or more assignments:
+              → Reassign one of the conflicting questions to use a different facet/topic/lesson.
+              → If reassignment is impossible, mark it in overlapValidation.conflictPairs
+                and explain your resolution in overlapValidation.resolution.
+
+            The goal: every question must have a unique "evidence fingerprint."
+            A reader who sees all answers together must feel each answer is about a different dimension.
+
+            Set overlapValidation.isClean = true only when you are confident no core element repeats.
+            </Step4_AntiOverlapValidation>
+
+            <Global_Rules>
+            - userDirective per question always overrides any default rule.
+            - Default: assign exactly 1 primary experience per question (depth over breadth).
+              Exception: assign 2–3 only when userDirective explicitly requests a list-style answer.
+            - Same project name is ALLOWED to appear in multiple questions IF the facet is different.
+            - Keep all list fields short and concrete. Avoid generic plans.
+            - coverageSummary must describe the distribution logic in 1–2 Korean sentences.
+            </Global_Rules>
             """;
 
     private final ApplicationRepository applicationRepository;
@@ -253,22 +322,20 @@ public class WorkspaceBatchPlanService {
                 continue;
             }
 
-            List<String> primaryExperiences = normalizeList(assignment.primaryExperiences);
-            List<String> focusDetails = normalizeList(assignment.focusDetails);
-            List<String> learningPoints = normalizeList(assignment.learningPoints);
-            List<String> avoidDetails = normalizeList(assignment.avoidDetails);
-            String angle = safe(assignment.angle);
-
             assignments.add(BatchPlanResponse.Assignment.builder()
                     .questionId(question.getQuestionId())
                     .questionTitle(question.getTitle())
-                    .primaryExperiences(primaryExperiences)
-                    .angle(angle)
-                    .focusDetails(focusDetails)
-                    .learningPoints(learningPoints)
-                    .avoidDetails(avoidDetails)
+                    .questionIntentTag(safe(assignment.questionIntentTag))
+                    .intentRationale(safe(assignment.intentRationale))
+                    .primaryExperiences(normalizeList(assignment.primaryExperiences))
+                    .experienceFacets(normalizeList(assignment.experienceFacets))
+                    .domainBridge(safe(assignment.domainBridge))
+                    .angle(safe(assignment.angle))
+                    .focusDetails(normalizeList(assignment.focusDetails))
+                    .learningPoints(normalizeList(assignment.learningPoints))
+                    .avoidDetails(normalizeList(assignment.avoidDetails))
                     .reasoning(safe(assignment.reasoning))
-                    .directivePrefix(buildDirectivePrefix(primaryExperiences, angle, focusDetails, learningPoints, avoidDetails))
+                    .directivePrefix(buildDirectivePrefix(assignment))
                     .build());
         }
 
@@ -276,9 +343,20 @@ public class WorkspaceBatchPlanService {
             return buildHeuristicPlan(questions, experienceRepository.findAll());
         }
 
+        BatchPlanAiOverlapValidation ov = parsed.overlapValidation;
+        BatchPlanResponse.OverlapValidation overlapValidation = ov == null
+                ? BatchPlanResponse.OverlapValidation.builder()
+                        .isClean(true).conflictPairs(List.of()).resolution("").build()
+                : BatchPlanResponse.OverlapValidation.builder()
+                        .isClean(ov.isClean)
+                        .conflictPairs(normalizeList(ov.conflictPairs))
+                        .resolution(safe(ov.resolution))
+                        .build();
+
         return BatchPlanResponse.builder()
                 .coverageSummary(safe(parsed.coverageSummary))
                 .globalGuardrails(normalizeList(parsed.globalGuardrails))
+                .overlapValidation(overlapValidation)
                 .model(modelName)
                 .assignments(assignments)
                 .build();
@@ -301,28 +379,40 @@ public class WorkspaceBatchPlanService {
                     ? List.of("관련 경험 선택 필요")
                     : List.of(experienceTitles.get(index % experienceTitles.size()));
 
+            String intentTag = inferFallbackIntentTag(question.getTitle());
             List<String> focusDetails = inferFallbackFocusDetails(question.getTitle(), experiences, index);
             List<String> learningPoints = inferFallbackLearningPoints(question.getTitle());
             List<String> avoidDetails = List.of(
                     "다른 문항과 동일한 기술 결정 설명 반복 금지",
                     "다른 문항과 동일한 배운점 문장 반복 금지"
             );
+            String angle = inferFallbackAngle(question.getTitle());
+
+            BatchPlanAiAssignment stub = new BatchPlanAiAssignment();
+            stub.questionIntentTag = intentTag;
+            stub.intentRationale = "Heuristic fallback: classified by keyword matching.";
+            stub.primaryExperiences = chosenExperiences;
+            stub.experienceFacets = List.of();
+            stub.domainBridge = "";
+            stub.angle = angle;
+            stub.focusDetails = focusDetails;
+            stub.learningPoints = learningPoints;
+            stub.avoidDetails = avoidDetails;
 
             assignments.add(BatchPlanResponse.Assignment.builder()
                     .questionId(question.getQuestionId())
                     .questionTitle(question.getTitle())
+                    .questionIntentTag(intentTag)
+                    .intentRationale("Heuristic fallback: classified by keyword matching.")
                     .primaryExperiences(chosenExperiences)
-                    .angle(inferFallbackAngle(question.getTitle()))
+                    .experienceFacets(List.of())
+                    .domainBridge("")
+                    .angle(angle)
                     .focusDetails(focusDetails)
                     .learningPoints(learningPoints)
                     .avoidDetails(avoidDetails)
                     .reasoning("Fallback heuristic plan generated because structured planning was unavailable.")
-                    .directivePrefix(buildDirectivePrefix(
-                            chosenExperiences,
-                            inferFallbackAngle(question.getTitle()),
-                            focusDetails,
-                            learningPoints,
-                            avoidDetails))
+                    .directivePrefix(buildDirectivePrefix(stub))
                     .build());
         }
 
@@ -333,9 +423,28 @@ public class WorkspaceBatchPlanService {
                         "동일한 배운점과 결과 서술 반복 금지",
                         "문항별 첫 문장 주장과 증거 축 분리"
                 ))
+                .overlapValidation(BatchPlanResponse.OverlapValidation.builder()
+                        .isClean(true).conflictPairs(List.of()).resolution("Heuristic fallback — no validation performed.").build())
                 .model(modelName + " (heuristic fallback)")
                 .assignments(assignments)
                 .build();
+    }
+
+    private String inferFallbackIntentTag(String questionTitle) {
+        String normalized = safe(questionTitle).toLowerCase(Locale.ROOT);
+        if (normalized.contains("지원동기") || normalized.contains("관심") || normalized.contains("입사 후")) {
+            return "[도메인 관심도]";
+        }
+        if (normalized.contains("협업") || normalized.contains("갈등") || normalized.contains("팀") || normalized.contains("소통")) {
+            return "[소프트스킬/협업]";
+        }
+        if (normalized.contains("성장") || normalized.contains("배운") || normalized.contains("학습")) {
+            return "[성장/학습]";
+        }
+        if (normalized.contains("윤리") || normalized.contains("실패") || normalized.contains("어려움")) {
+            return "[직업윤리]";
+        }
+        return "[직무 하드스킬]";
     }
 
     private List<String> inferFallbackFocusDetails(String questionTitle, List<Experience> experiences, int index) {
@@ -390,32 +499,61 @@ public class WorkspaceBatchPlanService {
         return "핵심 문제를 해결하며 만든 판단과 실행의 차별점을 보여주는 각도";
     }
 
-    private String buildDirectivePrefix(
-            List<String> primaryExperiences,
-            String angle,
-            List<String> focusDetails,
-            List<String> learningPoints,
-            List<String> avoidDetails
-    ) {
+    private String buildDirectivePrefix(BatchPlanAiAssignment a) {
         List<String> lines = new ArrayList<>();
-        lines.add("[Batch strategy]");
-        lines.add("Use this strategy together with any user directive below.");
-        lines.add("Project title overlap across questions is allowed only when the detailed topic is different.");
-        if (!primaryExperiences.isEmpty()) {
-            lines.add("Primary experiences: " + String.join(", ", primaryExperiences));
+        lines.add("[Batch Strategy]");
+        lines.add("Use with any user directive. User directive takes higher priority.");
+
+        String intentTag = safe(a.questionIntentTag);
+        if (!"None".equals(intentTag)) {
+            lines.add("Question intent: " + intentTag);
+            if (intentTag.contains("도메인 관심도")) {
+                lines.add("→ Start from domain/company interest. Do NOT open with tech stack.");
+            } else if (intentTag.contains("직업윤리")) {
+                lines.add("→ Focus on values and judgment. Do NOT use performance metrics as the main story.");
+            } else if (intentTag.contains("소프트스킬")) {
+                lines.add("→ Lead with human dynamics and interpersonal process, then connect to outcome.");
+            }
         }
-        lines.add("Angle: " + safe(angle));
+
+        List<String> primaryExperiences = normalizeList(a.primaryExperiences);
+        if (!primaryExperiences.isEmpty()) {
+            lines.add("Primary experience: " + String.join(", ", primaryExperiences));
+        }
+
+        List<String> experienceFacets = normalizeList(a.experienceFacets);
+        if (!experienceFacets.isEmpty()) {
+            lines.add("Use this specific facet (event-level, not the whole project): "
+                    + String.join(" | ", experienceFacets));
+        }
+
+        String domainBridge = safe(a.domainBridge);
+        if (!"None".equals(domainBridge)) {
+            lines.add("Domain bridge (embed this logic into your answer): " + domainBridge);
+        }
+
+        String angle = safe(a.angle);
+        if (!"None".equals(angle)) {
+            lines.add("Angle: " + angle);
+        }
+
+        List<String> focusDetails = normalizeList(a.focusDetails);
         if (!focusDetails.isEmpty()) {
             lines.add("Focus details: " + String.join(" | ", focusDetails));
         }
+
+        List<String> learningPoints = normalizeList(a.learningPoints);
         if (!learningPoints.isEmpty()) {
             lines.add("Learning points to prove: " + String.join(" | ", learningPoints));
         }
+
+        List<String> avoidDetails = normalizeList(a.avoidDetails);
         if (!avoidDetails.isEmpty()) {
-            lines.add("Avoid reusing these details from other questions: " + String.join(" | ", avoidDetails));
+            lines.add("Avoid reusing from other questions: " + String.join(" | ", avoidDetails));
         }
+
         lines.add("If the same project appears elsewhere, change the sub-problem, technical decision, lesson, and evidence arc.");
-        lines.add("[/Batch strategy]");
+        lines.add("[/Batch Strategy]");
         return String.join("\n", lines);
     }
 
@@ -592,66 +730,88 @@ public class WorkspaceBatchPlanService {
     }
 
     private static Map<String, Object> createPlanResponseSchema() {
-        Map<String, Object> assignmentProperties = new LinkedHashMap<>();
-        assignmentProperties.put("questionId", Map.of("type", "integer"));
-        assignmentProperties.put("questionTitle", Map.of("type", "string"));
-        assignmentProperties.put("primaryExperiences", Map.of(
-                "type", "array",
-                "items", Map.of("type", "string")));
-        assignmentProperties.put("angle", Map.of("type", "string"));
-        assignmentProperties.put("focusDetails", Map.of(
-                "type", "array",
-                "items", Map.of("type", "string")));
-        assignmentProperties.put("learningPoints", Map.of(
-                "type", "array",
-                "items", Map.of("type", "string")));
-        assignmentProperties.put("avoidDetails", Map.of(
-                "type", "array",
-                "items", Map.of("type", "string")));
-        assignmentProperties.put("reasoning", Map.of("type", "string"));
+        // --- Assignment schema ---
+        Map<String, Object> assignmentProps = new LinkedHashMap<>();
+        assignmentProps.put("questionId",        Map.of("type", "integer"));
+        assignmentProps.put("questionTitle",      Map.of("type", "string"));
+        assignmentProps.put("questionIntentTag",  Map.of("type", "string"));
+        assignmentProps.put("intentRationale",    Map.of("type", "string"));
+        assignmentProps.put("primaryExperiences", arrayOfString());
+        assignmentProps.put("experienceFacets",   arrayOfString());
+        assignmentProps.put("domainBridge",       Map.of("type", "string"));
+        assignmentProps.put("angle",              Map.of("type", "string"));
+        assignmentProps.put("focusDetails",       arrayOfString());
+        assignmentProps.put("learningPoints",     arrayOfString());
+        assignmentProps.put("avoidDetails",       arrayOfString());
+        assignmentProps.put("reasoning",          Map.of("type", "string"));
 
         Map<String, Object> assignmentSchema = new LinkedHashMap<>();
         assignmentSchema.put("type", "object");
         assignmentSchema.put("additionalProperties", false);
-        assignmentSchema.put("properties", assignmentProperties);
+        assignmentSchema.put("properties", assignmentProps);
         assignmentSchema.put("required", List.of(
-                "questionId",
-                "questionTitle",
-                "primaryExperiences",
-                "angle",
-                "focusDetails",
-                "learningPoints",
-                "avoidDetails",
-                "reasoning"
+                "questionId", "questionTitle",
+                "questionIntentTag", "intentRationale",
+                "primaryExperiences", "experienceFacets", "domainBridge",
+                "angle", "focusDetails", "learningPoints", "avoidDetails", "reasoning"
         ));
 
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("coverageSummary", Map.of("type", "string"));
-        properties.put("globalGuardrails", Map.of(
-                "type", "array",
-                "items", Map.of("type", "string")));
-        properties.put("assignments", Map.of(
+        // --- OverlapValidation schema ---
+        Map<String, Object> overlapProps = new LinkedHashMap<>();
+        overlapProps.put("isClean",       Map.of("type", "boolean"));
+        overlapProps.put("conflictPairs", arrayOfString());
+        overlapProps.put("resolution",    Map.of("type", "string"));
+
+        Map<String, Object> overlapSchema = new LinkedHashMap<>();
+        overlapSchema.put("type", "object");
+        overlapSchema.put("additionalProperties", false);
+        overlapSchema.put("properties", overlapProps);
+        overlapSchema.put("required", List.of("isClean", "conflictPairs", "resolution"));
+
+        // --- Root schema ---
+        Map<String, Object> rootProps = new LinkedHashMap<>();
+        rootProps.put("coverageSummary",   Map.of("type", "string"));
+        rootProps.put("globalGuardrails",  arrayOfString());
+        rootProps.put("overlapValidation", overlapSchema);
+        rootProps.put("assignments", Map.of(
                 "type", "array",
                 "items", assignmentSchema));
 
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "object");
         schema.put("additionalProperties", false);
-        schema.put("properties", properties);
-        schema.put("required", List.of("coverageSummary", "globalGuardrails", "assignments"));
+        schema.put("properties", rootProps);
+        schema.put("required", List.of(
+                "coverageSummary", "globalGuardrails", "overlapValidation", "assignments"
+        ));
         return schema;
+    }
+
+    private static Map<String, Object> arrayOfString() {
+        return Map.of("type", "array", "items", Map.of("type", "string"));
     }
 
     private static class BatchPlanAiResponse {
         public String coverageSummary;
         public List<String> globalGuardrails;
+        public BatchPlanAiOverlapValidation overlapValidation;
         public List<BatchPlanAiAssignment> assignments;
+    }
+
+    private static class BatchPlanAiOverlapValidation {
+        public boolean isClean;
+        public List<String> conflictPairs;
+        public String resolution;
     }
 
     private static class BatchPlanAiAssignment {
         public Long questionId;
         public String questionTitle;
+        public String questionIntentTag;
+        public String intentRationale;
         public List<String> primaryExperiences;
+        public List<String> experienceFacets;
+        public String domainBridge;
         public String angle;
         public List<String> focusDetails;
         public List<String> learningPoints;
