@@ -6,8 +6,11 @@ import com.resumade.api.workspace.dto.FinalEditorResponse;
 import com.resumade.api.workspace.dto.FinalSaveRequest;
 import com.resumade.api.workspace.dto.FinalSaveResponse;
 import com.resumade.api.workspace.dto.QuestionNavItem;
+import com.resumade.api.workspace.dto.SpellCheckRequest;
+import com.resumade.api.workspace.dto.SpellCheckResponse;
 import java.util.Map;
 import com.resumade.api.workspace.service.FinalEditorService;
+import com.resumade.api.workspace.service.SpellCheckService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,6 +29,7 @@ import java.util.List;
 public class FinalEditorController {
 
     private final FinalEditorService finalEditorService;
+    private final SpellCheckService spellCheckService;
 
     /**
      * 최종 편집기 진입 시 필요한 모든 데이터 로드
@@ -75,5 +79,16 @@ public class FinalEditorController {
             @PathVariable Long questionId,
             @RequestBody EditActionRequest request) {
         return ResponseEntity.ok(finalEditorService.applyEditAction(questionId, request));
+    }
+
+    /**
+     * 맞춤법 검사 — 현재 에디터 텍스트의 오류 제안 목록 반환.
+     * LLM 호출 실패 시 빈 배열로 폴백하므로 FE는 항상 200 OK를 받는다.
+     */
+    @PostMapping("/{questionId}/spell-check")
+    public ResponseEntity<SpellCheckResponse> spellCheck(
+            @PathVariable Long questionId,
+            @RequestBody SpellCheckRequest request) {
+        return ResponseEntity.ok(spellCheckService.check(request.text()));
     }
 }
