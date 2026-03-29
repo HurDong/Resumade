@@ -49,7 +49,6 @@ public class SpellCheckService {
 
         log.info("[SpellCheck] calling LLM, textLength={}", text.length());
         try {
-            // String 반환으로 LangChain4j PojoOutputParser 스키마 주입 차단
             String raw = spellCheckAiService.check(text);
             log.info("[SpellCheck] raw LLM response: {}", raw);
 
@@ -58,7 +57,6 @@ public class SpellCheckService {
                 return SpellCheckResponse.empty();
             }
 
-            // 코드 블록 래퍼 제거 (LLM이 ```json ... ``` 로 감싸는 경우 대비)
             String json = raw.strip();
             if (json.startsWith("```")) {
                 json = json.replaceAll("(?s)^```[a-zA-Z]*\\n?", "").replaceAll("```$", "").strip();

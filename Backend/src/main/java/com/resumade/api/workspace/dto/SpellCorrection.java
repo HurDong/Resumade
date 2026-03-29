@@ -3,6 +3,7 @@ package com.resumade.api.workspace.dto;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import lombok.ToString;
 
 /**
  * 단일 맞춤법 교정 제안.
@@ -13,6 +14,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
+@ToString
 public class SpellCorrection {
 
     /** 원문에 실제로 존재하는 오류 어절/문자열 (프론트엔드 하이라이팅 키) */
