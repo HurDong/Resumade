@@ -2,6 +2,7 @@ package com.resumade.api.workspace.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.resumade.api.workspace.dto.CompanyResearchResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,6 +27,15 @@ import java.util.Map;
 @Component
 @RequiredArgsConstructor
 public class GeminiCompanyResearchClient {
+
+    private static final int DISABLED_THINKING_BUDGET = 0;
+    private static final double DEFAULT_TEMPERATURE = 0.1;
+    private static final String UNGROUNDED_FALLBACK_NOTE =
+            "실시간 검색 응답이 비어 있어, 검색 없이 생성한 보조 분석입니다. 최신성과 출처는 별도로 확인하세요.";
+    private static final List<RequestMode> REQUEST_MODES = List.of(
+            new RequestMode("grounded-search", true, false, 2),
+            new RequestMode("structured-fallback", false, true, 1)
+    );
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -40,17 +51,6 @@ public class GeminiCompanyResearchClient {
     @Value("${gemini.models.company-research:gemini-2.5-flash}")
     private String modelName;
 
-    /**
-     * 기업 및 직무 분석을 3단계로 수행합니다.
-     * 1단계: JD + 기업명으로 사업부/제품 자동 추론
-     * 2단계: 경력 공고 + 테크블로그 기반 기술 스택 딥다이브
-     * 3단계: JD 명시 요구사항 vs 실제 기술 갭 분석
-     *
-     * @param company         기업명
-     * @param position        지원 직무
-     * @param rawJd           원본 JD 텍스트
-     * @param additionalFocus 사용자가 특별히 궁금한 점 (선택, 없으면 빈 문자열)
-     */
     public CompanyResearchResponse compose(
             String company,
             String position,
@@ -65,68 +65,29 @@ public class GeminiCompanyResearchClient {
         String userPrompt = buildUserPrompt(company, position, rawJd, additionalFocus);
 
         try {
-            String requestBody = objectMapper.writeValueAsString(Map.of(
-                    "systemInstruction", Map.of(
-                            "parts", List.of(Map.of("text", systemPrompt))
-                    ),
-                    "contents", List.of(
-                            Map.of(
-                                    "role", "user",
-                                    "parts", List.of(Map.of("text", userPrompt))
-                            )
-                    ),
-                    "tools", List.of(
-                            Map.of("google_search", Map.of())
-                    ),
-                    "generationConfig", Map.of(
-                            "temperature", 0.1
-                    )
-            ));
+            String lastRetryableError = null;
 
-            String encodedModel = URLEncoder.encode(modelName, StandardCharsets.UTF_8);
-            String endpoint = apiUrl + "/models/" + encodedModel + ":generateContent?key=" + apiKey;
-
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(endpoint))
-                    .timeout(Duration.ofSeconds(120))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() >= 400) {
-                throw new IllegalStateException(mapGeminiError(response.statusCode(), response.body()));
+            for (RequestMode mode : REQUEST_MODES) {
+                for (int attempt = 1; attempt <= mode.maxAttempts(); attempt++) {
+                    try {
+                        JsonNode root = sendGenerateContent(systemPrompt, userPrompt, mode);
+                        CompanyResearchResponse response = extractResearchResponse(root, mode);
+                        enrichWithGroundingMetadata(response, root);
+                        if (!mode.useGoogleSearch()) {
+                            applyFallbackConfidenceNote(response);
+                        }
+                        return response;
+                    } catch (RetryableGeminiResponseException e) {
+                        lastRetryableError = e.getMessage();
+                        log.warn("Gemini company research retry scheduled: mode={}, attempt={}/{}, reason={}",
+                                mode.label(), attempt, mode.maxAttempts(), e.getMessage());
+                    }
+                }
             }
 
-            JsonNode root = objectMapper.readTree(response.body());
-
-            // candidates 비어있는지 먼저 확인 (safety filter 등)
-            JsonNode candidates = root.path("candidates");
-            if (!candidates.isArray() || candidates.isEmpty()) {
-                JsonNode feedback = root.path("promptFeedback");
-                String blockReason = feedback.path("blockReason").asText("UNKNOWN");
-                log.error("Gemini 기업조사 응답에 candidates 없음: blockReason={}, feedback={}",
-                        blockReason, feedback);
-                throw new IllegalStateException("Gemini 응답에 candidates가 없습니다. blockReason=" + blockReason);
-            }
-
-            // finishReason 확인
-            String finishReason = candidates.path(0).path("finishReason").asText("");
-            if (!finishReason.isBlank() && !"STOP".equals(finishReason) && !"MAX_TOKENS".equals(finishReason)) {
-                log.warn("Gemini 기업조사 비정상 종료: finishReason={}", finishReason);
-            }
-
-            String text = extractResponseText(root);
-            if (text.isBlank()) {
-                JsonNode candidate0 = candidates.path(0);
-                log.error("Gemini 기업조사 텍스트 비어있음: finishReason={}, candidate0={}",
-                        finishReason, candidate0);
-                throw new IllegalStateException("Gemini 기업조사 응답의 텍스트가 비어있습니다. finishReason=" + finishReason);
-            }
-
-            CompanyResearchResponse researchResponse = parseResearchResponse(text);
-            enrichWithGroundingMetadata(researchResponse, root);
-            return researchResponse;
+            throw new IllegalStateException(lastRetryableError != null
+                    ? lastRetryableError
+                    : "Gemini 기업조사 요청이 반복 실패했습니다.");
         } catch (IOException e) {
             throw new IllegalStateException("Gemini company research request failed: " + e.getMessage(), e);
         } catch (InterruptedException e) {
@@ -135,80 +96,164 @@ public class GeminiCompanyResearchClient {
         }
     }
 
+    private JsonNode sendGenerateContent(String systemPrompt, String userPrompt, RequestMode mode)
+            throws IOException, InterruptedException {
+        String requestBody = objectMapper.writeValueAsString(buildRequestPayload(systemPrompt, userPrompt, mode));
+
+        String encodedModel = URLEncoder.encode(modelName, StandardCharsets.UTF_8);
+        String endpoint = apiUrl + "/models/" + encodedModel + ":generateContent?key=" + apiKey;
+
+        HttpRequest httpRequest = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint))
+                .timeout(Duration.ofSeconds(120))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() >= 400) {
+            throw new IllegalStateException(mapGeminiError(response.statusCode(), response.body()));
+        }
+
+        return objectMapper.readTree(response.body());
+    }
+
+    private Map<String, Object> buildRequestPayload(String systemPrompt, String userPrompt, RequestMode mode) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("systemInstruction", Map.of(
+                "parts", List.of(Map.of("text", systemPrompt))
+        ));
+        payload.put("contents", List.of(
+                Map.of(
+                        "role", "user",
+                        "parts", List.of(Map.of("text", userPrompt))
+                )
+        ));
+        if (mode.useGoogleSearch()) {
+            payload.put("tools", List.of(Map.of("google_search", Map.of())));
+        }
+        payload.put("generationConfig", buildGenerationConfig(mode));
+        return payload;
+    }
+
+    private Map<String, Object> buildGenerationConfig(RequestMode mode) {
+        Map<String, Object> generationConfig = new LinkedHashMap<>();
+        generationConfig.put("temperature", DEFAULT_TEMPERATURE);
+        generationConfig.put("thinkingConfig", Map.of("thinkingBudget", DISABLED_THINKING_BUDGET));
+        if (mode.useStructuredOutput()) {
+            generationConfig.put("responseMimeType", "application/json");
+            generationConfig.put("responseJsonSchema", buildCompanyResearchResponseSchema());
+        }
+        return generationConfig;
+    }
+
+    private CompanyResearchResponse extractResearchResponse(JsonNode root, RequestMode mode) throws IOException {
+        JsonNode candidates = root.path("candidates");
+        if (!candidates.isArray() || candidates.isEmpty()) {
+            JsonNode feedback = root.path("promptFeedback");
+            String blockReason = feedback.path("blockReason").asText("UNKNOWN");
+            log.error("Gemini company research response has no candidates: mode={}, blockReason={}, feedback={}",
+                    mode.label(), blockReason, feedback);
+            throw new IllegalStateException("Gemini 응답에 candidates가 없습니다. blockReason=" + blockReason);
+        }
+
+        String finishReason = candidates.path(0).path("finishReason").asText("");
+        if (!finishReason.isBlank() && !"STOP".equals(finishReason) && !"MAX_TOKENS".equals(finishReason)) {
+            log.warn("Gemini company research finished abnormally: mode={}, finishReason={}",
+                    mode.label(), finishReason);
+        }
+
+        String text = extractResponseText(root);
+        if (text.isBlank()) {
+            JsonNode candidate0 = candidates.path(0);
+            JsonNode usage = root.path("usageMetadata");
+            log.error("Gemini company research text empty: mode={}, finishReason={}, usage={}, candidate0={}",
+                    mode.label(), finishReason, usage, candidate0);
+            throw new RetryableGeminiResponseException(
+                    "Gemini 기업조사 응답의 텍스트가 비어있습니다. finishReason=" + finishReason
+            );
+        }
+
+        try {
+            return parseResearchResponse(text);
+        } catch (IOException e) {
+            log.error("Gemini company research JSON parse failed: mode={}, text={}", mode.label(), text);
+            throw new RetryableGeminiResponseException("Gemini 기업조사 JSON 파싱에 실패했습니다: " + e.getMessage(), e);
+        }
+    }
+
+    private void applyFallbackConfidenceNote(CompanyResearchResponse response) {
+        List<String> notes = response.getConfidenceNotes() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(response.getConfidenceNotes());
+
+        if (!notes.contains(UNGROUNDED_FALLBACK_NOTE)) {
+            notes.add(0, UNGROUNDED_FALLBACK_NOTE);
+        }
+        response.setConfidenceNotes(notes);
+    }
+
     private String buildSystemPrompt() {
         return """
-                당신은 한국 취업 시장 전문 기업 인텔리전스 분석가입니다.
-                지원자가 자기소개서를 작성하기 전에, 해당 기업과 직무에 대한 실제 기술 정보를 깊게 파악할 수 있도록 도와주는 역할입니다.
+                You are a senior company and role research analyst for Korean job seekers.
+                Your task is to produce a company-research brief that helps the user write a strong Korean cover letter.
 
-                [분석 3단계 수행 지침]
+                Requirements:
+                - All natural-language fields must be written in Korean.
+                - Return JSON only. No markdown fences, no prose outside JSON.
+                - If information is uncertain, mark that uncertainty in the relevant text.
+                - Respect the user's additional focus instructions as the highest-priority scope constraint.
 
-                ▶ 1단계 — 자동 맥락 발견 (Auto Discovery)
-                  제공된 기업명과 JD를 분석하여:
-                  - 어느 사업부/팀 소속인지 추론 (예: 삼성전자 → MX사업부 갤럭시 소프트웨어팀)
-                  - 해당 팀이 만드는 제품/서비스가 무엇인지 파악
-                  - 조직 구조 및 비즈니스 맥락 파악
-                  Google Search로 위 정보를 검색하여 보완하십시오.
+                Research workflow:
+                1. Infer the likely business unit and product/service from the company name and JD.
+                2. If search is available, use it to inspect recent hiring posts, engineering blogs, conference talks, and GitHub sources.
+                3. Compare the JD's stated requirements with the company's likely real tech stack and hiring signals.
 
-                ▶ 2단계 — 기술 딥다이브 (Technical Deep Dive)
-                  Google Search를 적극 활용하여 다음을 반드시 검색하십시오:
-                  1. 경력 채용 공고: 원티드(wanted.co.kr), 사람인(saramin.co.kr), 잡코리아(jobkorea.co.kr)에서
-                     "[기업명] [직무] 경력" 검색. 경력 공고는 기업이 실제 사용하는 기술을 정확히 명시함.
-                  2. 공식 기술 블로그: "[기업명] 기술블로그", "[기업명] engineering blog" 검색
-                  3. 개발자 컨퍼런스 발표: if.kakao.com, d2.naver.com, engineering.linecorp.com 등
-                  4. GitHub 공개 레포: "[기업명] github" 검색
-
-                  각 기술 스택 항목에 대해 반드시 다음을 기록하십시오:
-                  - name: 정확한 버전 포함 (예: "Java 17", "Spring Boot 3.2.x") — 불확실하면 "Java (버전 미확인)"
-                  - category: Backend / Frontend / Database / Infrastructure / DevOps / Mobile / AI-ML 중 하나
-                  - confidence: CONFIRMED(경력공고/테크블로그에서 직접 확인) / INFERRED(간접 증거) / UNCERTAIN(추정)
-                  - source: 출처 명시 (예: "원티드 경력공고 2025.03", "공식 기술블로그", "GitHub 레포")
-
-                  수치/팩트가 있는 최근 기술 작업(recentTechWork)도 가능하면 발굴하십시오.
-                  확인되지 않은 수치는 절대 만들지 마십시오. 없으면 비워두십시오.
-
-                ▶ 3단계 — Fit 분석 (Gap Analysis)
-                  JD에 명시된 요구사항과 실제로 파악된 기술 스택을 비교하여:
-                  - JD가 모호하게 표현한 것의 실제 의미 해석
-                  - JD에는 없지만 실제로 사용하는 기술 (경력 공고에서 발견)
-                  - 지원자가 자소서에서 강조해야 할 기술 경험 힌트
-
-                [출력 규칙]
-                - 모든 자연어 필드는 한국어로 작성
-                - JSON만 반환 (마크다운 코드블록 금지)
-                - 확인되지 않은 정보는 UNCERTAIN으로 표시하고 추정임을 명시
-                - 사용자 지시사항(프롬프트 최상단)이 있으면 모든 분석에 최우선으로 적용. 제외 지시가 있는 항목은 techStack, recentTechWork 등 어떤 섹션에도 포함하지 말 것.
-                - 다음 JSON 스키마를 정확히 준수:
-
+                Output schema:
                 {
-                  "focus": {"company": "...", "position": "...", "inferredBusinessUnit": "...", "inferredProduct": "..."},
-                  "executiveSummary": "...",
-                  "discoveredContext": {
-                    "businessUnit": "...",
-                    "product": "...",
-                    "evidenceSources": ["..."]
+                  "focus": {
+                    "company": "string",
+                    "position": "string",
+                    "inferredBusinessUnit": "string",
+                    "inferredProduct": "string"
                   },
-                  "businessContext": ["..."],
-                  "serviceLandscape": ["..."],
-                  "roleScope": ["..."],
+                  "executiveSummary": "string",
+                  "discoveredContext": {
+                    "businessUnit": "string",
+                    "product": "string",
+                    "evidenceSources": ["string"]
+                  },
+                  "businessContext": ["string"],
+                  "serviceLandscape": ["string"],
+                  "roleScope": ["string"],
                   "techStack": [
-                    {"name": "...", "category": "...", "confidence": "CONFIRMED|INFERRED|UNCERTAIN", "source": "..."}
+                    {
+                      "name": "string",
+                      "category": "Backend|Frontend|Database|Infrastructure|DevOps|Mobile|AI-ML",
+                      "confidence": "CONFIRMED|INFERRED|UNCERTAIN",
+                      "source": "string"
+                    }
                   ],
                   "recentTechWork": [
-                    {"summary": "...", "detail": "...", "source": "..."}
+                    {
+                      "summary": "string",
+                      "detail": "string",
+                      "source": "string"
+                    }
                   ],
                   "fitAnalysis": {
-                    "jdStatedRequirements": ["..."],
-                    "actualTechStack": ["..."],
-                    "gapAnalysis": "...",
-                    "coverLetterHints": ["..."]
+                    "jdStatedRequirements": ["string"],
+                    "actualTechStack": ["string"],
+                    "gapAnalysis": "string",
+                    "coverLetterHints": ["string"]
                   },
-                  "motivationHooks": ["..."],
-                  "serviceHooks": ["..."],
-                  "resumeAngles": ["..."],
-                  "interviewSignals": ["..."],
-                  "recommendedNarrative": "...",
-                  "followUpQuestions": ["..."],
-                  "confidenceNotes": ["..."]
+                  "motivationHooks": ["string"],
+                  "serviceHooks": ["string"],
+                  "resumeAngles": ["string"],
+                  "interviewSignals": ["string"],
+                  "recommendedNarrative": "string",
+                  "followUpQuestions": ["string"],
+                  "confidenceNotes": ["string"]
                 }
                 """;
     }
@@ -216,35 +261,35 @@ public class GeminiCompanyResearchClient {
     private String buildUserPrompt(String company, String position, String rawJd, String additionalFocus) {
         StringBuilder sb = new StringBuilder();
 
-        // 사용자 지시사항을 JD보다 먼저, 강하게 선언
         if (additionalFocus != null && !additionalFocus.isBlank()) {
-            sb.append("========================================\n");
-            sb.append("[사용자 지시사항 — 반드시 준수, 절대 무시 금지]\n");
-            sb.append(additionalFocus.trim()).append("\n");
-            sb.append("위 지시사항은 분석 범위와 방향을 강제로 제한합니다.\n");
-            sb.append("'찾지 말아줘', '제외', '빼줘' 등의 표현은 해당 항목을 분석 결과에서 완전히 제외하라는 의미입니다.\n");
-            sb.append("========================================\n\n");
+            sb.append("[Additional focus instructions]\n");
+            sb.append(additionalFocus.trim()).append("\n\n");
         }
 
-        sb.append("기업명: ").append(company).append("\n");
-        sb.append("지원 직무: ").append(position).append("\n");
-        sb.append("\n[원본 JD]\n").append(rawJd);
+        sb.append("Company: ").append(company).append("\n");
+        sb.append("Position: ").append(position).append("\n");
+        sb.append("\n[Raw JD]\n").append(rawJd);
         return sb.toString();
     }
 
     private String extractResponseText(JsonNode root) {
         JsonNode parts = root.path("candidates").path(0).path("content").path("parts");
-        if (!parts.isArray()) return "";
+        if (!parts.isArray()) {
+            return "";
+        }
 
         StringBuilder text = new StringBuilder();
         Iterator<JsonNode> iterator = parts.elements();
         while (iterator.hasNext()) {
             JsonNode part = iterator.next();
-            // thinking 모델의 내부 사고 파트(thought: true)는 제외
-            if (part.path("thought").asBoolean(false)) continue;
+            if (part.path("thought").asBoolean(false)) {
+                continue;
+            }
             String value = part.path("text").asText("");
             if (!value.isBlank()) {
-                if (!text.isEmpty()) text.append('\n');
+                if (!text.isEmpty()) {
+                    text.append('\n');
+                }
                 text.append(value);
             }
         }
@@ -264,35 +309,86 @@ public class GeminiCompanyResearchClient {
             normalized = normalized.substring(objectStart, objectEnd + 1);
         }
 
+        JsonNode root = objectMapper.readTree(normalized);
+        if (root instanceof ObjectNode objectNode) {
+            normalizeLegacyResponseShape(objectNode);
+            return objectMapper.treeToValue(objectNode, CompanyResearchResponse.class);
+        }
+
         return objectMapper.readValue(normalized, CompanyResearchResponse.class);
     }
 
-    /**
-     * Gemini API 응답의 groundingMetadata에서 실제 검색어와 참고 URL을 추출하여
-     * CompanyResearchResponse에 주입합니다.
-     */
+    private void normalizeLegacyResponseShape(ObjectNode root) {
+        ObjectNode focusNode = ensureObjectNode(root, "focus");
+        copyTextIfMissing(root, focusNode, "company", "company");
+        copyTextIfMissing(root, focusNode, "position", "position");
+        copyTextIfMissing(root, focusNode, "inferredBusinessUnit", "inferredBusinessUnit");
+        copyTextIfMissing(root, focusNode, "inferredProduct", "inferredProduct");
+        copyTextIfMissing(root, focusNode, "businessUnit", "inferredBusinessUnit");
+        copyTextIfMissing(root, focusNode, "product", "inferredProduct");
+
+        if (root.has("businessUnit") || root.has("product") || root.has("evidenceSources")) {
+            ObjectNode discoveredContextNode = ensureObjectNode(root, "discoveredContext");
+            copyTextIfMissing(root, discoveredContextNode, "businessUnit", "businessUnit");
+            copyTextIfMissing(root, discoveredContextNode, "product", "product");
+            copyArrayIfMissing(root, discoveredContextNode, "evidenceSources", "evidenceSources");
+        }
+    }
+
+    private ObjectNode ensureObjectNode(ObjectNode parent, String fieldName) {
+        JsonNode existing = parent.get(fieldName);
+        if (existing instanceof ObjectNode objectNode) {
+            return objectNode;
+        }
+        return parent.putObject(fieldName);
+    }
+
+    private void copyTextIfMissing(ObjectNode source, ObjectNode target, String sourceField, String targetField) {
+        JsonNode sourceNode = source.get(sourceField);
+        JsonNode targetNode = target.get(targetField);
+        if (!isBlankTextNode(sourceNode) && isBlankTextNode(targetNode)) {
+            target.put(targetField, sourceNode.asText().trim());
+        }
+    }
+
+    private void copyArrayIfMissing(ObjectNode source, ObjectNode target, String sourceField, String targetField) {
+        JsonNode sourceNode = source.get(sourceField);
+        JsonNode targetNode = target.get(targetField);
+        if (sourceNode != null && sourceNode.isArray() && (targetNode == null || targetNode.isNull())) {
+            target.set(targetField, sourceNode.deepCopy());
+        }
+    }
+
+    private boolean isBlankTextNode(JsonNode node) {
+        return node == null || node.isNull() || node.asText("").isBlank();
+    }
+
     private void enrichWithGroundingMetadata(CompanyResearchResponse response, JsonNode root) {
         JsonNode metadata = root.path("candidates").path(0).path("groundingMetadata");
-        if (metadata.isMissingNode()) return;
+        if (metadata.isMissingNode()) {
+            return;
+        }
 
-        // 실제 검색 쿼리 추출
         JsonNode queriesNode = metadata.path("webSearchQueries");
         if (queriesNode.isArray()) {
             List<String> queries = new ArrayList<>();
             queriesNode.forEach(q -> {
                 String query = q.asText("").trim();
-                if (!query.isBlank()) queries.add(query);
+                if (!query.isBlank()) {
+                    queries.add(query);
+                }
             });
-            if (!queries.isEmpty()) response.setSearchQueries(queries);
+            if (!queries.isEmpty()) {
+                response.setSearchQueries(queries);
+            }
         }
 
-        // 실제 참고 URL 추출 (중복 제거)
         JsonNode chunksNode = metadata.path("groundingChunks");
         if (chunksNode.isArray()) {
             List<CompanyResearchResponse.SearchSource> sources = new ArrayList<>();
             chunksNode.forEach(chunk -> {
                 JsonNode web = chunk.path("web");
-                String uri   = web.path("uri").asText("").trim();
+                String uri = web.path("uri").asText("").trim();
                 String title = web.path("title").asText("").trim();
                 if (!uri.isBlank()) {
                     sources.add(CompanyResearchResponse.SearchSource.builder()
@@ -301,12 +397,144 @@ public class GeminiCompanyResearchClient {
                             .build());
                 }
             });
-            if (!sources.isEmpty()) response.setSearchSources(sources);
+            if (!sources.isEmpty()) {
+                response.setSearchSources(sources);
+            }
         }
 
         log.info("Grounding metadata: {} queries, {} sources",
                 response.getSearchQueries() != null ? response.getSearchQueries().size() : 0,
                 response.getSearchSources() != null ? response.getSearchSources().size() : 0);
+    }
+
+    private Map<String, Object> buildCompanyResearchResponseSchema() {
+        Map<String, Object> focusSchema = objectSchema(
+                Map.of(
+                        "company", stringSchema("Target company name."),
+                        "position", stringSchema("Target position name."),
+                        "inferredBusinessUnit", stringSchema("Likely business unit."),
+                        "inferredProduct", stringSchema("Likely product or service.")
+                ),
+                List.of("company", "position", "inferredBusinessUnit", "inferredProduct")
+        );
+
+        Map<String, Object> discoveredContextSchema = objectSchema(
+                Map.of(
+                        "businessUnit", stringSchema("Discovered or inferred business unit."),
+                        "product", stringSchema("Discovered or inferred product."),
+                        "evidenceSources", stringArraySchema("Evidence source summary.")
+                ),
+                List.of("businessUnit", "product", "evidenceSources")
+        );
+
+        Map<String, Object> techStackItemSchema = objectSchema(
+                Map.of(
+                        "name", stringSchema("Technology name, include version if known."),
+                        "category", stringSchema("Backend, Frontend, Database, Infrastructure, DevOps, Mobile, or AI-ML."),
+                        "confidence", stringSchema("CONFIRMED, INFERRED, or UNCERTAIN."),
+                        "source", stringSchema("Evidence source.")
+                ),
+                List.of("name", "category", "confidence", "source")
+        );
+
+        Map<String, Object> techFactSchema = objectSchema(
+                Map.of(
+                        "summary", stringSchema("Short summary."),
+                        "detail", stringSchema("Specific technical detail."),
+                        "source", stringSchema("Evidence source.")
+                ),
+                List.of("summary", "detail", "source")
+        );
+
+        Map<String, Object> fitAnalysisSchema = objectSchema(
+                Map.of(
+                        "jdStatedRequirements", stringArraySchema("Requirement stated in JD."),
+                        "actualTechStack", stringArraySchema("Likely actual tech stack."),
+                        "gapAnalysis", stringSchema("Gap analysis in Korean."),
+                        "coverLetterHints", stringArraySchema("Hints for the cover letter.")
+                ),
+                List.of("jdStatedRequirements", "actualTechStack", "gapAnalysis", "coverLetterHints")
+        );
+
+        Map<String, Object> searchSourceSchema = objectSchema(
+                Map.of(
+                        "title", stringSchema("Source title."),
+                        "uri", stringSchema("Source URL.")
+                ),
+                List.of("title", "uri")
+        );
+
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("focus", focusSchema);
+        properties.put("executiveSummary", stringSchema("One concise executive summary in Korean."));
+        properties.put("discoveredContext", discoveredContextSchema);
+        properties.put("businessContext", stringArraySchema("Business context bullet."));
+        properties.put("serviceLandscape", stringArraySchema("Service landscape bullet."));
+        properties.put("roleScope", stringArraySchema("Role scope bullet."));
+        properties.put("techStack", arraySchema(techStackItemSchema, "Structured tech stack list."));
+        properties.put("recentTechWork", arraySchema(techFactSchema, "Recent technical work list."));
+        properties.put("fitAnalysis", fitAnalysisSchema);
+        properties.put("motivationHooks", stringArraySchema("Motivation hook."));
+        properties.put("serviceHooks", stringArraySchema("Service hook."));
+        properties.put("resumeAngles", stringArraySchema("Resume angle."));
+        properties.put("interviewSignals", stringArraySchema("Interview signal."));
+        properties.put("recommendedNarrative", stringSchema("Recommended narrative in Korean."));
+        properties.put("followUpQuestions", stringArraySchema("Follow-up question."));
+        properties.put("confidenceNotes", stringArraySchema("Confidence note."));
+        properties.put("searchQueries", stringArraySchema("Search query used by the model."));
+        properties.put("searchSources", arraySchema(searchSourceSchema, "Grounding source list."));
+
+        return objectSchema(
+                properties,
+                List.of(
+                        "focus",
+                        "executiveSummary",
+                        "discoveredContext",
+                        "businessContext",
+                        "serviceLandscape",
+                        "roleScope",
+                        "techStack",
+                        "recentTechWork",
+                        "fitAnalysis",
+                        "motivationHooks",
+                        "serviceHooks",
+                        "resumeAngles",
+                        "interviewSignals",
+                        "recommendedNarrative",
+                        "followUpQuestions",
+                        "confidenceNotes",
+                        "searchQueries",
+                        "searchSources"
+                )
+        );
+    }
+
+    private Map<String, Object> stringSchema(String description) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "string");
+        schema.put("description", description);
+        return schema;
+    }
+
+    private Map<String, Object> stringArraySchema(String itemDescription) {
+        return arraySchema(stringSchema(itemDescription), itemDescription);
+    }
+
+    private Map<String, Object> arraySchema(Map<String, Object> itemSchema, String description) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "array");
+        schema.put("description", description);
+        schema.put("items", itemSchema);
+        return schema;
+    }
+
+    private Map<String, Object> objectSchema(Map<String, Object> properties, List<String> required) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", required);
+        schema.put("additionalProperties", false);
+        return schema;
     }
 
     private String mapGeminiError(int statusCode, String responseBody) {
@@ -325,9 +553,22 @@ public class GeminiCompanyResearchClient {
             return "Gemini 모델 설정값이 유효하지 않습니다. GEMINI_COMPANY_RESEARCH_MODEL을 확인해주세요. 현재 기본값은 gemini-2.5-flash입니다.";
         }
         if (lowerBody.contains("response mime type") && lowerBody.contains("unsupported")) {
-            return "Gemini 요청 옵션이 현재 모델/툴 조합과 충돌했습니다. 검색 툴 사용 시에는 JSON MIME 강제 옵션을 제거해야 합니다.";
+            return "Gemini 2.5 계열에서는 검색 도구와 structured output 조합이 제한될 수 있습니다. 현재 코드는 검색 fallback 없이만 structured output을 사용합니다.";
         }
 
         return "Gemini request failed with status " + statusCode + ": " + responseBody;
+    }
+
+    private record RequestMode(String label, boolean useGoogleSearch, boolean useStructuredOutput, int maxAttempts) {
+    }
+
+    private static final class RetryableGeminiResponseException extends RuntimeException {
+        private RetryableGeminiResponseException(String message) {
+            super(message);
+        }
+
+        private RetryableGeminiResponseException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 }

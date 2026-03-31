@@ -1,5 +1,6 @@
 package com.resumade.api.workspace.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,6 +12,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class CompanyResearchResponse {
 
     private Focus focus;
@@ -48,6 +50,7 @@ public class CompanyResearchResponse {
     // ── Inner Classes ───────────────────────────────────────────────
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Focus {
         private String company;
         private String position;
@@ -58,6 +61,7 @@ public class CompanyResearchResponse {
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class DiscoveredContext {
         /** 추론된 사업부/팀 */
         private String businessUnit;
@@ -68,6 +72,7 @@ public class CompanyResearchResponse {
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class TechStackItem {
         /** 기술명 (예: "Java 17", "Spring Boot 3.2") */
         private String name;
@@ -80,6 +85,7 @@ public class CompanyResearchResponse {
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class TechFact {
         /** 한 줄 요약 */
         private String summary;
@@ -90,6 +96,7 @@ public class CompanyResearchResponse {
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class SearchSource {
         /** 페이지 제목 */
         private String title;
@@ -98,6 +105,7 @@ public class CompanyResearchResponse {
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class FitAnalysis {
         /** JD에 명시된 요구사항 목록 */
         private List<String> jdStatedRequirements;
