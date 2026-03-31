@@ -19,4 +19,5 @@ public class ExperienceExtractionResult {
     private List<String> metrics;
     private String period;
     private String role;
+    private String organization;
 }

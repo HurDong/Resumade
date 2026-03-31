@@ -1,13 +1,16 @@
 package com.resumade.api.infra.ai;
 
 import com.resumade.api.experience.service.ExperienceAiService;
+import com.resumade.api.workspace.service.ClassifierAiService;
 import com.resumade.api.workspace.service.FinalEditorAiService;
 import com.resumade.api.workspace.service.JdTextAiService;
 import com.resumade.api.workspace.service.JdVisionAiService;
 import com.resumade.api.workspace.service.OpenAiResponsesWorkspaceDraftService;
+import com.resumade.api.workspace.service.SpellCheckAiService;
 import com.resumade.api.workspace.service.WorkspaceDraftAiService;
 import com.resumade.api.workspace.service.WorkspacePatchAiService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.service.AiServices;
 import jakarta.annotation.PostConstruct;
@@ -126,6 +129,66 @@ public class AiConfig {
                 .logResponses(false)
                 .build();
     }
+
+    // -------------------------------------------------------------------------
+    // 신규: PromptStrategy 파이프라인용 빈
+    // -------------------------------------------------------------------------
+
+    /**
+     * StrategyDraftGeneratorService가 사용하는 ChatLanguageModel.
+     * workspaceDraftAiService와 동일한 모델을 공유하되, AiServices 래퍼 없이 직접 사용합니다.
+     */
+    @Bean(name = "workspaceDraftChatModel")
+    public ChatLanguageModel workspaceDraftChatModel() {
+        return buildChatModel(workspaceDraftModelName);
+    }
+
+    /**
+     * 문항 분류 전용 소형 모델 서비스.
+     * 빠른 분류를 위해 experienceModel (gpt-4o-mini)과 동일 모델을 재사용합니다.
+     */
+    @Bean
+    public ClassifierAiService classifierAiService() {
+        // 분류는 짧은 응답만 필요하므로 가장 가벼운 모델 사용
+        OpenAiChatModel classifierModel = OpenAiChatModel.builder()
+                .apiKey(openAiApiKey)
+                .modelName(experienceModelName)   // gpt-4o-mini
+                .temperature(0.0)                 // 분류는 결정론적으로
+                .maxRetries(1)
+                .timeout(openAiTimeout)
+                .logRequests(false)
+                .logResponses(false)
+                .build();
+        return AiServices.builder(ClassifierAiService.class)
+                .chatLanguageModel(classifierModel)
+                .build();
+    }
+
+    // -------------------------------------------------------------------------
+
+    /**
+     * 맞춤법 검사 전용 AI 서비스.
+     * temperature=0.0 — 맞춤법은 창의성이 아닌 정확성이 기준이므로 결정론적으로 실행한다.
+     * finalEditorModelName(gpt-4o-mini) 을 공유하여 별도 모델 설정 없이 재사용한다.
+     */
+    @Bean
+    public SpellCheckAiService spellCheckAiService() {
+        OpenAiChatModel spellCheckModel = OpenAiChatModel.builder()
+                .apiKey(openAiApiKey)
+                .modelName(finalEditorModelName)   // gpt-4o-mini
+                .temperature(0.0)                  // 맞춤법 교정은 결정론적으로
+                .maxRetries(1)
+                .timeout(openAiTimeout)
+                .responseFormat("json_object")     // Structured Output 강제
+                .logRequests(true)   // 디버그: 실제 전송 프롬프트 확인
+                .logResponses(true)  // 디버그: LLM 원문 응답 확인
+                .build();
+        return AiServices.builder(SpellCheckAiService.class)
+                .chatLanguageModel(spellCheckModel)
+                .build();
+    }
+
+    // -------------------------------------------------------------------------
 
     /** plain text 응답용 (responseFormat 미설정) */
     private OpenAiChatModel buildTextChatModel(String modelName) {

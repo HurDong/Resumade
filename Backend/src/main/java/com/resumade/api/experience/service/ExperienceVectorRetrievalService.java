@@ -11,6 +11,7 @@ import com.resumade.api.experience.document.ExperienceDocumentRepository;
 import com.resumade.api.experience.domain.Experience;
 import com.resumade.api.experience.domain.ExperienceRepository;
 import com.resumade.api.workspace.dto.ExperienceContextResponse;
+import com.resumade.api.workspace.prompt.QuestionCategory;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
@@ -48,6 +49,55 @@ public class ExperienceVectorRetrievalService {
     private static final int MAX_SNIPPET_LENGTH = 400;
     private static final int MAX_QUERY_VARIANTS = 4;
     private static final int VECTOR_FETCH_MULTIPLIER = 4;
+
+    // -------------------------------------------------------------------------
+    // 카테고리별 필드 부스팅 가중치 (기본값에 더해지는 추가 점수)
+    //   기본 가중치: title(36) > description(24) > techStack(22) > role(18) >
+    //               metrics(16) > rawContent(16) > category(10) > fileName(8)
+    // -------------------------------------------------------------------------
+    private static final Map<QuestionCategory, CategoryFieldBoost> CATEGORY_BOOSTS = Map.of(
+            // 지원동기: 서사/맥락 중심 — description, rawContent 강화
+            QuestionCategory.MOTIVATION,       new CategoryFieldBoost(0,  10, 0,   0,  0,   8, 0),
+            // 직무경험: 기술/정량 중심 — techStack, metrics, role 강화
+            QuestionCategory.EXPERIENCE,       new CategoryFieldBoost(0,   0, 14, 10,  8,   0, 0),
+            // 문제해결: 문제-해결 서사 중심 — description, rawContent 강화
+            QuestionCategory.PROBLEM_SOLVING,  new CategoryFieldBoost(0,  12, 0,   4,  0,  10, 0),
+            // 협업/리더십: 팀/역할 맥락 중심 — role, description 강화
+            QuestionCategory.COLLABORATION,    new CategoryFieldBoost(0,   8, 0,   0, 12,   4, 0),
+            // 성장: CS/딥다이브형 학습 — description, techStack, rawContent 강화
+            QuestionCategory.GROWTH,           new CategoryFieldBoost(0,  10, 8,   2,  0,  10, 0),
+            // 조직문화 적합성: 실행·검증·오너십 — metrics, description, role 강화
+            QuestionCategory.CULTURE_FIT,      new CategoryFieldBoost(0,   8, 4,  12,  6,   8, 0),
+            // 기술/산업 인사이트: 도메인 키워드와 관련 경험 맥락 강조
+            QuestionCategory.TREND_INSIGHT,    new CategoryFieldBoost(4,  10, 8,   4,  0,  10, 0),
+            // 기본: 부스팅 없음
+            QuestionCategory.DEFAULT,          new CategoryFieldBoost(0,   0, 0,   0,  0,   0, 0)
+    );
+
+    /**
+     * 카테고리별 필드 가중치 추가분을 담는 Value Object.
+     *
+     * @param titleBoost        경험 제목 추가 가중치
+     * @param descriptionBoost  경험 설명 추가 가중치
+     * @param techStackBoost    기술 스택 추가 가중치
+     * @param metricsBoost      성과 지표 추가 가중치
+     * @param roleBoost         역할 추가 가중치
+     * @param rawContentBoost   원문 콘텐츠 추가 가중치
+     * @param categoryBoost     카테고리명 추가 가중치
+     */
+    private record CategoryFieldBoost(
+            double titleBoost,
+            double descriptionBoost,
+            double techStackBoost,
+            double metricsBoost,
+            double roleBoost,
+            double rawContentBoost,
+            double categoryBoost
+    ) {
+        static CategoryFieldBoost none() {
+            return new CategoryFieldBoost(0, 0, 0, 0, 0, 0, 0);
+        }
+    }
     private static final Pattern TOKEN_PATTERN = Pattern.compile("[\\p{IsAlphabetic}\\p{IsDigit}\\u3131-\\u318E\\uAC00-\\uD7A3+#._-]+");
     private static final Set<String> STOPWORDS = Set.of(
             "the", "and", "for", "with", "from", "that", "this", "your", "into", "self", "intro", "introduction",
@@ -69,12 +119,12 @@ public class ExperienceVectorRetrievalService {
 
     @Transactional(readOnly = true)
     public List<ExperienceContextResponse.ContextItem> search(String query, int limit) {
-        return search(query, limit, Collections.emptySet(), Collections.emptyList());
+        return search(query, limit, Collections.emptySet(), Collections.emptyList(), QuestionCategory.DEFAULT);
     }
 
     @Transactional(readOnly = true)
     public List<ExperienceContextResponse.ContextItem> search(String query, int limit, Set<Long> excludedExperienceIds) {
-        return search(query, limit, excludedExperienceIds, Collections.emptyList());
+        return search(query, limit, excludedExperienceIds, Collections.emptyList(), QuestionCategory.DEFAULT);
     }
 
     @Transactional(readOnly = true)
@@ -84,6 +134,31 @@ public class ExperienceVectorRetrievalService {
             Set<Long> excludedExperienceIds,
             List<String> supportingQueries
     ) {
+        return search(query, limit, excludedExperienceIds, supportingQueries, QuestionCategory.DEFAULT);
+    }
+
+    /**
+     * 카테고리 인식 하이브리드 검색 (메인 오버로드).
+     *
+     * <p>{@link QuestionCategory}에 따라 키워드 검색의 필드별 가중치를 동적으로 조정합니다.
+     * 예) EXPERIENCE 카테고리 → techStack, metrics, role 필드에 추가 가중치 부여
+     *
+     * @param category 분류기가 판별한 문항 카테고리 — null이면 DEFAULT로 처리
+     */
+    @Transactional(readOnly = true)
+    public List<ExperienceContextResponse.ContextItem> search(
+            String query,
+            int limit,
+            Set<Long> excludedExperienceIds,
+            List<String> supportingQueries,
+            QuestionCategory category
+    ) {
+        QuestionCategory effectiveCategory = (category != null) ? category : QuestionCategory.DEFAULT;
+        CategoryFieldBoost boost = CATEGORY_BOOSTS.getOrDefault(effectiveCategory, CategoryFieldBoost.none());
+
+        log.debug("ExperienceVectorRetrievalService: search category={} query=\"{}\"",
+                effectiveCategory, query != null ? query.substring(0, Math.min(query.length(), 60)) : "");
+
         List<WeightedQuery> weightedQueries = buildWeightedQueries(query, supportingQueries);
         if (weightedQueries.isEmpty()) {
             return Collections.emptyList();
@@ -117,7 +192,8 @@ public class ExperienceVectorRetrievalService {
             }
         }
 
-        mergeKeywordCandidates(ranked, experienceMap.values(), weightedQueries);
+        // 카테고리 부스팅이 적용된 키워드 검색
+        mergeKeywordCandidates(ranked, experienceMap.values(), weightedQueries, boost);
 
         return ranked.values().stream()
                 .filter(RankedCandidate::hasSignal)
@@ -173,12 +249,26 @@ public class ExperienceVectorRetrievalService {
             Collection<Experience> experiences,
             List<WeightedQuery> weightedQueries
     ) {
+        mergeKeywordCandidates(ranked, experiences, weightedQueries, CategoryFieldBoost.none());
+    }
+
+    /**
+     * 카테고리 부스팅이 적용된 키워드 후보 병합.
+     *
+     * @param boost 카테고리별 필드 추가 가중치 — 기본 가중치에 더해집니다.
+     */
+    private void mergeKeywordCandidates(
+            Map<Long, RankedCandidate> ranked,
+            Collection<Experience> experiences,
+            List<WeightedQuery> weightedQueries,
+            CategoryFieldBoost boost
+    ) {
         for (Experience experience : experiences) {
             if (experience == null) {
                 continue;
             }
 
-            double keywordScore = calculateKeywordScore(experience, weightedQueries);
+            double keywordScore = calculateKeywordScore(experience, weightedQueries, boost);
             if (keywordScore <= 0) {
                 continue;
             }
@@ -311,19 +401,38 @@ public class ExperienceVectorRetrievalService {
     }
 
     private double calculateKeywordScore(Experience experience, List<WeightedQuery> weightedQueries) {
+        return calculateKeywordScore(experience, weightedQueries, CategoryFieldBoost.none());
+    }
+
+    /**
+     * 카테고리 부스팅이 적용된 키워드 점수 계산.
+     *
+     * <p>기본 필드 가중치에 {@link CategoryFieldBoost}의 추가 가중치를 더합니다.
+     *
+     * <pre>
+     * 기본 가중치 예시 (EXPERIENCE 카테고리):
+     *   title:       36 + 0  = 36
+     *   techStack:   22 + 14 = 36  ← 기술 스택 강화
+     *   metrics:     16 + 10 = 26  ← 성과 지표 강화
+     *   role:        18 + 8  = 26  ← 역할 강화
+     *   description: 24 + 0  = 24
+     * </pre>
+     */
+    private double calculateKeywordScore(Experience experience, List<WeightedQuery> weightedQueries,
+            CategoryFieldBoost boost) {
         if (weightedQueries == null || weightedQueries.isEmpty() || experience == null) {
             return 0;
         }
 
         double bestScore = 0;
-        Set<String> titleTokens = tokenize(experience.getTitle());
-        Set<String> categoryTokens = tokenize(experience.getCategory());
+        Set<String> titleTokens       = tokenize(experience.getTitle());
+        Set<String> categoryTokens    = tokenize(experience.getCategory());
         Set<String> descriptionTokens = tokenize(experience.getDescription());
-        Set<String> roleTokens = tokenize(experience.getRole());
-        Set<String> rawTokens = tokenize(experience.getRawContent());
-        Set<String> techStackTokens = tokenize(compactStructuredText(experience.getTechStack(), 240));
-        Set<String> metricsTokens = tokenize(compactStructuredText(experience.getMetrics(), 240));
-        Set<String> fileNameTokens = tokenize(experience.getOriginalFileName());
+        Set<String> roleTokens        = tokenize(experience.getRole());
+        Set<String> rawTokens         = tokenize(experience.getRawContent());
+        Set<String> techStackTokens   = tokenize(compactStructuredText(experience.getTechStack(), 240));
+        Set<String> metricsTokens     = tokenize(compactStructuredText(experience.getMetrics(), 240));
+        Set<String> fileNameTokens    = tokenize(experience.getOriginalFileName());
         String normalizedCorpus = normalizeComparablePhrase(String.join(" ",
                 safeText(experience.getTitle()),
                 safeText(experience.getCategory()),
@@ -341,14 +450,15 @@ public class ExperienceVectorRetrievalService {
             }
 
             double queryScore = 0;
-            queryScore += overlapScore(queryTokens, titleTokens, 36);
-            queryScore += overlapScore(queryTokens, roleTokens, 18);
-            queryScore += overlapScore(queryTokens, techStackTokens, 22);
-            queryScore += overlapScore(queryTokens, metricsTokens, 16);
-            queryScore += overlapScore(queryTokens, descriptionTokens, 24);
-            queryScore += overlapScore(queryTokens, rawTokens, 16);
-            queryScore += overlapScore(queryTokens, categoryTokens, 10);
-            queryScore += overlapScore(queryTokens, fileNameTokens, 8);
+            // 기본 가중치 + 카테고리 부스팅 추가분
+            queryScore += overlapScore(queryTokens, titleTokens,       36 + boost.titleBoost());
+            queryScore += overlapScore(queryTokens, roleTokens,        18 + boost.roleBoost());
+            queryScore += overlapScore(queryTokens, techStackTokens,   22 + boost.techStackBoost());
+            queryScore += overlapScore(queryTokens, metricsTokens,     16 + boost.metricsBoost());
+            queryScore += overlapScore(queryTokens, descriptionTokens, 24 + boost.descriptionBoost());
+            queryScore += overlapScore(queryTokens, rawTokens,         16 + boost.rawContentBoost());
+            queryScore += overlapScore(queryTokens, categoryTokens,    10 + boost.categoryBoost());
+            queryScore += overlapScore(queryTokens, fileNameTokens,    8);
 
             String normalizedQuery = normalizeComparablePhrase(weightedQuery.text());
             if (!normalizedQuery.isBlank() && normalizedCorpus.contains(normalizedQuery)) {

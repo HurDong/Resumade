@@ -79,8 +79,7 @@ public class GeminiCompanyResearchClient {
                             Map.of("google_search", Map.of())
                     ),
                     "generationConfig", Map.of(
-                            "temperature", 0.1,
-                            "thinkingConfig", Map.of("thinkingBudget", 0)
+                            "temperature", 0.1
                     )
             ));
 

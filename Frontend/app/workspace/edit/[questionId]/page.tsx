@@ -28,6 +28,7 @@ import {
   Wand2,
   X,
   Zap,
+  SpellCheck,
 } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Badge } from "@/components/ui/badge"
@@ -43,9 +44,11 @@ import {
   fetchSiblingQuestions,
   applyEditAction,
   rewashSelection,
+  checkSpelling,
   type FinalEditorData,
   type TitleCandidate,
   type QuestionNavItem,
+  type SpellCorrection,
 } from "@/lib/api/final-editor"
 
 // ── 편집 액션 정의 ───────────────────────────────────────────────────────────
@@ -367,6 +370,7 @@ export default function FinalEditorPage() {
   const params = useParams()
   const questionId = Number(params.questionId)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const spellResultRef = useRef<HTMLDivElement>(null)
   // 초기 로드 완료 여부 — true 이후부터만 자동저장 활성화
   const isInitialized = useRef(false)
 
@@ -382,6 +386,10 @@ export default function FinalEditorPage() {
   const [undoStack, setUndoStack]   = useState<string[]>([])
   const [customPromptText, setCustomPromptText] = useState("")
   const [isRewashing, setIsRewashing] = useState(false)
+
+  // ── 맞춤법 검사 ──────────────────────────────────────────────────────────
+  const [isSpellChecking, setIsSpellChecking]       = useState(false)
+  const [spellCorrections, setSpellCorrections]     = useState<SpellCorrection[] | null>(null)
 
   // ── 제목 추천 ────────────────────────────────────────────────────────────
   const [titleCandidates, setTitleCandidates]     = useState<TitleCandidate[]>([])
@@ -578,6 +586,45 @@ export default function FinalEditorPage() {
       setIsRewashing(false)
     }
   }, [selection, isRewashing, questionId, finalText])
+
+  // ── 맞춤법 결과 자동 스크롤 ─────────────────────────────────────────────
+  useEffect(() => {
+    if (spellCorrections !== null && spellResultRef.current) {
+      spellResultRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" })
+    }
+  }, [spellCorrections])
+
+  // ── 맞춤법 검사 ─────────────────────────────────────────────────────────
+  const handleSpellCheck = useCallback(async () => {
+    if (isSpellChecking || !finalText.trim()) return
+    setIsSpellChecking(true)
+    setSpellCorrections(null)
+    try {
+      const result = await checkSpelling(questionId, finalText)
+      setSpellCorrections(result.corrections)
+    } catch {
+      setSpellCorrections([])
+    } finally {
+      setIsSpellChecking(false)
+    }
+  }, [questionId, finalText, isSpellChecking])
+
+  const applyCorrection = useCallback((correction: SpellCorrection) => {
+    setUndoStack((prev) => [...prev.slice(-19), finalText])
+    setFinalText((prev) => prev.replace(correction.errorWord, correction.suggestedWord))
+    setSpellCorrections((prev) => prev ? prev.filter((c) => c.errorWord !== correction.errorWord) : null)
+  }, [finalText])
+
+  const applyAllCorrections = useCallback(() => {
+    if (!spellCorrections?.length) return
+    setUndoStack((prev) => [...prev.slice(-19), finalText])
+    let patched = finalText
+    for (const c of spellCorrections) {
+      patched = patched.replace(c.errorWord, c.suggestedWord)
+    }
+    setFinalText(patched)
+    setSpellCorrections([])
+  }, [finalText, spellCorrections])
 
   // ── 문항 이동 (저장 후 라우팅) ───────────────────────────────────────────
   const navigateToQuestion = useCallback(async (targetId: number) => {
@@ -802,6 +849,131 @@ export default function FinalEditorPage() {
                         )
                       })}
                     </div>
+
+                    {/* ── 맞춤법 교정 섹션 ── */}
+                    <div className="pt-1">
+                      <Separator />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">교정</p>
+                        {spellCorrections !== null && (
+                          <button
+                            type="button"
+                            onClick={() => setSpellCorrections(null)}
+                            className="flex items-center justify-center size-4 rounded-full text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* 검사 버튼 */}
+                      <button
+                        type="button"
+                        onClick={() => void handleSpellCheck()}
+                        disabled={isSpellChecking || !finalText.trim()}
+                        className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all ${
+                          isSpellChecking || !finalText.trim()
+                            ? "cursor-not-allowed border-border/40 bg-muted/10 opacity-40"
+                            : "cursor-pointer bg-rose-50 border-rose-200 hover:bg-rose-100"
+                        }`}
+                      >
+                        {isSpellChecking
+                          ? <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+                          : <SpellCheck className="size-3.5 shrink-0 text-rose-600" />
+                        }
+                        <div className="min-w-0">
+                          <p className={`text-sm font-semibold ${isSpellChecking || !finalText.trim() ? "text-muted-foreground" : "text-foreground"}`}>
+                            {isSpellChecking ? "검사 중..." : "맞춤법 검사"}
+                          </p>
+                          <p className="text-xs leading-4 text-muted-foreground truncate">전체 본문의 오류를 찾아냅니다</p>
+                        </div>
+                      </button>
+
+                      {/* 결과 패널 */}
+                      {spellCorrections !== null && (
+                        <div ref={spellResultRef} className="rounded-xl border border-border/60 bg-background overflow-hidden shadow-sm">
+                          {spellCorrections.length === 0 ? (
+                            <div className="flex items-center gap-2 px-3 py-3">
+                              <Check className="size-3.5 text-emerald-500 shrink-0" />
+                              <p className="text-xs text-muted-foreground">맞춤법 오류가 없습니다</p>
+                            </div>
+                          ) : (
+                            <div>
+                              {/* 결과 헤더 */}
+                              <div className="flex items-center justify-between px-3 py-2 bg-rose-50 border-b border-rose-100">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="flex size-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
+                                    {spellCorrections.length}
+                                  </span>
+                                  <span className="text-[11px] font-bold text-rose-700">
+                                    개 오류 발견
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={applyAllCorrections}
+                                  className="rounded-full bg-primary px-2.5 py-1 text-[10px] font-bold text-white transition-colors hover:bg-primary/90"
+                                >
+                                  전체 수정
+                                </button>
+                              </div>
+
+                              {/* 개별 교정 카드 */}
+                              <div className="divide-y divide-border/30">
+                                {spellCorrections.map((c, i) => {
+                                  const reasonColor: Record<string, string> = {
+                                    "맞춤법 오류":   "bg-red-100 text-red-700 border-red-200",
+                                    "띄어쓰기 오류": "bg-blue-100 text-blue-700 border-blue-200",
+                                    "어미 오류":     "bg-orange-100 text-orange-700 border-orange-200",
+                                    "조사 오류":     "bg-violet-100 text-violet-700 border-violet-200",
+                                    "비단어 오류":   "bg-rose-100 text-rose-700 border-rose-200",
+                                  }
+                                  const badgeClass = reasonColor[c.reason] ?? "bg-muted text-muted-foreground border-border"
+                                  const isDeletion = !c.suggestedWord
+
+                                  return (
+                                    <button
+                                      key={`${c.errorWord}-${i}`}
+                                      type="button"
+                                      onClick={() => applyCorrection(c)}
+                                      className="group w-full px-3 py-3 text-left transition-colors hover:bg-muted/40"
+                                    >
+                                      {/* 오류 → 교정 흐름 */}
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="rounded bg-red-50 border border-red-200 px-1.5 py-0.5 text-xs font-bold text-red-600 line-through decoration-red-400">
+                                          {c.errorWord}
+                                        </span>
+                                        <span className="text-[10px] text-muted-foreground shrink-0">→</span>
+                                        {isDeletion ? (
+                                          <span className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 italic">
+                                            삭제 권고
+                                          </span>
+                                        ) : (
+                                          <span className="rounded bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 text-xs font-bold text-emerald-700">
+                                            {c.suggestedWord}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {/* 사유 + 액션 힌트 */}
+                                      <div className="mt-1.5 flex items-center justify-between gap-1.5">
+                                        <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${badgeClass}`}>
+                                          {c.reason}
+                                        </span>
+                                        <span className="text-[10px] text-muted-foreground/50 group-hover:text-muted-foreground transition-colors shrink-0">
+                                          클릭하여 적용
+                                        </span>
+                                      </div>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </ScrollArea>
               </div>
@@ -986,7 +1158,7 @@ export default function FinalEditorPage() {
               </div>
 
               {/* 세탁본 — 상단 */}
-              <div className="flex min-h-0 flex-1 flex-col border-b border-border">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border">
                 <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-primary/8 border-b border-primary/15">
                   <div className="flex items-center gap-2">
                     <span className="size-2 rounded-full bg-primary inline-block" />
@@ -999,7 +1171,7 @@ export default function FinalEditorPage() {
                     {countChars(normalizeDisplayText(data.washedDraft ?? "")).toLocaleString()}자
                   </span>
                 </div>
-                <ScrollArea className="flex-1">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                   <div className="px-4 py-3.5">
                     <HighlightedText
                       text={normalizeDisplayText(data.washedDraft ?? "")}
@@ -1008,11 +1180,11 @@ export default function FinalEditorPage() {
                       className="text-[12.5px] leading-7 text-foreground select-none"
                     />
                   </div>
-                </ScrollArea>
+                </div>
               </div>
 
               {/* 원본 초안 — 하단 */}
-              <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-muted/30 border-b border-border/60">
                   <div className="flex items-center gap-2">
                     <span className="size-2 rounded-full bg-muted-foreground/60 inline-block" />
@@ -1022,7 +1194,7 @@ export default function FinalEditorPage() {
                     {countChars(normalizeDisplayText(data.originalDraft ?? "")).toLocaleString()}자
                   </span>
                 </div>
-                <ScrollArea className="flex-1">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                   <div className="px-4 py-3.5">
                     <HighlightedText
                       text={normalizeDisplayText(data.originalDraft ?? "")}
@@ -1031,7 +1203,7 @@ export default function FinalEditorPage() {
                       className="text-[12.5px] leading-7 text-foreground/70 select-none"
                     />
                   </div>
-                </ScrollArea>
+                </div>
               </div>
 
             </div>
