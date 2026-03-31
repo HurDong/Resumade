@@ -57,6 +57,7 @@ public class MotivationPromptStrategy implements PromptStrategy {
                 8. Do NOT use ceremonial openings like "안녕하세요", "저는 ~에 지원하게 된", or similar.
                 9. Do NOT write in bullet/list format unless explicitly requested.
                 10. Write in natural Korean cover-letter prose — the applicant's own reflective voice.
+                11. Keep the voice believable for a new-grad or junior applicant: emphasize grounded evidence, learning curve, and near-term contribution over grand strategic claims.
                 </Strict_Rules>
 
                 <Output_Format>

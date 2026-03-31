@@ -136,11 +136,13 @@ public class WorkspaceService {
 
         String query = (customQuery != null && !customQuery.isBlank()) ? customQuery : question.getTitle();
         List<Experience> allExperiences = experienceRepository.findAll();
+        QuestionCategory category = resolveQuestionCategory(question);
         return experienceVectorRetrievalService.search(
                 query,
                 3,
                 extractUsedExperienceIds(question, questionId, allExperiences),
-                buildSupportingQueries(question, query));
+                buildSupportingQueries(question, query),
+                category);
     }
 
     @Transactional
@@ -155,9 +157,10 @@ public class WorkspaceService {
 
         String company = question.getApplication().getCompanyName();
         String position = question.getApplication().getPosition();
-        String companyContext = buildApplicationResearchContext(question);
+        QuestionCategory category = resolveQuestionCategory(question);
+        String companyContext = buildApplicationResearchContext(question, category);
         List<Experience> allExperiences = experienceRepository.findAll();
-        String context = buildFilteredContext(question, questionId, allExperiences);
+        String context = buildFilteredContext(question, questionId, allExperiences, category);
         String others = buildOthersContext(question, questionId, allExperiences);
 
         List<TitleSuggestionResponse.TitleCandidate> candidates = buildTitleSuggestionCandidates(
@@ -253,7 +256,8 @@ public class WorkspaceService {
 
             String company = initialQuestion.getApplication().getCompanyName();
             String position = initialQuestion.getApplication().getPosition();
-            String companyContext = buildApplicationResearchContext(initialQuestion);
+            QuestionCategory category = resolveQuestionCategory(initialQuestion);
+            String companyContext = buildApplicationResearchContext(initialQuestion, category);
             String questionTitle = initialQuestion.getTitle();
             String currentInput = initialQuestion.getWashedKr() != null
                     ? initialQuestion.getWashedKr()
@@ -264,7 +268,7 @@ public class WorkspaceService {
 
             List<Experience> allExperiences = experienceRepository.findAll();
             String others = buildOthersContext(initialQuestion, questionId, allExperiences);
-            String context = buildFilteredContext(initialQuestion, questionId, allExperiences);
+            String context = buildFilteredContext(initialQuestion, questionId, allExperiences, category);
 
             paceProcessing();
             sendProgress(emitter, STAGE_DRAFT, "선택한 경험과 요청 사항을 반영해 초안을 다시 생성하고 있습니다. ✍️");
@@ -426,7 +430,6 @@ public class WorkspaceService {
             String company = initialQuestion.getApplication().getCompanyName();
             String position = initialQuestion.getApplication().getPosition();
             String questionTitle = initialQuestion.getTitle();
-            String companyContext = buildApplicationResearchContext(initialQuestion);
 
             sendComment(emitter, "flush buffer");
 
@@ -435,6 +438,7 @@ public class WorkspaceService {
             // ── [STEP 1] 문항 카테고리 분류 ──────────────────────────────────
             // 경량 LLM 호출로 문항 유형을 판별합니다. 실패 시 DEFAULT로 자동 fallback합니다.
             QuestionCategory category = questionClassifierService.classify(questionTitle);
+            String companyContext = buildApplicationResearchContext(initialQuestion, category);
             sendProgress(emitter, STAGE_RAG,
                     String.format("문항 유형 분석 완료 (%s). 맞춤 전략을 적용합니다. 🎯", category.getDisplayName()));
 
@@ -636,10 +640,11 @@ public class WorkspaceService {
             String company = question.getApplication().getCompanyName();
             String position = question.getApplication().getPosition();
             String questionTitle = question.getTitle();
-            String companyContext = buildApplicationResearchContext(question);
+            QuestionCategory category = resolveQuestionCategory(question);
+            String companyContext = buildApplicationResearchContext(question, category);
             List<Experience> allExperiences = experienceRepository.findAll();
             String others = buildOthersContext(question, questionId, allExperiences);
-            String context = buildFilteredContext(question, questionId, allExperiences);
+            String context = buildFilteredContext(question, questionId, allExperiences, category);
             draft = applyTitleLine(
                     draft,
                     resolveImprovedTitleLine(
@@ -736,10 +741,11 @@ public class WorkspaceService {
             }
 
             List<Experience> allExperiences = experienceRepository.findAll();
-            String context = buildFilteredContext(question, questionId, allExperiences);
+            QuestionCategory category = resolveQuestionCategory(question);
+            String context = buildFilteredContext(question, questionId, allExperiences, category);
             String company = question.getApplication().getCompanyName();
             String position = question.getApplication().getPosition();
-            String companyContext = buildApplicationResearchContext(question);
+            String companyContext = buildApplicationResearchContext(question, category);
             String others = buildOthersContext(question, questionId, allExperiences);
 
             sendComment(emitter, "flush buffer");
@@ -2036,10 +2042,26 @@ public class WorkspaceService {
                 : primary;
     }
 
+    private QuestionCategory resolveQuestionCategory(WorkspaceQuestion question) {
+        if (question == null) {
+            return QuestionCategory.DEFAULT;
+        }
+        return questionClassifierService.classify(safeTrim(question.getTitle()));
+    }
+
     private String buildApplicationResearchContext(WorkspaceQuestion question) {
+        return buildApplicationResearchContext(question, QuestionCategory.DEFAULT);
+    }
+
+    private String buildApplicationResearchContext(WorkspaceQuestion question, QuestionCategory category) {
         List<String> sections = new ArrayList<>();
 
-        sections.add(buildQuestionIntentContext(question));
+        sections.add(buildQuestionIntentContext(question, category));
+
+        String companyLens = buildCompanyWritingLensContext(question, category);
+        if (!companyLens.isBlank()) {
+            sections.add(companyLens);
+        }
 
         if (question.getApplication().getCompanyResearch() != null
                 && !question.getApplication().getCompanyResearch().isBlank()) {
@@ -2061,39 +2083,46 @@ public class WorkspaceService {
         return String.join("\n---\n", sections);
     }
 
-    private String buildQuestionIntentContext(WorkspaceQuestion question) {
+    private String buildQuestionIntentContext(WorkspaceQuestion question, QuestionCategory category) {
         String title = safeTrim(question.getTitle());
-        String normalized = title.toLowerCase();
+        QuestionCategory effectiveCategory = category != null ? category : QuestionCategory.DEFAULT;
 
-        String type = "JOB_FIT";
-        String primaryFocus = "?? ???, ?? ??, ?? ?? ??";
-        String weightingRule = "Use JD and company context as the primary rubric. Select evidence that directly proves role fit.";
+        String primaryFocus;
+        String weightingRule;
 
-        if (containsAny(normalized, "??", "???", "??", "??", "??", "??????",
-                "??", "??", "??", "teamwork", "collaboration", "communication", "conflict")) {
-            type = "COLLABORATION";
-            primaryFocus = "?? ??, ?? ??, ??????, ?? ?? ?? ??";
-            weightingRule = "Prioritize the questions collaboration intent first, then factual evidence, and use JD only as a secondary tie-back. Do not force a pure job-skill essay when the question is mainly about teamwork or conflict.";
-        } else if (containsAny(normalized, "??", "??", "???", "??", "??", "??", "??", "??",
-                "??", "trouble", "challenge", "problem", "failure")) {
-            type = "PROBLEM_SOLVING";
-            primaryFocus = "?? ??, ?? ??, ??, ?? ??, ??";
-            weightingRule = "Prioritize the questions problem-solving intent first. Use JD as supporting context only if it sharpens why the response matters for the role.";
-        } else if (containsAny(normalized, "??", "??", "??", "??", "??", "??", "??",
-                "learn", "growth", "develop")) {
-            type = "GROWTH";
-            primaryFocus = "?? ???, ?? ??, ??? ??, ??";
-            weightingRule = "Prioritize the growth narrative first. Use JD as a secondary bridge to show why that growth matters for the target role.";
-        } else if (containsAny(normalized, "????", "?", "? ??", "?? ??", "?? ?", "??",
-                "??", "motivation", "why our company", "future")) {
-            type = "MOTIVATION";
-            primaryFocus = "?? ?? ??, ?? ???, ?? ? ?? ??";
-            weightingRule = "Use company context and JD as the primary rubric. Connect concrete past evidence to why the company and role are a logical next step.";
-        } else if (containsAny(normalized, "??", "????", "??", "??", "??", "??", "??",
-                "value", "belief", "strength")) {
-            type = "VALUE_FIT";
-            primaryFocus = "???, ?? ??, ??? ??, ??? ?? ??";
-            weightingRule = "Prioritize the value or attitude asked by the question first. Use JD as a secondary alignment check rather than the main storyline.";
+        switch (effectiveCategory) {
+            case MOTIVATION -> {
+                primaryFocus = "company-choice logic, role-fit proof, and realistic near-term contribution";
+                weightingRule = "Use company and JD context as the primary rubric. Select past evidence only if it proves why this company and role are a logical next step now.";
+            }
+            case EXPERIENCE -> {
+                primaryFocus = "specific scope, technical judgment, verifiable action, and measurable outcome";
+                weightingRule = "Prioritize technical evidence first. Use JD as a matching lens rather than letting the answer drift into a generic project summary.";
+            }
+            case PROBLEM_SOLVING -> {
+                primaryFocus = "problem definition, root-cause depth, chosen solution, and reflective learning";
+                weightingRule = "Prioritize diagnostic depth and follow-through first. Use JD only as a secondary reason this problem-solving style matters for the role.";
+            }
+            case COLLABORATION -> {
+                primaryFocus = "role clarity, friction handling, interface alignment, and team outcome";
+                weightingRule = "Prioritize the team context and the applicant's specific contribution first. Do not force a pure technical-fit essay when the question is about collaboration.";
+            }
+            case GROWTH -> {
+                primaryFocus = "technical learning trigger, CS or deep-dive process, applied change, and stronger engineering standards";
+                weightingRule = "Prioritize the learning curve and applied technical growth first. Avoid vague self-development language and use JD only as a bridge to relevance.";
+            }
+            case CULTURE_FIT -> {
+                primaryFocus = "execution speed, customer or operational signal, bounded ownership, and culture fit";
+                weightingRule = "Prioritize proof of working style first: fast execution, validation, and user or business signal. Use company context to sharpen why that style fits here.";
+            }
+            case TREND_INSIGHT -> {
+                primaryFocus = "issue selection, company relevance, reasoned viewpoint, and practical implication";
+                weightingRule = "Use company context as the primary frame. Connect one concrete issue to the business or product direction and keep any personal anecdote short and credibility-building.";
+            }
+            default -> {
+                primaryFocus = "the question's dominant competency, factual proof, and role relevance";
+                weightingRule = "Infer the main evaluation intent from the question and use company context as a supporting rubric without forcing the answer into a generic template.";
+            }
         }
 
         return """
@@ -2104,9 +2133,49 @@ public class WorkspaceService {
                 Weighting rule: %s
                 """.formatted(
                 title.isBlank() ? "No question title provided." : title,
-                type,
+                effectiveCategory.name(),
                 primaryFocus,
                 weightingRule);
+    }
+
+    private String buildCompanyWritingLensContext(WorkspaceQuestion question, QuestionCategory category) {
+        if (question == null || question.getApplication() == null) {
+            return "";
+        }
+
+        String companyName = safeTrim(question.getApplication().getCompanyName()).toLowerCase();
+        String lens = "GENERAL_TECH";
+        String emphasis = "Favor evidence-first writing, concrete actions, and believable junior-level scope.";
+        String avoid = "Avoid generic passion statements, stack name-dropping, and unsupported grand business impact.";
+
+        if (containsAny(companyName, "토스", "비바리퍼블리카", "토스뱅크", "당근", "쿠팡", "toss", "daangn", "coupang")) {
+            lens = "PRODUCT_EXECUTION";
+            emphasis = "Emphasize customer inconvenience, fast iteration, MVP judgment, validation loops, and measurable movement in user or product signals.";
+            avoid = "Avoid long abstract mission statements or overly academic explanations that never reach user impact.";
+        } else if (containsAny(companyName, "네이버", "카카오", "라인", "라인플러스", "naver", "kakao", "line")) {
+            lens = "PLATFORM_DEPTH";
+            emphasis = "Emphasize technical depth, data flow, system structure, root-cause diagnosis, and careful engineering trade-offs.";
+            avoid = "Avoid shallow stack lists, vague growth language, or purely emotional motivation without technical grounding.";
+        } else if (containsAny(companyName, "삼성sds", "삼성 sds", "sk c&c", "sk cnc", "lgns", "lg cns")) {
+            lens = "ENTERPRISE_TRANSFORMATION";
+            emphasis = "Emphasize business context, reliability, cloud or AI adoption, operational stability, and a realistic long-term contribution arc.";
+            avoid = "Avoid startup-style slogan writing or trend commentary that is disconnected from enterprise execution and customer trust.";
+        }
+
+        if (category == QuestionCategory.GROWTH) {
+            emphasis += " For growth questions, favor CS fundamentals and deep-dive learning over generic self-development language.";
+        } else if (category == QuestionCategory.CULTURE_FIT) {
+            emphasis += " For culture-fit questions, prove the working style with one bounded execution episode instead of praising the company culture abstractly.";
+        } else if (category == QuestionCategory.TREND_INSIGHT) {
+            emphasis += " For trend-insight questions, connect one issue to the company's business direction rather than writing a broad opinion essay.";
+        }
+
+        return """
+                [Company Writing Lens]
+                Archetype: %s
+                Suggested emphasis: %s
+                Avoid: %s
+                """.formatted(lens, emphasis, avoid);
     }
 
     private boolean containsAny(String source, String... needles) {

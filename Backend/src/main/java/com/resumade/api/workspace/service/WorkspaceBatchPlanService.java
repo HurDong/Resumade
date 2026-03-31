@@ -9,6 +9,7 @@ import com.resumade.api.workspace.domain.Application;
 import com.resumade.api.workspace.domain.ApplicationRepository;
 import com.resumade.api.workspace.dto.BatchPlanRequest;
 import com.resumade.api.workspace.dto.BatchPlanResponse;
+import com.resumade.api.workspace.prompt.QuestionCategory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,20 +48,24 @@ public class WorkspaceBatchPlanService {
 
             <Step1_IntentClassification>
             Before assigning any experience, classify EACH question's core evaluation intent.
-            Use EXACTLY ONE tag from this list per question:
+            Use EXACTLY ONE tag from this shared taxonomy per question:
 
-              [도메인 관심도]   – evaluates passion for the industry/company domain (지원동기, 입사 후 포부)
-              [직무 하드스킬]   – evaluates technical depth and engineering judgment (기술 경험, 프로젝트)
-              [소프트스킬/협업] – evaluates communication, conflict resolution, teamwork
-              [직업윤리]        – evaluates values, integrity, failure/mistake handling
-              [성장/학습]       – evaluates self-awareness, learning agility, growth trajectory
+              MOTIVATION       – support motive, domain interest, company/role choice, join goal, near-term contribution
+              EXPERIENCE       – technical experience, project execution, engineering judgment, measurable outcome
+              PROBLEM_SOLVING  – root-cause analysis, challenge, troubleshooting, adaptation under constraint
+              COLLABORATION    – teamwork, conflict resolution, communication, alignment, documentation
+              GROWTH           – CS fundamentals, deep-dive learning, feedback acceptance, technical learning curve
+              CULTURE_FIT      – fast execution, MVP judgment, customer focus, experiment culture, ownership
+              TREND_INSIGHT    – industry/technology issue analysis, business implication, company relevance
+              DEFAULT          – only when none of the above clearly dominates
 
             Rules:
-            - If a question title mentions 지원동기, 관심, 입사 후 → tag [도메인 관심도]
-            - If a question title mentions 협업, 갈등, 팀, 소통 → tag [소프트스킬/협업]
-            - For [도메인 관심도] questions: NEVER lead with technical stack.
-              The answer must start from company domain interest, then bridge to your technical evidence.
-            - For [직업윤리] questions: NEVER use performance metrics as the main story. Use a values-driven narrative.
+            - If a question title is about 지원동기, 입사 후 포부, 회사/직무 선택 이유 → MOTIVATION.
+            - If it asks about 협업, 갈등, 조율, 팀 프로젝트 → COLLABORATION.
+            - If it asks about 특별한 노력, 학습, 기본기, 약점 보완, 기술적 성장 → GROWTH unless the core is one incident-level troubleshooting story.
+            - If it asks about 빠른 실행, 고객 반응, 실험, 적응, 새로운 방식 활용 → prefer CULTURE_FIT or PROBLEM_SOLVING depending on whether the emphasis is working style or diagnosis.
+            - If it asks about 최근 기술/산업/사회 이슈 견해 → TREND_INSIGHT.
+            - DEFAULT should be rare.
             Write the intentTag and a 1-sentence intentRationale for EVERY question before moving to Step 2.
             </Step1_IntentClassification>
 
@@ -78,7 +83,7 @@ public class WorkspaceBatchPlanService {
               ❌ "CodeArena에서의 성능 개선 경험"
 
             For EACH assignment, produce 1–3 experienceFacets (event-level strings).
-            If the question's intentTag is [도메인 관심도], the facet must point to a moment
+            If the question's intentTag is MOTIVATION, the facet must point to a moment
             where you realized alignment between your work and this company's business domain.
             </Step2_FacetMapping>
 
@@ -92,7 +97,7 @@ public class WorkspaceBatchPlanService {
               "검색 응답속도 95ms 단축 → 식품안전정보원의 국민 데이터 접근성과 신뢰도 직결"
               "결제 API 타임아웃 방어 로직 → 금융 서비스 SLA 달성과 고객 신뢰 유지에 직결"
 
-            If the question is [소프트스킬/협업], the bridge must connect the collaboration outcome
+            If the question is COLLABORATION, the bridge must connect the collaboration outcome
             to team velocity or product quality, not technical architecture.
             </Step3_DomainBridge>
 
@@ -127,6 +132,7 @@ public class WorkspaceBatchPlanService {
     private final ApplicationRepository applicationRepository;
     private final ExperienceRepository experienceRepository;
     private final ObjectMapper objectMapper;
+    private final QuestionClassifierService questionClassifierService;
 
     @Value("${openai.api.key:demo}")
     private String apiKey;
@@ -254,10 +260,12 @@ public class WorkspaceBatchPlanService {
     }
 
     private String formatQuestionBlock(BatchPlanRequest.QuestionSnapshot question) {
+        QuestionCategory category = resolveQuestionCategory(question);
         return """
                 [QUESTION]
                 questionId: %d
                 title: %s
+                shared category hint: %s
                 maxLength: %s
                 current user directive: %s
                 current strategy directive: %s
@@ -265,6 +273,7 @@ public class WorkspaceBatchPlanService {
                 """.formatted(
                 question.getQuestionId(),
                 safe(question.getTitle()),
+                category.name() + " (" + category.getDisplayName() + ")",
                 question.getMaxLength() == null ? "unknown" : question.getMaxLength(),
                 safe(snippet(question.getUserDirective(), 320)),
                 safe(snippet(question.getBatchStrategyDirective(), 320)),
@@ -381,18 +390,19 @@ public class WorkspaceBatchPlanService {
                     ? List.of("관련 경험 선택 필요")
                     : List.of(experienceTitles.get(index % experienceTitles.size()));
 
-            String intentTag = inferFallbackIntentTag(question.getTitle());
-            List<String> focusDetails = inferFallbackFocusDetails(question.getTitle(), experiences, index);
-            List<String> learningPoints = inferFallbackLearningPoints(question.getTitle());
+            QuestionCategory category = resolveQuestionCategory(question);
+            String intentTag = formatIntentTag(category);
+            List<String> focusDetails = inferFallbackFocusDetails(category, question.getTitle(), experiences, index);
+            List<String> learningPoints = inferFallbackLearningPoints(category);
             List<String> avoidDetails = List.of(
                     "다른 문항과 동일한 기술 결정 설명 반복 금지",
                     "다른 문항과 동일한 배운점 문장 반복 금지"
             );
-            String angle = inferFallbackAngle(question.getTitle());
+            String angle = inferFallbackAngle(category);
 
             BatchPlanAiAssignment stub = new BatchPlanAiAssignment();
             stub.questionIntentTag = intentTag;
-            stub.intentRationale = "Heuristic fallback: classified by keyword matching.";
+            stub.intentRationale = "Heuristic fallback: aligned to shared question category taxonomy.";
             stub.primaryExperiences = chosenExperiences;
             stub.experienceFacets = List.of();
             stub.domainBridge = "";
@@ -405,7 +415,7 @@ public class WorkspaceBatchPlanService {
                     .questionId(question.getQuestionId())
                     .questionTitle(question.getTitle())
                     .questionIntentTag(intentTag)
-                    .intentRationale("Heuristic fallback: classified by keyword matching.")
+                    .intentRationale("Heuristic fallback: aligned to shared question category taxonomy.")
                     .primaryExperiences(chosenExperiences)
                     .experienceFacets(List.of())
                     .domainBridge("")
@@ -419,11 +429,12 @@ public class WorkspaceBatchPlanService {
         }
 
         return BatchPlanResponse.builder()
-                .coverageSummary("문항별로 세부 기술과 배운점이 겹치지 않도록 기본 분산 전략을 적용했습니다.")
+                .coverageSummary("공유 카테고리 체계를 기준으로 문항 의도를 먼저 맞춘 뒤, 세부 기술과 배운점이 겹치지 않도록 기본 분산 전략을 적용했습니다.")
                 .globalGuardrails(List.of(
                         "같은 프로젝트 재사용은 허용하되 세부 기술 포인트는 분리",
                         "동일한 배운점과 결과 서술 반복 금지",
-                        "문항별 첫 문장 주장과 증거 축 분리"
+                        "문항별 첫 문장 주장과 증거 축 분리",
+                        "배치 미리보기와 실제 초안 생성이 같은 카테고리 체계를 사용하도록 정렬"
                 ))
                 .overlapValidation(BatchPlanResponse.OverlapValidation.builder()
                         .isClean(true).conflictPairs(List.of()).resolution("Heuristic fallback — no validation performed.").build())
@@ -432,76 +443,24 @@ public class WorkspaceBatchPlanService {
                 .build();
     }
 
-    private String inferFallbackIntentTag(String questionTitle) {
-        String normalized = safe(questionTitle).toLowerCase(Locale.ROOT);
-        if (isMotivationQuestion(normalized)) {
-            return "[도메인 관심도]";
+    private QuestionCategory resolveQuestionCategory(BatchPlanRequest.QuestionSnapshot question) {
+        if (question == null || question.getTitle() == null || question.getTitle().isBlank()) {
+            return QuestionCategory.DEFAULT;
         }
-        if (isCollaborationQuestion(normalized)) {
-            return "[소프트스킬/협업]";
-        }
-        if (isGrowthQuestion(normalized)) {
-            return "[성장/학습]";
-        }
-        if (isEthicsQuestion(normalized)) {
-            return "[직업윤리]";
-        }
-        if (isCapabilityQuestion(normalized)) {
-            return "[직무 하드스킬]";
-        }
-        return "[직무 하드스킬]";
+        return questionClassifierService.classify(question.getTitle());
     }
 
-    // ── Intent keyword helpers ────────────────────────────────────────────────
-
-    private boolean isMotivationQuestion(String normalized) {
-        return normalized.contains("지원동기")
-                || normalized.contains("지원 동기")
-                || normalized.contains("동기와")
-                || normalized.contains("동기를")
-                || normalized.contains("동기가")
-                || normalized.contains("입사 후")
-                || normalized.contains("입사후")
-                || normalized.contains("포부")
-                || normalized.contains("관심")
-                || normalized.contains("왜 지원");
+    private String formatIntentTag(QuestionCategory category) {
+        QuestionCategory effective = category != null ? category : QuestionCategory.DEFAULT;
+        return effective.name() + " | " + effective.getDisplayName();
     }
 
-    private boolean isCollaborationQuestion(String normalized) {
-        return normalized.contains("협업")
-                || normalized.contains("갈등")
-                || normalized.contains("팀워크")
-                || normalized.contains("팀 프로젝트")
-                || normalized.contains("소통")
-                || normalized.contains("커뮤니케이션");
-    }
-
-    private boolean isGrowthQuestion(String normalized) {
-        return normalized.contains("성장")
-                || normalized.contains("배운")
-                || normalized.contains("학습")
-                || normalized.contains("발전")
-                || normalized.contains("개선한");
-    }
-
-    private boolean isEthicsQuestion(String normalized) {
-        return normalized.contains("윤리")
-                || normalized.contains("실패")
-                || normalized.contains("어려움")
-                || normalized.contains("극복");
-    }
-
-    private boolean isCapabilityQuestion(String normalized) {
-        return normalized.contains("역량")
-                || normalized.contains("경험 및 경력")
-                || normalized.contains("직무수행")
-                || normalized.contains("수행계획")
-                || normalized.contains("보유한")
-                || normalized.contains("강점")
-                || normalized.contains("전문성");
-    }
-
-    private List<String> inferFallbackFocusDetails(String questionTitle, List<Experience> experiences, int index) {
+    private List<String> inferFallbackFocusDetails(
+            QuestionCategory category,
+            String questionTitle,
+            List<Experience> experiences,
+            int index
+    ) {
         List<String> candidates = new ArrayList<>();
         if (!experiences.isEmpty()) {
             Experience selected = experiences.get(index % experiences.size());
@@ -511,55 +470,44 @@ public class WorkspaceBatchPlanService {
             }
         }
 
-        String normalized = safe(questionTitle).toLowerCase(Locale.ROOT);
-        if (isCollaborationQuestion(normalized)) {
-            candidates.add("협업 과정에서 맡은 역할과 조율 방식");
-        } else if (isGrowthQuestion(normalized)) {
-            candidates.add("실패나 시행착오 뒤에 바뀐 판단 기준");
-        } else if (isMotivationQuestion(normalized)) {
-            candidates.add("지원 기업 도메인과 내 경험이 맞닿은 구체적 접점");
-        } else if (isCapabilityQuestion(normalized)) {
-            candidates.add("직무에서 즉시 발휘 가능한 기술 판단과 실행 이력");
+        switch (category != null ? category : QuestionCategory.DEFAULT) {
+            case MOTIVATION -> candidates.add("지원 기업 도메인과 내 경험이 맞닿은 구체적 접점");
+            case EXPERIENCE -> candidates.add("직무에서 즉시 발휘 가능한 기술 판단과 실행 이력");
+            case PROBLEM_SOLVING -> candidates.add("문제 원인 규명과 해결 방식의 차이를 보여주는 판단 근거");
+            case COLLABORATION -> candidates.add("협업 과정에서 맡은 역할과 조율 방식");
+            case GROWTH -> candidates.add("기술 이해 수준이 바뀐 계기와 적용 결과");
+            case CULTURE_FIT -> candidates.add("빠르게 실행하고 검증한 working style의 증거");
+            case TREND_INSIGHT -> candidates.add("회사 도메인과 연결되는 이슈 해석 관점");
+            default -> candidates.add("문항 의도에 맞는 핵심 증거 한 축");
         }
 
         return normalizeList(candidates).stream().limit(3).toList();
     }
 
-    private List<String> inferFallbackLearningPoints(String questionTitle) {
-        String normalized = safe(questionTitle).toLowerCase(Locale.ROOT);
-        if (isCollaborationQuestion(normalized)) {
-            return List.of("기술 설명을 팀 상황에 맞게 조정하는 능력");
-        }
-        if (isGrowthQuestion(normalized)) {
-            return List.of("문제 원인을 구조적으로 다시 보는 습관");
-        }
-        if (isMotivationQuestion(normalized)) {
-            return List.of("기술 선택을 사용자 가치와 연결하는 기준");
-        }
-        if (isCapabilityQuestion(normalized)) {
-            return List.of("기술 역량이 실제 비즈니스 임팩트로 이어진 경로");
-        }
-        return List.of("문제 해결 경험을 직무 역량으로 번역하는 시각");
+    private List<String> inferFallbackLearningPoints(QuestionCategory category) {
+        return switch (category != null ? category : QuestionCategory.DEFAULT) {
+            case MOTIVATION -> List.of("기술 선택을 사용자 가치와 연결하는 기준");
+            case EXPERIENCE -> List.of("기술 역량이 실제 비즈니스 임팩트로 이어진 경로");
+            case PROBLEM_SOLVING -> List.of("문제 해결 경험을 직무 역량으로 번역하는 시각");
+            case COLLABORATION -> List.of("기술 설명을 팀 상황에 맞게 조정하는 능력");
+            case GROWTH -> List.of("문제 원인을 구조적으로 다시 보는 습관");
+            case CULTURE_FIT -> List.of("빠르게 만들고 실제 신호로 검증하는 일하는 방식");
+            case TREND_INSIGHT -> List.of("기술 이슈를 회사 맥락으로 해석하는 관점");
+            default -> List.of("문항 의도에 맞는 증거를 선별하는 기준");
+        };
     }
 
-    private String inferFallbackAngle(String questionTitle) {
-        String normalized = safe(questionTitle).toLowerCase(Locale.ROOT);
-        if (isMotivationQuestion(normalized)) {
-            return "이 기업의 도메인과 내 경험이 맞닿은 접점에서 출발하는 지원동기 각도";
-        }
-        if (isCollaborationQuestion(normalized)) {
-            return "협업 과정에서 기술 판단과 조율 역량을 증명하는 각도";
-        }
-        if (isGrowthQuestion(normalized)) {
-            return "시행착오를 통해 판단 기준이 정교해진 성장 각도";
-        }
-        if (isEthicsQuestion(normalized)) {
-            return "가치 판단이 흔들린 순간 내린 결정과 그 기준을 보여주는 각도";
-        }
-        if (isCapabilityQuestion(normalized)) {
-            return "보유 역량과 실행 이력을 직무 수행 청사진으로 연결하는 역량 어필 각도";
-        }
-        return "핵심 문제를 해결하며 만든 판단과 실행의 차별점을 보여주는 각도";
+    private String inferFallbackAngle(QuestionCategory category) {
+        return switch (category != null ? category : QuestionCategory.DEFAULT) {
+            case MOTIVATION -> "이 기업의 도메인과 내 경험이 맞닿은 접점에서 출발하는 지원동기 각도";
+            case EXPERIENCE -> "보유 역량과 실행 이력을 직무 수행 청사진으로 연결하는 역량 어필 각도";
+            case PROBLEM_SOLVING -> "핵심 문제를 해결하며 만든 판단과 실행의 차별점을 보여주는 각도";
+            case COLLABORATION -> "협업 과정에서 기술 판단과 조율 역량을 증명하는 각도";
+            case GROWTH -> "시행착오를 통해 판단 기준이 정교해진 성장 각도";
+            case CULTURE_FIT -> "빠르게 실행하고 검증한 방식이 조직 문화와 맞닿는 각도";
+            case TREND_INSIGHT -> "기술·산업 이슈를 회사의 현재 사업 맥락과 연결해 해석하는 각도";
+            default -> "문항 의도에 맞는 핵심 증거를 한 축으로 세우는 각도";
+        };
     }
 
     private String buildDirectivePrefix(BatchPlanAiAssignment a) {
@@ -570,12 +518,16 @@ public class WorkspaceBatchPlanService {
         String intentTag = safe(a.questionIntentTag);
         if (!"None".equals(intentTag)) {
             lines.add("Question intent: " + intentTag);
-            if (intentTag.contains("도메인 관심도")) {
+            if (intentTag.contains("MOTIVATION")) {
                 lines.add("→ Start from domain/company interest. Do NOT open with tech stack.");
-            } else if (intentTag.contains("직업윤리")) {
-                lines.add("→ Focus on values and judgment. Do NOT use performance metrics as the main story.");
-            } else if (intentTag.contains("소프트스킬")) {
+            } else if (intentTag.contains("COLLABORATION")) {
                 lines.add("→ Lead with human dynamics and interpersonal process, then connect to outcome.");
+            } else if (intentTag.contains("GROWTH")) {
+                lines.add("→ Focus on technical learning curve and deep-dive growth, not generic self-development language.");
+            } else if (intentTag.contains("CULTURE_FIT")) {
+                lines.add("→ Prove working style with one execution-and-validation episode rather than abstract culture praise.");
+            } else if (intentTag.contains("TREND_INSIGHT")) {
+                lines.add("→ Connect one concrete issue to this company's business direction. Avoid broad newspaper-style commentary.");
             }
         }
 

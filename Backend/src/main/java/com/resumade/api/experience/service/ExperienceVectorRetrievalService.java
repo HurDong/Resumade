@@ -64,8 +64,12 @@ public class ExperienceVectorRetrievalService {
             QuestionCategory.PROBLEM_SOLVING,  new CategoryFieldBoost(0,  12, 0,   4,  0,  10, 0),
             // 협업/리더십: 팀/역할 맥락 중심 — role, description 강화
             QuestionCategory.COLLABORATION,    new CategoryFieldBoost(0,   8, 0,   0, 12,   4, 0),
-            // 성장: 변화/학습 서사 중심 — description, rawContent 강화
-            QuestionCategory.GROWTH,           new CategoryFieldBoost(0,   8, 4,   0,  0,   8, 0),
+            // 성장: CS/딥다이브형 학습 — description, techStack, rawContent 강화
+            QuestionCategory.GROWTH,           new CategoryFieldBoost(0,  10, 8,   2,  0,  10, 0),
+            // 조직문화 적합성: 실행·검증·오너십 — metrics, description, role 강화
+            QuestionCategory.CULTURE_FIT,      new CategoryFieldBoost(0,   8, 4,  12,  6,   8, 0),
+            // 기술/산업 인사이트: 도메인 키워드와 관련 경험 맥락 강조
+            QuestionCategory.TREND_INSIGHT,    new CategoryFieldBoost(4,  10, 8,   4,  0,  10, 0),
             // 기본: 부스팅 없음
             QuestionCategory.DEFAULT,          new CategoryFieldBoost(0,   0, 0,   0,  0,   0, 0)
     );

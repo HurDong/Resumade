@@ -32,7 +32,7 @@ public class DefaultPromptStrategy implements PromptStrategy {
 
                 <Question_Intent>
                 Analyze the question and infer the primary intent:
-                - Is it asking about motivation, experience, problem-solving, collaboration, or growth?
+                - Is it asking about motivation, experience, problem-solving, collaboration, technical deep-dive growth, culture-fit execution, or trend insight?
                 - Identify the 1-2 most important competencies the evaluator is looking for.
                 - Weight the answer toward proving those competencies with concrete evidence.
                 </Question_Intent>
@@ -48,6 +48,7 @@ public class DefaultPromptStrategy implements PromptStrategy {
                 8. Natural Korean narrative — not a bullet list or resume format.
                 9. No parenthetical labels like (역할: ...) or [배경], [행동], [성과].
                 10. No ceremonial openings.
+                11. Keep the voice believable for a new-grad or junior applicant. Avoid inflated senior-level claims such as org-wide strategic ownership unless the supplied evidence truly supports them.
                 </Strict_Rules>
 
                 <Output_Format>

@@ -46,6 +46,7 @@ public class CollaborationPromptStrategy implements PromptStrategy {
                 6. Clearly distinguish "what the team did" from "what I specifically did".
                 7. No parenthetical labels. No bullet lists unless requested.
                 8. Write in natural Korean narrative voice.
+                9. Keep the voice believable for a junior applicant: emphasize coordination, documentation, interface alignment, and feedback acceptance over inflated leadership claims.
                 </Strict_Rules>
 
                 <Output_Format>

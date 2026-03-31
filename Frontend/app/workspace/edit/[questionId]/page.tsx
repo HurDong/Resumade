@@ -1158,7 +1158,7 @@ export default function FinalEditorPage() {
               </div>
 
               {/* 세탁본 — 상단 */}
-              <div className="flex min-h-0 flex-1 flex-col border-b border-border">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border">
                 <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-primary/8 border-b border-primary/15">
                   <div className="flex items-center gap-2">
                     <span className="size-2 rounded-full bg-primary inline-block" />
@@ -1171,7 +1171,7 @@ export default function FinalEditorPage() {
                     {countChars(normalizeDisplayText(data.washedDraft ?? "")).toLocaleString()}자
                   </span>
                 </div>
-                <ScrollArea className="flex-1">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                   <div className="px-4 py-3.5">
                     <HighlightedText
                       text={normalizeDisplayText(data.washedDraft ?? "")}
@@ -1180,11 +1180,11 @@ export default function FinalEditorPage() {
                       className="text-[12.5px] leading-7 text-foreground select-none"
                     />
                   </div>
-                </ScrollArea>
+                </div>
               </div>
 
               {/* 원본 초안 — 하단 */}
-              <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-muted/30 border-b border-border/60">
                   <div className="flex items-center gap-2">
                     <span className="size-2 rounded-full bg-muted-foreground/60 inline-block" />
@@ -1194,7 +1194,7 @@ export default function FinalEditorPage() {
                     {countChars(normalizeDisplayText(data.originalDraft ?? "")).toLocaleString()}자
                   </span>
                 </div>
-                <ScrollArea className="flex-1">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                   <div className="px-4 py-3.5">
                     <HighlightedText
                       text={normalizeDisplayText(data.originalDraft ?? "")}
@@ -1203,7 +1203,7 @@ export default function FinalEditorPage() {
                       className="text-[12.5px] leading-7 text-foreground/70 select-none"
                     />
                   </div>
-                </ScrollArea>
+                </div>
               </div>
 
             </div>

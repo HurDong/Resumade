@@ -56,6 +56,7 @@ public class ProblemSolvingPromptStrategy implements PromptStrategy {
                 8. Do NOT fabricate problem details or metrics not found in experience context.
                 9. Write in the applicant's own reflective voice — not an evaluator's summarization.
                 10. No parenthetical labels. No bullet enumerations unless explicitly requested.
+                11. Keep the scope credible for a junior applicant: reveal depth of diagnosis and follow-through without overstating senior ownership.
                 </Strict_Rules>
 
                 <Output_Format>

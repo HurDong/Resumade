@@ -56,6 +56,7 @@ public class ExperiencePromptStrategy implements PromptStrategy {
                 8. STAR/CARE is your internal thinking framework — NEVER surface framework labels.
                 9. Avoid vague openers. Start with the concrete claim.
                 10. Write in natural Korean narrative — not a resume bullet list.
+                11. Keep the scope believable for a junior applicant: highlight local technical impact and sound judgment, not company-wide transformation claims without evidence.
                 </Strict_Rules>
 
                 <Output_Format>

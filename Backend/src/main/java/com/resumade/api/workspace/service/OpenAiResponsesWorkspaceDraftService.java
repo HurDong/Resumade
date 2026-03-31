@@ -24,15 +24,15 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
     private static final double ESTIMATED_OUTPUT_TOKENS_PER_VISIBLE_CHAR = 1.45;
     private static final int OUTPUT_TOKEN_JSON_OVERHEAD = 96;
     private static final int MIN_OUTPUT_TOKEN_BUDGET = 700;
-    private static final double GENERATE_REASONING_RESERVE_RATIO = 0.55;
-    private static final double REFINE_REASONING_RESERVE_RATIO = 0.45;
-    private static final double EXPAND_REASONING_RESERVE_RATIO = 0.30;
+    private static final double GENERATE_REASONING_RESERVE_RATIO = 1.20;
+    private static final double REFINE_REASONING_RESERVE_RATIO = 1.00;
+    private static final double EXPAND_REASONING_RESERVE_RATIO = 1.00;
     private static final int GENERATE_REASONING_RESERVE_FLOOR = 480;
     private static final int REFINE_REASONING_RESERVE_FLOOR = 400;
     private static final int EXPAND_REASONING_RESERVE_FLOOR = 280;
-    private static final int GENERATE_REASONING_RESERVE_CEILING = 960;
-    private static final int REFINE_REASONING_RESERVE_CEILING = 820;
-    private static final int EXPAND_REASONING_RESERVE_CEILING = 560;
+    private static final int GENERATE_REASONING_RESERVE_CEILING = 2400;
+    private static final int REFINE_REASONING_RESERVE_CEILING = 2000;
+    private static final int EXPAND_REASONING_RESERVE_CEILING = 2000;
     private static final int SHORT_OUTPUT_RETRY_LIMIT = 2;
     private static final double MIN_ACCEPTABLE_DRAFT_RATIO = 0.875;
 
@@ -47,7 +47,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Use only facts and technologies supported by the supplied experience context or explicit user directive. Do not invent experience, metrics, or unlisted tools.
             Read the Question Intent block first and obey its weighting rule.
             Treat company context, JD insight, and raw JD as the primary role-fit rubric only when the Question Intent block indicates job-fit or motivation is primary.
-            If the Question Intent block indicates collaboration, growth, value-fit, or problem-solving is primary, prioritize that question intent first and use JD only as a secondary alignment layer.
+            If the Question Intent block indicates collaboration, growth, culture-fit, trend-insight, or problem-solving is primary, prioritize that question intent first and use JD only as a secondary alignment layer.
             Identify the most relevant 1-2 competencies, attitudes, or collaboration signals implied by the combined Question Intent and JD context and make the answer prove them with evidence.
             If the explicit user directive says to foreground, suppress, or avoid certain experiences, roles, or technologies, follow that directive over retrieved-context emphasis.
             Treat the supplied "other questions" context as a hard anti-overlap constraint, not a soft suggestion.
@@ -66,6 +66,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Do not narrate the answer like an outside evaluator with phrases equivalent to 'this case shows' or 'this experience demonstrates'; write in the applicant's own reflective voice.
             Prioritize natural Korean self-introduction prose over visibly neat structure.
             Do not drift into a promise-heavy future essay without enough evidence from past actions.
+            Keep the voice believable for a new-grad or junior applicant: emphasize learning agility, bounded ownership, and interview-verifiable local impact over inflated senior-level claims.
             For shorter answers, focus on one or two role-critical strengths rather than sounding broad.
             Avoid repeating the same project story already used in other questions unless necessary.
             Never exceed the hard character limit. Count every visible character, including spaces, punctuation, brackets, English letters, numbers, and line breaks, as 1.
@@ -86,7 +87,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Use only facts and technologies supported by the supplied experience context, current draft, or explicit user directive. Do not invent experience, metrics, or unlisted tools.
             Read the Question Intent block first and obey its weighting rule.
             Treat company context, JD insight, and raw JD as the primary role-fit rubric only when the Question Intent block indicates job-fit or motivation is primary.
-            If the Question Intent block indicates collaboration, growth, value-fit, or problem-solving is primary, prioritize that question intent first and use JD only as a secondary alignment layer.
+            If the Question Intent block indicates collaboration, growth, culture-fit, trend-insight, or problem-solving is primary, prioritize that question intent first and use JD only as a secondary alignment layer.
             Identify the most relevant 1-2 competencies, attitudes, or collaboration signals implied by the combined Question Intent and JD context and make the answer prove them with evidence.
             If the explicit user directive says to foreground, suppress, or avoid certain experiences, roles, or technologies, follow that directive over retrieved-context emphasis.
             Treat the supplied "other questions" context as a hard anti-overlap constraint, not a soft suggestion.
@@ -105,6 +106,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Do not narrate the answer like an outside evaluator with phrases equivalent to 'this case shows' or 'this experience demonstrates'; write in the applicant's own reflective voice.
             Prioritize natural Korean self-introduction prose over visibly neat structure.
             Do not drift into a promise-heavy future essay without enough evidence from past actions.
+            Keep the voice believable for a new-grad or junior applicant: emphasize learning agility, bounded ownership, and interview-verifiable local impact over inflated senior-level claims.
             For shorter answers, focus on one or two role-critical strengths rather than sounding broad.
             Avoid repeating the same project story already used in other questions unless necessary.
             Never exceed the hard character limit. Count every visible character, including spaces, punctuation, brackets, English letters, numbers, and line breaks, as 1.
@@ -127,7 +129,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Use only facts and technologies supported by the supplied experience context, current draft, or explicit user directive. Do not invent experience, metrics, or unlisted tools.
             Read the Question Intent block first and obey its weighting rule.
             Treat company context, JD insight, and raw JD as the primary role-fit rubric only when the Question Intent block indicates job-fit or motivation is primary.
-            If the Question Intent block indicates collaboration, growth, value-fit, or problem-solving is primary, prioritize that question intent first and use JD only as a secondary alignment layer.
+            If the Question Intent block indicates collaboration, growth, culture-fit, trend-insight, or problem-solving is primary, prioritize that question intent first and use JD only as a secondary alignment layer.
             Identify the most relevant 1-2 competencies, attitudes, or collaboration signals implied by the combined Question Intent and JD context and make the answer prove them with evidence.
             If the explicit user directive says to foreground, suppress, or avoid certain experiences, roles, or technologies, follow that directive over retrieved-context emphasis.
             Treat the supplied "other questions" context as a hard anti-overlap constraint, not a soft suggestion.
@@ -146,6 +148,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Do not narrate the answer like an outside evaluator with phrases equivalent to 'this case shows' or 'this experience demonstrates'; write in the applicant's own reflective voice.
             Prioritize natural Korean self-introduction prose over visibly neat structure.
             Do not drift into a promise-heavy future essay without enough evidence from past actions.
+            Keep the voice believable for a new-grad or junior applicant: emphasize learning agility, bounded ownership, and interview-verifiable local impact over inflated senior-level claims.
             Never summarize, compress, or weaken already strong factual sentences.
             Never exceed the hard character limit. Count every visible character, including spaces, punctuation, brackets, English letters, numbers, and line breaks, as 1.
             If the prompt asks for a minimum length, anything below that minimum is a failed draft unless blocked by the hard limit.
@@ -179,7 +182,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             - If the user directive conflicts with retrieved-context emphasis, follow the user directive unless it would require inventing facts beyond the directive
             - Read the Question Intent block first and obey its weighting rule
             - Use company context, JD insight, and raw JD as the primary rubric only when the Question Intent block indicates job-fit or motivation is primary
-            - If the Question Intent block indicates collaboration, growth, value-fit, or problem-solving is primary, prioritize that intent first and use JD as a secondary tie-back
+            - If the Question Intent block indicates collaboration, growth, culture-fit, trend-insight, or problem-solving is primary, prioritize that intent first and use JD as a secondary tie-back
             - Infer the most relevant 1-2 competencies, attitudes, or collaboration signals from the combined Question Intent and JD context and center the answer on proving them
             - If the retrieved experience is weakly related to those priorities, reshape the answer toward stronger evidence rather than writing a generic story
             - Treat the "other questions" block as a hard anti-overlap constraint
@@ -235,7 +238,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             - If the user directive conflicts with retrieved-context emphasis, follow the user directive unless it would require inventing facts beyond the directive
             - Read the Question Intent block first and obey its weighting rule
             - Use company context, JD insight, and raw JD as the primary rubric only when the Question Intent block indicates job-fit or motivation is primary
-            - If the Question Intent block indicates collaboration, growth, value-fit, or problem-solving is primary, prioritize that intent first and use JD as a secondary tie-back
+            - If the Question Intent block indicates collaboration, growth, culture-fit, trend-insight, or problem-solving is primary, prioritize that intent first and use JD as a secondary tie-back
             - Infer the most relevant 1-2 competencies, attitudes, or collaboration signals from the combined Question Intent and JD context and revise the current draft to prove them more clearly
             - Treat the "other questions" block as a hard anti-overlap constraint
             - Project-title overlap across questions is allowed only when the detailed topic is different
@@ -290,7 +293,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             - If the user directive conflicts with retrieved-context emphasis, follow the user directive unless it would require inventing facts beyond the directive
             - Read the Question Intent block first and obey its weighting rule
             - Use company context, JD insight, and raw JD as the primary rubric only when the Question Intent block indicates job-fit or motivation is primary
-            - If the Question Intent block indicates collaboration, growth, value-fit, or problem-solving is primary, prioritize that intent first and use JD as a secondary tie-back
+            - If the Question Intent block indicates collaboration, growth, culture-fit, trend-insight, or problem-solving is primary, prioritize that intent first and use JD as a secondary tie-back
             - Infer the most relevant 1-2 competencies, attitudes, or collaboration signals from the combined Question Intent and JD context and revise the current draft to prove them more clearly
             - Treat the "other questions" block as a hard anti-overlap constraint
             - Project-title overlap across questions is allowed only when the detailed topic is different
