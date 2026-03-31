@@ -20,7 +20,7 @@ export default function DashboardPage() {
         <div className="flex h-screen min-h-0 flex-col">
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6">
             <h1 className="text-lg font-semibold tracking-tight">
-              {view === "kanban" ? "채용 파이프라인" : "채용 캘린더"}
+              {view === "kanban" ? "채용 파이프라인" : "지원 일정 캘린더"}
             </h1>
 
             {/* 뷰 토글 */}
