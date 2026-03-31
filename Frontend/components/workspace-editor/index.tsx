@@ -1,8 +1,10 @@
-import { useEffect } from "react"
+import { useCallback, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import dynamic from "next/dynamic"
 import { Skeleton } from "@/components/ui/skeleton"
 import { WorkspaceSelector } from "./workspace-selector"
 import { useWorkspaceStore } from "@/lib/store/workspace-store"
+import { writeLastWorkspaceContext } from "@/lib/workspace/last-workspace-context"
 
 interface WorkspaceEditorProps {
   applicationId?: string
@@ -40,13 +42,105 @@ const TranslationPanel = dynamic(
 )
 
 export function WorkspaceEditor({ applicationId, initialQuestionDbId }: WorkspaceEditorProps) {
-  const { fetchApplicationData } = useWorkspaceStore()
+  const router = useRouter()
+  const {
+    fetchApplicationData,
+    questions,
+    activeQuestionId,
+    setActiveQuestionId,
+  } = useWorkspaceStore()
 
   useEffect(() => {
     if (applicationId) {
       fetchApplicationData(applicationId, initialQuestionDbId)
     }
   }, [applicationId, initialQuestionDbId, fetchApplicationData])
+
+  const activeQuestion = questions.find((question) => question.id === activeQuestionId) ?? questions[0]
+
+  useEffect(() => {
+    if (!applicationId) return
+
+    writeLastWorkspaceContext({
+      applicationId,
+      questionDbId: activeQuestion?.dbId ?? null,
+    })
+  }, [activeQuestion?.dbId, applicationId])
+
+  const handleWorkspaceExit = useCallback(() => {
+    router.push("/")
+  }, [router])
+
+  useEffect(() => {
+    if (!applicationId) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return
+
+      const activeElement = document.activeElement
+      const isDialogActive =
+        activeElement instanceof HTMLElement && activeElement.closest('[role="dialog"]')
+
+      if (isDialogActive) return
+
+      const isEditable =
+        activeElement instanceof HTMLElement &&
+        (activeElement.tagName === "INPUT" ||
+          activeElement.tagName === "TEXTAREA" ||
+          activeElement.isContentEditable)
+
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        if (activeQuestion?.dbId) {
+          event.preventDefault()
+          router.push(`/workspace/edit/${activeQuestion.dbId}`)
+        }
+        return
+      }
+
+      if (
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        /^[1-9]$/.test(event.key)
+      ) {
+        if (isEditable) return
+
+        const targetQuestion = questions[Number(event.key) - 1]
+        if (!targetQuestion || targetQuestion.id === activeQuestionId) return
+
+        event.preventDefault()
+        setActiveQuestionId(targetQuestion.id)
+        return
+      }
+
+      if (event.key !== "Escape") return
+
+      if (isEditable) {
+        event.preventDefault()
+        if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
+          const caret = activeElement.selectionEnd ?? activeElement.selectionStart ?? 0
+          activeElement.setSelectionRange(caret, caret)
+        }
+        activeElement.blur()
+        return
+      }
+
+      event.preventDefault()
+      handleWorkspaceExit()
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [
+    activeQuestion?.dbId,
+    activeQuestionId,
+    applicationId,
+    handleWorkspaceExit,
+    questions,
+    router,
+    setActiveQuestionId,
+  ])
 
   if (!applicationId) {
     return <WorkspaceSelector />

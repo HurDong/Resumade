@@ -50,6 +50,7 @@ import {
   type QuestionNavItem,
   type SpellCorrection,
 } from "@/lib/api/final-editor"
+import { writeLastWorkspaceContext } from "@/lib/workspace/last-workspace-context"
 
 // ── 편집 액션 정의 ───────────────────────────────────────────────────────────
 const editActions = [
@@ -103,6 +104,17 @@ function snapToWordBoundaries(text: string, start: number, end: number): { start
 function isValidSelection(text: string): boolean {
   const trimmed = text.trim()
   return (trimmed.length >= 10 && trimmed.includes(" ")) || trimmed.length >= 20
+}
+
+function isEditableTarget(target: EventTarget | null): target is HTMLElement {
+  if (!(target instanceof HTMLElement)) return false
+
+  const tagName = target.tagName
+  return (
+    tagName === "INPUT" ||
+    tagName === "TEXTAREA" ||
+    target.isContentEditable
+  )
 }
 
 // ── Diff 유틸 ────────────────────────────────────────────────────────────────
@@ -449,6 +461,15 @@ export default function FinalEditorPage() {
     return () => clearInterval(id)
   }, [])
 
+  useEffect(() => {
+    if (!data?.applicationId) return
+
+    writeLastWorkspaceContext({
+      applicationId: String(data.applicationId),
+      questionDbId: questionId,
+    })
+  }, [data?.applicationId, questionId])
+
   const relativeTime = useMemo(() => {
     if (!lastSavedAt) return null
     const diffSec = Math.floor((Date.now() - lastSavedAt.getTime()) / 1000)
@@ -650,6 +671,108 @@ export default function FinalEditorPage() {
       router.push("/workspace")
     }
   }
+
+  const blurActiveEditor = useCallback(() => {
+    const activeElement = document.activeElement
+
+    if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
+      const caret = activeElement.selectionEnd ?? activeElement.selectionStart ?? 0
+      activeElement.setSelectionRange(caret, caret)
+      activeElement.blur()
+    } else if (activeElement instanceof HTMLElement) {
+      activeElement.blur()
+    }
+
+    clearActiveHighlight()
+    setSelection(null)
+  }, [clearActiveHighlight])
+
+  const handleEscapeShortcut = useCallback(() => {
+    const activeElement = document.activeElement
+    const isDialogActive =
+      activeElement instanceof HTMLElement && activeElement.closest('[role="dialog"]')
+
+    if (isDialogActive) return
+
+    if (isEditableTarget(activeElement)) {
+      blurActiveEditor()
+      return
+    }
+
+    if (selection) {
+      setSelection(null)
+      clearActiveHighlight()
+      return
+    }
+
+    if (diffView) {
+      setDiffView(null)
+      return
+    }
+
+    if (spellCorrections !== null) {
+      setSpellCorrections(null)
+      return
+    }
+
+    if (showQuestion) {
+      setShowQuestion(false)
+      return
+    }
+
+    handleComplete()
+  }, [
+    blurActiveEditor,
+    clearActiveHighlight,
+    diffView,
+    handleComplete,
+    selection,
+    showQuestion,
+    spellCorrections,
+  ])
+
+  const handleDigitShortcut = useCallback(
+    (digit: string) => {
+      if (siblings.length < 2) return
+
+      const activeElement = document.activeElement
+      const isDialogActive =
+        activeElement instanceof HTMLElement && activeElement.closest('[role="dialog"]')
+
+      if (isDialogActive || isEditableTarget(activeElement)) return
+
+      const targetIndex = Number(digit)
+      const target = siblings.find((item) => item.index === targetIndex)
+      if (!target || target.id === questionId) return
+
+      void navigateToQuestion(target.id)
+    },
+    [navigateToQuestion, questionId, siblings],
+  )
+
+  useEffect(() => {
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return
+
+      if (event.key === "Escape") {
+        handleEscapeShortcut()
+        return
+      }
+
+      if (
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        /^[1-9]$/.test(event.key)
+      ) {
+        handleDigitShortcut(event.key)
+      }
+    }
+
+    window.addEventListener("keydown", handleWindowKeyDown)
+    return () => window.removeEventListener("keydown", handleWindowKeyDown)
+  }, [handleDigitShortcut, handleEscapeShortcut])
 
   // ── 로딩 / 에러 ──────────────────────────────────────────────────────────
   if (isLoading) return <LoadingScreen />
