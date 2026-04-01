@@ -190,6 +190,14 @@ public class WorkspaceService {
     }
 
     @Transactional
+    public WorkspaceQuestion updateCategory(Long questionId, QuestionCategory category) {
+        WorkspaceQuestion question = questionRepository.findById(questionId)
+                .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
+        question.setCategory(category);
+        return questionRepository.save(question);
+    }
+
+    @Transactional
     public WorkspaceQuestion applyTitleSuggestion(Long questionId, String requestedTitleLine) {
         WorkspaceQuestion question = questionRepository.findById(questionId)
                 .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
@@ -891,6 +899,9 @@ public class WorkspaceService {
     }
 
     private String preferredQuestionDraft(WorkspaceQuestion question) {
+        if (question.getFinalText() != null && !question.getFinalText().isBlank()) {
+            return question.getFinalText();
+        }
         if (question.getWashedKr() != null && !question.getWashedKr().isBlank()) {
             return question.getWashedKr();
         }
@@ -2045,6 +2056,11 @@ public class WorkspaceService {
     private QuestionCategory resolveQuestionCategory(WorkspaceQuestion question) {
         if (question == null) {
             return QuestionCategory.DEFAULT;
+        }
+        // 유저가 직접 지정한 카테고리가 있으면 AI 분류 없이 즉시 반환
+        if (question.getCategory() != null) {
+            log.info("QuestionCategory: using user-set category={} for questionId={}", question.getCategory(), question.getId());
+            return question.getCategory();
         }
         return questionClassifierService.classify(safeTrim(question.getTitle()));
     }

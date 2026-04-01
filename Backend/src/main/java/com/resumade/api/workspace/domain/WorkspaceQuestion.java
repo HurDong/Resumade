@@ -1,6 +1,7 @@
 package com.resumade.api.workspace.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.resumade.api.workspace.prompt.QuestionCategory;
 import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
@@ -74,6 +75,11 @@ public class WorkspaceQuestion {
     @Lob
     @Column(length = 16777215)
     private String titleCandidatesJson;
+
+    /** 유저가 직접 지정한 문항 카테고리. null이면 AI 자동 분류를 사용합니다. */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 50)
+    private QuestionCategory category;
 
     @CreatedDate
     @Column(updatable = false)

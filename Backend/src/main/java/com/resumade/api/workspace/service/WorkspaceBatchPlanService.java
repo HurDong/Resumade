@@ -447,6 +447,10 @@ public class WorkspaceBatchPlanService {
         if (question == null || question.getTitle() == null || question.getTitle().isBlank()) {
             return QuestionCategory.DEFAULT;
         }
+        // 유저가 직접 지정한 카테고리가 있으면 AI 분류 없이 즉시 반환
+        if (question.getCategory() != null) {
+            return question.getCategory();
+        }
         return questionClassifierService.classify(question.getTitle());
     }
 

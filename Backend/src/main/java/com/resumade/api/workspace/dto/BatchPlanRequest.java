@@ -1,5 +1,6 @@
 package com.resumade.api.workspace.dto;
 
+import com.resumade.api.workspace.prompt.QuestionCategory;
 import lombok.Data;
 
 import java.util.List;
@@ -18,5 +19,7 @@ public class BatchPlanRequest {
         private String batchStrategyDirective;
         private String content;
         private String washedKr;
+        /** 유저가 직접 지정한 카테고리. null이면 AI 자동 분류 사용 */
+        private QuestionCategory category;
     }
 }
