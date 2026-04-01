@@ -11,20 +11,17 @@ import {
   Loader2,
   PenTool,
   Search,
-  Settings2,
 } from "lucide-react"
 
 import {
   CommandDialog,
   CommandEmpty,
   CommandGroup,
-  CommandInput,
   CommandItem,
   CommandList,
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command"
-import { readLastWorkspaceContext } from "@/lib/workspace/last-workspace-context"
 
 type PaletteAction = {
   id: string
@@ -44,6 +41,7 @@ type PaletteApplication = {
   questionId: number | null
 }
 
+// 사이드바 순서와 동일: 대시보드 → 스펙 라이브러리 → 경험 보관소
 const ROOT_ACTIONS: PaletteAction[] = [
   {
     id: "dashboard",
@@ -54,28 +52,20 @@ const ROOT_ACTIONS: PaletteAction[] = [
     icon: LayoutDashboard,
   },
   {
+    id: "library",
+    label: "스펙 라이브러리",
+    description: "자격 & 이력 관리",
+    href: "/settings",
+    keywords: ["library", "spec", "portfolio", "스펙", "설정"],
+    icon: Library,
+  },
+  {
     id: "vault",
     label: "경험 보관소",
     description: "경험 업로드와 검색 화면으로 이동",
     href: "/vault",
     keywords: ["vault", "experience", "rag", "경험"],
     icon: Archive,
-  },
-  {
-    id: "settings",
-    label: "설정",
-    description: "프로필과 환경 설정으로 이동",
-    href: "/settings",
-    keywords: ["settings", "profile", "설정", "프로필"],
-    icon: Settings2,
-  },
-  {
-    id: "library",
-    label: "스펙 라이브러리",
-    description: "프로필 라이브러리로 이동",
-    href: "/settings",
-    keywords: ["library", "spec", "portfolio", "스펙"],
-    icon: Library,
   },
 ]
 
@@ -126,17 +116,21 @@ export function GlobalCommandPalette() {
   const [open, setOpen] = React.useState(false)
   const [mode, setMode] = React.useState<PaletteMode>("root")
   const [selectedValue, setSelectedValue] = React.useState("")
-  const [lastWorkspaceContext, setLastWorkspaceContext] = React.useState(() =>
-    readLastWorkspaceContext(),
-  )
   const [applications, setApplications] = React.useState<PaletteApplication[]>([])
   const [isLoadingApplications, setIsLoadingApplications] = React.useState(false)
 
+  // "/" 키로 팔레트 열기 (인풋·텍스트에어리어·에디터 안에서는 무시)
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return
 
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      const target = event.target as Element
+      const isInputField =
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        (target as HTMLElement).isContentEditable
+
+      if (event.key === "/" && !isInputField) {
         event.preventDefault()
         setOpen((current) => !current)
       }
@@ -156,26 +150,18 @@ export function GlobalCommandPalette() {
       return
     }
 
-    setLastWorkspaceContext(readLastWorkspaceContext())
-
     let cancelled = false
     setIsLoadingApplications(true)
 
     fetchPaletteApplications()
       .then((items) => {
-        if (!cancelled) {
-          setApplications(items)
-        }
+        if (!cancelled) setApplications(items)
       })
       .catch(() => {
-        if (!cancelled) {
-          setApplications([])
-        }
+        if (!cancelled) setApplications([])
       })
       .finally(() => {
-        if (!cancelled) {
-          setIsLoadingApplications(false)
-        }
+        if (!cancelled) setIsLoadingApplications(false)
       })
 
     return () => {
@@ -206,37 +192,18 @@ export function GlobalCommandPalette() {
     [router],
   )
 
-  const currentWorkspaceHref = lastWorkspaceContext
-    ? `/workspace/${lastWorkspaceContext.applicationId}${
-        lastWorkspaceContext.questionDbId != null
-          ? `?questionId=${lastWorkspaceContext.questionDbId}`
-          : ""
-      }`
-    : "/workspace"
-
-  const currentEditHref =
-    lastWorkspaceContext?.questionDbId != null
-      ? `/workspace/edit/${lastWorkspaceContext.questionDbId}`
-      : "/workspace"
-
   const paletteMeta = {
     root: {
       title: "빠른 이동",
       description: "이동할 화면이나 작업 흐름을 선택합니다.",
-      placeholder: "페이지나 기능을 검색하세요...",
-      empty: "검색 결과가 없습니다.",
     },
     workspace: {
       title: "작업공간 선택",
       description: "이어서 작성할 공고를 고르면 해당 작업공간으로 이동합니다.",
-      placeholder: "회사명이나 직무로 공고를 찾으세요...",
-      empty: "선택할 공고가 없습니다.",
     },
     edit: {
       title: "다림질실 선택",
       description: "진행 중인 공고를 고르면 해당 문항의 다림질실로 이동합니다.",
-      placeholder: "회사명이나 직무로 공고를 찾으세요...",
-      empty: "이동할 다림질실 대상이 없습니다.",
     },
   }[mode]
 
@@ -253,14 +220,15 @@ export function GlobalCommandPalette() {
           ? `/workspace/edit/${application.questionId}`
           : `/workspace/${application.id}`,
     }))
-  }, [applications])
+  }, [applications, mode])
 
   const defaultSelectionValue = React.useMemo(() => {
     if (mode === "workspace" || mode === "edit") {
       return selectionItems[0]?.selectedValue ?? "palette-back 뒤로 back root"
     }
-
-    return "palette-last-workspace 마지막 작업 작업공간 recent workspace"
+    // 루트 모드: 첫 번째 페이지(대시보드) 기본 선택
+    const first = ROOT_ACTIONS[0]
+    return `palette-page-${first.id} ${[first.label, first.description, ...first.keywords].join(" ")}`
   }, [mode, selectionItems])
 
   React.useEffect(() => {
@@ -278,46 +246,42 @@ export function GlobalCommandPalette() {
       commandProps={{
         value: selectedValue,
         onValueChange: setSelectedValue,
+        shouldFilter: false,
+        // 인풋 없이도 키보드 포커스를 받을 수 있도록
+        tabIndex: 0,
       }}
     >
-      <CommandInput key={mode} placeholder={paletteMeta.placeholder} />
-      <CommandList>
+      <CommandList className="max-h-[480px]">
         {mode === "root" ? (
           <>
-            <CommandEmpty>{paletteMeta.empty}</CommandEmpty>
-            <CommandGroup heading="최근 작업">
-              <CommandItem
-                value="palette-last-workspace 마지막 작업 작업공간 recent workspace"
-                onSelect={() => handleSelect(currentWorkspaceHref)}
-              >
-                <PenTool className="size-4" />
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate font-medium">마지막 작업 작업공간</span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    마지막으로 열었던 공고와 문항의 작업공간으로 이동합니다
-                  </span>
-                </div>
-                <CommandShortcut>최근</CommandShortcut>
-              </CommandItem>
-              <CommandItem
-                value="palette-last-edit 마지막 작업 다림질실 recent final editor"
-                onSelect={() => handleSelect(currentEditHref)}
-                disabled={lastWorkspaceContext?.questionDbId == null}
-              >
-                <FilePenLine className="size-4" />
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate font-medium">마지막 작업 다림질실</span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    마지막으로 열었던 문항의 다림질실로 바로 이동합니다
-                  </span>
-                </div>
-                <CommandShortcut>
-                  {lastWorkspaceContext?.questionDbId != null ? "최근" : "없음"}
-                </CommandShortcut>
-              </CommandItem>
+            {/* 사이드바 순서: 대시보드 → 스펙 라이브러리 → 경험 보관소 */}
+            <CommandGroup heading="페이지">
+              {ROOT_ACTIONS.map((action) => {
+                const Icon = action.icon
+                const isCurrent = pathname === action.href
+
+                return (
+                  <CommandItem
+                    key={action.id}
+                    value={`palette-page-${action.id} ${[action.label, action.description, ...action.keywords].join(" ")}`}
+                    onSelect={() => handleSelect(action.href)}
+                    disabled={isCurrent}
+                  >
+                    <Icon className="size-4" />
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="truncate font-medium">{action.label}</span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {action.description}
+                      </span>
+                    </div>
+                    <CommandShortcut>{isCurrent ? "현재" : "이동"}</CommandShortcut>
+                  </CommandItem>
+                )
+              })}
             </CommandGroup>
             <CommandSeparator />
-            <CommandGroup heading="작성 흐름">
+            {/* 작업공간 / 다림질실 진입 (사이드바의 "작업공간" 항목) */}
+            <CommandGroup heading="작업">
               <CommandItem
                 value="palette-open-workspace 작업공간 select workspace application"
                 onSelect={() => setMode("workspace")}
@@ -346,35 +310,18 @@ export function GlobalCommandPalette() {
               </CommandItem>
             </CommandGroup>
             <CommandSeparator />
-            <CommandGroup heading="페이지">
-              {ROOT_ACTIONS.map((action) => {
-                const Icon = action.icon
-                const isCurrent = pathname === action.href
-
-                return (
-                  <CommandItem
-                    key={action.id}
-                    value={`palette-page-${action.id} ${[action.label, action.description, ...action.keywords].join(" ")}`}
-                    onSelect={() => handleSelect(action.href)}
-                    disabled={isCurrent}
-                  >
-                    <Icon className="size-4" />
-                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate font-medium">{action.label}</span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {action.description}
-                      </span>
-                    </div>
-                    <CommandShortcut>{isCurrent ? "현재" : "이동"}</CommandShortcut>
-                  </CommandItem>
-                )
-              })}
+            <CommandGroup heading="사용 방법">
+              <CommandItem disabled>
+                <Search className="size-4" />
+                <span>언제든 빠른 이동을 열 수 있습니다</span>
+                <CommandShortcut>/</CommandShortcut>
+              </CommandItem>
             </CommandGroup>
           </>
         ) : (
           <>
             <CommandEmpty>
-              {isLoadingApplications ? "공고를 불러오는 중입니다..." : paletteMeta.empty}
+              {isLoadingApplications ? "공고를 불러오는 중입니다..." : "이동할 공고가 없습니다."}
             </CommandEmpty>
             <CommandGroup heading="탐색">
               <CommandItem value="palette-back 뒤로 back root" onSelect={() => setMode("root")}>
@@ -397,9 +344,7 @@ export function GlobalCommandPalette() {
                     value={`${application.commandValue} ${application.company} ${application.position} ${mode}`}
                     onSelect={() =>
                       handleSelect(
-                        mode === "workspace"
-                          ? application.workspaceHref
-                          : application.editHref,
+                        mode === "workspace" ? application.workspaceHref : application.editHref,
                       )
                     }
                   >
@@ -421,16 +366,16 @@ export function GlobalCommandPalette() {
                 ))
               )}
             </CommandGroup>
+            <CommandSeparator />
+            <CommandGroup heading="사용 방법">
+              <CommandItem disabled>
+                <Search className="size-4" />
+                <span>언제든 빠른 이동을 열 수 있습니다</span>
+                <CommandShortcut>/</CommandShortcut>
+              </CommandItem>
+            </CommandGroup>
           </>
         )}
-        <CommandSeparator />
-        <CommandGroup heading="사용 방법">
-          <CommandItem disabled>
-            <Search className="size-4" />
-            <span>언제든 빠른 이동을 열 수 있습니다</span>
-            <CommandShortcut>Ctrl/⌘ K</CommandShortcut>
-          </CommandItem>
-        </CommandGroup>
       </CommandList>
     </CommandDialog>
   )

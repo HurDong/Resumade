@@ -77,11 +77,11 @@ export function WorkspaceEditor({ applicationId, initialQuestionDbId }: Workspac
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return
 
-      const activeElement = document.activeElement
-      const isDialogActive =
-        activeElement instanceof HTMLElement && activeElement.closest('[role="dialog"]')
+      // 팔레트·모달 등 다이얼로그가 열려 있으면 워크스페이스 단축키를 무시
+      const isDialogOpen = !!document.querySelector('[role="dialog"][data-state="open"]')
+      if (isDialogOpen) return
 
-      if (isDialogActive) return
+      const activeElement = document.activeElement
 
       const isEditable =
         activeElement instanceof HTMLElement &&
