@@ -31,7 +31,9 @@ export type {
   TitleSuggestion,
   TitleSuggestionResponse,
   WorkspaceQuestion,
+  QuestionCategory,
 } from "@/lib/workspace/types";
+export { QUESTION_CATEGORY_LABELS } from "@/lib/workspace/types";
 
 export interface QuestionBatchState {
   isProcessing: boolean;
@@ -119,6 +121,7 @@ interface WorkspaceState {
   batchGenerate: (options?: { useDirective?: boolean }) => Promise<void>;
   cancelBatch: () => void;
   cancelSingle: () => void;
+  updateQuestionCategory: (questionDbId: number, category: import("@/lib/workspace/types").QuestionCategory | null) => Promise<void>;
 }
 
 async function ensureQuestionPersisted(state: WorkspaceState) {
@@ -783,6 +786,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             batchStrategyDirective: question.batchStrategyDirective ?? "",
             content: question.content,
             washedKr: question.washedKr,
+            category: question.category ?? null,
           })),
         }),
       });
@@ -908,6 +912,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       progressHistory: appendProgressHistory(state.progressHistory, "생성이 취소되었습니다."),
       processingIssue: null,
       processingIssueSeverity: null,
+    }));
+  },
+
+  updateQuestionCategory: async (questionDbId, category) => {
+    const response = await fetch(toApiUrl(`/api/workspace/questions/${questionDbId}/category`), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category }),
+    });
+    if (!response.ok) throw new Error("카테고리 업데이트에 실패했습니다.");
+    set((state) => ({
+      questions: state.questions.map((q) =>
+        q.dbId === questionDbId ? { ...q, category } : q
+      ),
     }));
   },
 }));

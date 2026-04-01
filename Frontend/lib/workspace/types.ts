@@ -1,3 +1,24 @@
+export type QuestionCategory =
+  | "MOTIVATION"
+  | "EXPERIENCE"
+  | "PROBLEM_SOLVING"
+  | "COLLABORATION"
+  | "GROWTH"
+  | "CULTURE_FIT"
+  | "TREND_INSIGHT"
+  | "DEFAULT"
+
+export const QUESTION_CATEGORY_LABELS: Record<QuestionCategory, string> = {
+  MOTIVATION: "지원동기 및 목표",
+  EXPERIENCE: "직무 경험 및 성과",
+  PROBLEM_SOLVING: "문제 해결 및 도전",
+  COLLABORATION: "협업 및 리더십",
+  GROWTH: "CS/딥다이브 기반 성장",
+  CULTURE_FIT: "조직문화 및 실행력",
+  TREND_INSIGHT: "기술/산업 인사이트",
+  DEFAULT: "기타",
+}
+
 export interface Mistranslation {
   id: string;
   issueType?: string;
@@ -48,6 +69,8 @@ export interface WorkspaceQuestion {
   mistranslations: Mistranslation[];
   aiReviewReport: AiReviewReport | null;
   isCompleted: boolean;
+  /** 유저가 직접 지정한 카테고리. null이면 AI 자동 분류 사용 */
+  category: QuestionCategory | null;
 }
 
 export interface BatchPlanAssignment {

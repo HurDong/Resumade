@@ -45,6 +45,7 @@ export function mapStoredQuestion(question: any): WorkspaceQuestion {
     mistranslations: parseStoredMistranslations(question.mistranslations),
     aiReviewReport: parseStoredAiReview(question.aiReview),
     isCompleted: !!question.completed || !!question.isCompleted,
+    category: question.category ?? null,
   };
 }
 

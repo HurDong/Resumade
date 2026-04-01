@@ -38,7 +38,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { type PipelineStage, useWorkspaceStore, type QuestionBatchState } from "@/lib/store/workspace-store"
+import { type PipelineStage, useWorkspaceStore, type QuestionBatchState, type QuestionCategory, QUESTION_CATEGORY_LABELS } from "@/lib/store/workspace-store"
 import { parseCompanyResearch } from "@/lib/application-intelligence"
 import { countResumeCharacters } from "@/lib/text/resume-character-count"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -53,6 +53,12 @@ import {
 import { ApplicationInfoQuickCopyDialog } from "@/components/application-info/application-info-quick-copy-dialog"
 import { BatchPlanDialog } from "@/components/workspace-editor/batch-plan-dialog"
 import type { TitleSuggestion } from "@/lib/workspace/types"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { getDisplayedWashedText } from "@/lib/workspace/translation-panel-helpers"
 
 // Helper for standard character length (including spaces)
@@ -540,6 +546,7 @@ export function ContextPanel() {
     batchGenerate,
     cancelBatch,
     cancelSingle,
+    updateQuestionCategory,
   } = useWorkspaceStore()
 
   const activeQuestion = questions.find(q => q.id === activeQuestionId) || questions[0]
@@ -936,6 +943,42 @@ export function ContextPanel() {
                 placeholder="새로운 문항을 입력해 주세요..."
                 rows={2}
               />
+            )}
+            {activeQuestion.dbId && (
+              <div className="pt-1">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 bg-primary/5 border-primary/15 text-primary/70">
+                      <span>{activeQuestion.category ? QUESTION_CATEGORY_LABELS[activeQuestion.category] : "카테고리 미지정"}</span>
+                      <ChevronDown className="size-3 opacity-60" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-52">
+                    {(Object.keys(QUESTION_CATEGORY_LABELS) as QuestionCategory[]).map((cat) => (
+                      <DropdownMenuItem
+                        key={cat}
+                        className={`text-xs font-medium cursor-pointer ${activeQuestion.category === cat ? "text-primary font-bold bg-primary/5" : ""}`}
+                        onClick={() => updateQuestionCategory(activeQuestion.dbId!, cat)}
+                      >
+                        {QUESTION_CATEGORY_LABELS[cat]}
+                        {activeQuestion.category === cat && <Check className="ml-auto size-3" />}
+                      </DropdownMenuItem>
+                    ))}
+                    {activeQuestion.category && (
+                      <>
+                        <div className="border-t my-1" />
+                        <DropdownMenuItem
+                          className="text-xs text-muted-foreground cursor-pointer"
+                          onClick={() => updateQuestionCategory(activeQuestion.dbId!, null)}
+                        >
+                          <X className="size-3 mr-1.5 opacity-50" />
+                          AI 자동 분류로 초기화
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
           </div>
 
