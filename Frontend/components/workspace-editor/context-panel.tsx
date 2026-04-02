@@ -83,6 +83,17 @@ const STRUCTURED_DIRECTIVE_CONFIG: { key: Exclude<DirectiveFieldKey, "note">; la
   { key: "avoid", label: "제외", placeholder: "열정, 팀플레이어 같은 추상어 제거" },
 ];
 
+const CATEGORY_DOT_COLORS: Record<string, string> = {
+  MOTIVATION:      "bg-blue-400",
+  EXPERIENCE:      "bg-emerald-400",
+  PROBLEM_SOLVING: "bg-orange-400",
+  COLLABORATION:   "bg-violet-400",
+  GROWTH:          "bg-cyan-400",
+  CULTURE_FIT:     "bg-pink-400",
+  TREND_INSIGHT:   "bg-indigo-400",
+  DEFAULT:         "bg-muted-foreground/30",
+}
+
 const DEFAULT_DIRECTIVE_FIELDS: DirectiveFields = {
   tone: "",
   focus: "",
@@ -945,33 +956,36 @@ export function ContextPanel() {
               />
             )}
             {activeQuestion.dbId && (
-              <div className="pt-1">
+              <div className="pt-2">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 bg-primary/5 border-primary/15 text-primary/70">
-                      <span>{activeQuestion.category ? QUESTION_CATEGORY_LABELS[activeQuestion.category] : "카테고리 미지정"}</span>
-                      <ChevronDown className="size-3 opacity-60" />
+                    <button className="group inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-all hover:bg-muted/60 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/20">
+                      <span className={`size-1.5 shrink-0 rounded-full transition-transform group-hover:scale-125 ${CATEGORY_DOT_COLORS[activeQuestion.category ?? "DEFAULT"]}`} />
+                      {activeQuestion.category ? QUESTION_CATEGORY_LABELS[activeQuestion.category] : "카테고리 미지정"}
+                      <ChevronDown className="size-2.5 opacity-40 transition-opacity group-hover:opacity-70" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-52">
+                  <DropdownMenuContent align="start" className="w-56 p-1.5">
+                    <p className="px-2 pb-1.5 pt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">문항 카테고리</p>
                     {(Object.keys(QUESTION_CATEGORY_LABELS) as QuestionCategory[]).map((cat) => (
                       <DropdownMenuItem
                         key={cat}
-                        className={`text-xs font-medium cursor-pointer ${activeQuestion.category === cat ? "text-primary font-bold bg-primary/5" : ""}`}
+                        className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium cursor-pointer transition-colors ${activeQuestion.category === cat ? "bg-primary/5 text-primary font-semibold" : "text-foreground/80"}`}
                         onClick={() => updateQuestionCategory(activeQuestion.dbId!, cat)}
                       >
+                        <span className={`size-1.5 shrink-0 rounded-full ${CATEGORY_DOT_COLORS[cat]}`} />
                         {QUESTION_CATEGORY_LABELS[cat]}
-                        {activeQuestion.category === cat && <Check className="ml-auto size-3" />}
+                        {activeQuestion.category === cat && <Check className="ml-auto size-3 text-primary" />}
                       </DropdownMenuItem>
                     ))}
                     {activeQuestion.category && (
                       <>
-                        <div className="border-t my-1" />
+                        <div className="my-1.5 border-t border-border/60" />
                         <DropdownMenuItem
-                          className="text-xs text-muted-foreground cursor-pointer"
+                          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground cursor-pointer"
                           onClick={() => updateQuestionCategory(activeQuestion.dbId!, null)}
                         >
-                          <X className="size-3 mr-1.5 opacity-50" />
+                          <X className="size-3 opacity-40" />
                           AI 자동 분류로 초기화
                         </DropdownMenuItem>
                       </>
