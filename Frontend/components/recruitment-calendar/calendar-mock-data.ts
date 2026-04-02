@@ -20,7 +20,7 @@ export interface CalendarEvent {
 // 이벤트 타입 라벨/색상 매핑
 export const eventTypeConfig: Record<
   CalendarEventType,
-  { label: string; color: string; bgColor: string; borderColor: string; dotColor: string }
+  { label: string; color: string; bgColor: string; borderColor: string; dotColor: string; chipAccent: string; chipBg: string }
 > = {
   deadline: {
     label: "서류 마감",
@@ -28,6 +28,8 @@ export const eventTypeConfig: Record<
     bgColor: "bg-blue-50",
     borderColor: "border-blue-200",
     dotColor: "bg-blue-500",
+    chipAccent: "border-l-blue-500",
+    chipBg: "bg-blue-100/80",
   },
   codingTest: {
     label: "코딩테스트",
@@ -35,6 +37,8 @@ export const eventTypeConfig: Record<
     bgColor: "bg-violet-50",
     borderColor: "border-violet-200",
     dotColor: "bg-violet-500",
+    chipAccent: "border-l-violet-500",
+    chipBg: "bg-violet-100/80",
   },
   aptitude: {
     label: "인적성검사",
@@ -42,6 +46,8 @@ export const eventTypeConfig: Record<
     bgColor: "bg-emerald-50",
     borderColor: "border-emerald-200",
     dotColor: "bg-emerald-500",
+    chipAccent: "border-l-emerald-500",
+    chipBg: "bg-emerald-100/80",
   },
   interview: {
     label: "면접",
@@ -49,6 +55,8 @@ export const eventTypeConfig: Record<
     bgColor: "bg-amber-50",
     borderColor: "border-amber-200",
     dotColor: "bg-amber-500",
+    chipAccent: "border-l-amber-500",
+    chipBg: "bg-amber-100/80",
   },
 }
 
