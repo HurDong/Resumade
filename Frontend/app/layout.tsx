@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { GlobalCommandPalette } from '@/components/global-command-palette'
 import { ThemeProvider } from '@/components/theme-provider'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from 'sonner'
 import './globals.css'
 
@@ -31,8 +32,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
-          <GlobalCommandPalette />
+          <TooltipProvider delayDuration={300}>
+            {children}
+            <GlobalCommandPalette />
+          </TooltipProvider>
           <Toaster position="top-center" richColors />
         </ThemeProvider>
         <Analytics />
