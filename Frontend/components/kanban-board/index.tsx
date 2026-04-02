@@ -201,7 +201,6 @@ export function KanbanBoard() {
   const handleCloseSheet = () => {
     setIsSheetOpen(false)
     setSelectedApplication(null)
-    void fetchApplications()
   }
 
   const handleDeleteApplication = async (id: string) => {
