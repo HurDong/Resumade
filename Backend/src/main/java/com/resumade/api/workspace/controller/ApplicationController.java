@@ -12,6 +12,7 @@ import com.resumade.api.workspace.dto.JdAnalysisResponse;
 import com.resumade.api.workspace.service.CompanyResearchService;
 import com.resumade.api.workspace.service.JdAnalysisService;
 import com.resumade.api.workspace.service.PdfTextExtractorService;
+import com.resumade.api.workspace.service.QuestionImageParserService;
 import com.resumade.api.workspace.service.WorkspaceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
@@ -43,6 +44,7 @@ public class ApplicationController {
     private final PdfTextExtractorService pdfTextExtractorService;
     private final CompanyResearchService companyResearchService;
     private final WorkspaceService workspaceService;
+    private final QuestionImageParserService questionImageParserService;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     @GetMapping("/questions/{id}/rag")
@@ -317,5 +319,47 @@ public class ApplicationController {
         }
         questionRepository.delete(question);
         return ResponseEntity.ok().build();
+    }
+
+    // ── 스크린샷 → 문항 파싱 (저장하지 않고 미리보기용 결과만 반환) ──────────────────
+    @PostMapping("/{applicationId}/questions/parse-image")
+    public List<QuestionImageParserService.ParsedQuestion> parseQuestionsFromImage(
+            @PathVariable Long applicationId,
+            @RequestParam("image") org.springframework.web.multipart.MultipartFile file
+    ) throws java.io.IOException, InterruptedException {
+        // applicationId 존재 검증
+        applicationRepository.findById(applicationId).orElseThrow();
+        String mimeType = file.getContentType() != null ? file.getContentType() : "image/png";
+        log.info("Parsing questions from image: applicationId={}, size={}, type={}", applicationId, file.getSize(), mimeType);
+        return questionImageParserService.parseFromImage(file.getBytes(), mimeType);
+    }
+
+    // ── 파싱된 문항 일괄 저장 ────────────────────────────────────────────────────────
+    @Transactional
+    @PostMapping("/{applicationId}/questions/bulk")
+    public List<Map<String, Object>> bulkAddQuestions(
+            @PathVariable Long applicationId,
+            @RequestBody List<QuestionEntry> questions
+    ) {
+        Application app = applicationRepository.findById(applicationId).orElseThrow();
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        questions.stream()
+                .filter(q -> q.getTitle() != null && !q.getTitle().isBlank())
+                .forEach(q -> {
+                    WorkspaceQuestion wq = WorkspaceQuestion.builder()
+                            .title(q.getTitle().strip())
+                            .maxLength(q.getMaxLength() != null ? q.getMaxLength() : 1000)
+                            .build();
+                    app.addQuestion(wq);
+                    questionRepository.save(wq);
+                    result.add(Map.of(
+                            "id", wq.getId(),
+                            "title", wq.getTitle(),
+                            "maxLength", wq.getMaxLength()
+                    ));
+                });
+        applicationRepository.save(app);
+        log.info("Bulk added {} questions to applicationId={}", result.size(), applicationId);
+        return result;
     }
 }

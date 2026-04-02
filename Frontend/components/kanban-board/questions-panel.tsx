@@ -1,21 +1,25 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
+import { motion, AnimatePresence } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
 import {
   CheckCircle2,
   ExternalLink,
+  ImageUp,
   Loader2,
   MoreVertical,
   PenLine,
   Plus,
   Trash2,
+  X,
 } from "lucide-react"
 import {
   Dialog,
@@ -32,6 +36,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { type Application } from "@/lib/mock-data"
+
+type ParsedQuestion = { title: string; maxLength: number | null }
 
 export function QuestionsPanel({
   application,
@@ -56,6 +62,119 @@ export function QuestionsPanel({
     title: "",
     maxLength: 1000,
   })
+
+  // ── 스크린샷 파싱 상태 ──────────────────────────────────────────────────
+  const [isImportOpen, setIsImportOpen] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const [importImage, setImportImage] = useState<File | null>(null)
+  const [importPreviewUrl, setImportPreviewUrl] = useState<string | null>(null)
+  const [isParsing, setIsParsing] = useState(false)
+  const [parsedQuestions, setParsedQuestions] = useState<ParsedQuestion[]>([])
+  const [isSavingBulk, setIsSavingBulk] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleImportFileSelect = (file: File) => {
+    setImportImage(file)
+    setImportPreviewUrl(URL.createObjectURL(file))
+    setParsedQuestions([])
+  }
+
+  const handleDrop = useCallback((event: React.DragEvent) => {
+    event.preventDefault()
+    setIsDragging(false)
+    const file = event.dataTransfer.files[0]
+    if (file && file.type.startsWith("image/")) {
+      handleImportFileSelect(file)
+    }
+  }, [])
+
+  const handleParseImage = async () => {
+    if (!importImage) return
+    setIsParsing(true)
+    setParsedQuestions([])
+    try {
+      const formData = new FormData()
+      formData.append("image", importImage)
+      const response = await fetch(
+        `/api/applications/${application.id}/questions/parse-image`,
+        { method: "POST", body: formData }
+      )
+      if (!response.ok) throw new Error("파싱 실패")
+      const data: ParsedQuestion[] = await response.json()
+      setParsedQuestions(data)
+    } catch {
+      alert("이미지에서 문항을 추출하지 못했습니다. 스크린샷을 확인해 주세요.")
+    } finally {
+      setIsParsing(false)
+    }
+  }
+
+  const handleBulkSave = async () => {
+    if (parsedQuestions.length === 0) return
+    setIsSavingBulk(true)
+    try {
+      const response = await fetch(
+        `/api/applications/${application.id}/questions/bulk`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            parsedQuestions.map((q) => ({
+              title: q.title,
+              maxLength: q.maxLength ?? 1000,
+            }))
+          ),
+        }
+      )
+      if (!response.ok) throw new Error("저장 실패")
+      const saved = await response.json()
+      if (onUpdateApplication) {
+        onUpdateApplication({
+          questions: [
+            ...application.questions,
+            ...saved.map((q: { id: number; title: string; maxLength: number }) => ({
+              id: q.id.toString(),
+              title: q.title,
+              maxLength: q.maxLength,
+              currentLength: 0,
+              content: "",
+              isCompleted: false,
+            })),
+          ],
+        })
+      } else {
+        onRefresh()
+      }
+      setIsImportOpen(false)
+      setImportImage(null)
+      setImportPreviewUrl(null)
+      setParsedQuestions([])
+    } catch {
+      alert("문항 저장에 실패했습니다.")
+    } finally {
+      setIsSavingBulk(false)
+    }
+  }
+
+  const handleImportPaste = (event: React.ClipboardEvent) => {
+    const items = event.clipboardData?.items
+    if (!items) return
+    for (let i = 0; i < items.length; i++) {
+      if (!items[i].type.includes("image")) continue
+      const file = items[i].getAsFile()
+      if (!file) continue
+      handleImportFileSelect(file)
+      return
+    }
+  }
+
+  const closeImportDialog = () => {
+    setIsImportOpen(false)
+    setImportImage(null)
+    setImportPreviewUrl(null)
+    setParsedQuestions([])
+    setIsParsing(false)
+  }
 
   const handleAdd = async () => {
     if (!newQuestion.title.trim()) return
@@ -211,14 +330,25 @@ export function QuestionsPanel({
             여기서는 프론트에 먼저 반영하고, 시트를 닫을 때 다시 백엔드 기준으로 동기화합니다.
           </p>
         </div>
-        <Button
-          size="sm"
-          className="h-9 shrink-0 gap-1.5 px-4 shadow-sm"
-          onClick={() => setIsAddOpen(true)}
-        >
-          <Plus className="size-4" />
-          문항 추가
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-9 gap-1.5 px-3 shadow-sm"
+            onClick={() => setIsImportOpen(true)}
+          >
+            <ImageUp className="size-4" />
+            스크린샷 가져오기
+          </Button>
+          <Button
+            size="sm"
+            className="h-9 gap-1.5 px-4 shadow-sm"
+            onClick={() => setIsAddOpen(true)}
+          >
+            <Plus className="size-4" />
+            문항 추가
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -441,6 +571,156 @@ export function QuestionsPanel({
               {isSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
               문항 등록
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── 스크린샷으로 문항 가져오기 다이얼로그 ── */}
+      <Dialog open={isImportOpen} onOpenChange={closeImportDialog}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl sm:max-w-2xl" onPaste={handleImportPaste}>
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">스크린샷으로 문항 가져오기</DialogTitle>
+            <DialogDescription className="text-muted-foreground/80">
+              자소설닷컴 등 채용 사이트의 문항 스크린샷을 올리면 AI가 자동으로 파싱합니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            {/* 이미지 업로드 영역 */}
+            {!importPreviewUrl ? (
+              <div
+                className={`relative flex min-h-[200px] cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed transition-colors duration-150 ${
+                  isDragging
+                    ? "border-primary bg-primary/10"
+                    : "border-muted-foreground/30 bg-muted/5 hover:border-primary/50 hover:bg-primary/5"
+                }`}
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+              >
+                <ImageUp className="size-10 text-muted-foreground/50" />
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-muted-foreground">
+                    클릭하거나 이미지를 드래그하세요
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground/60">
+                    PNG, JPG, WEBP · 또는 <kbd className="rounded border border-border px-1 py-0.5 font-mono text-[10px]">Ctrl+V</kbd> 로 붙여넣기
+                  </p>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) handleImportFileSelect(file)
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="relative">
+                <img
+                  src={importPreviewUrl}
+                  alt="업로드된 스크린샷"
+                  className="max-h-[260px] w-full rounded-2xl border border-border object-contain"
+                />
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className="absolute right-2 top-2 size-7 rounded-full"
+                  onClick={() => {
+                    setImportImage(null)
+                    setImportPreviewUrl(null)
+                    setParsedQuestions([])
+                  }}
+                >
+                  <X className="size-4" />
+                </Button>
+              </div>
+            )}
+
+            {/* 파싱 버튼 */}
+            {importImage && parsedQuestions.length === 0 && (
+              <Button
+                className="w-full gap-2 rounded-xl font-bold"
+                onClick={handleParseImage}
+                disabled={isParsing}
+              >
+                {isParsing ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    AI가 문항을 추출하고 있습니다...
+                  </>
+                ) : (
+                  <>
+                    <ImageUp className="size-4" />
+                    문항 자동 추출하기
+                  </>
+                )}
+              </Button>
+            )}
+
+            {/* 파싱 결과 미리보기 */}
+            <AnimatePresence>
+              {parsedQuestions.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className="space-y-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="size-4 text-emerald-500" />
+                    <p className="text-sm font-bold">
+                      {parsedQuestions.length}개 문항이 추출되었습니다
+                    </p>
+                  </div>
+                  <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/5 p-3">
+                    {parsedQuestions.map((q, i) => (
+                      <div
+                        key={i}
+                        className="flex items-start gap-3 rounded-xl border border-border/40 bg-background p-3"
+                      >
+                        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[10px] font-black text-primary">
+                          {i + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium leading-relaxed text-foreground/90">
+                            {q.title}
+                          </p>
+                          <Badge variant="secondary" className="mt-1.5 text-[10px]">
+                            {q.maxLength ? `${q.maxLength}자` : "제한 없음"}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" className="rounded-xl" onClick={closeImportDialog}>
+              취소
+            </Button>
+            {parsedQuestions.length > 0 && (
+              <Button
+                className="rounded-xl px-8 font-bold"
+                onClick={handleBulkSave}
+                disabled={isSavingBulk}
+              >
+                {isSavingBulk ? (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="mr-2 size-4" />
+                )}
+                {parsedQuestions.length}개 문항 모두 추가
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
