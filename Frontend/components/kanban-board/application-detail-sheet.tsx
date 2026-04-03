@@ -10,7 +10,6 @@ import {
   ChevronDown,
   ClipboardList,
   Clock,
-  Copy,
   FileText,
   Save,
   Trash2,
@@ -25,7 +24,6 @@ import { Calendar } from "@/components/ui/calendar"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { type Application } from "@/lib/mock-data"
-import { ApplicationInfoQuickCopyDialog } from "@/components/application-info/application-info-quick-copy-dialog"
 import { JDAnalysisPanel } from "./jd-analysis-panel"
 import { CompanyResearchPanel } from "./company-research-panel"
 import { QuestionsPanel } from "./questions-panel"
@@ -91,14 +89,6 @@ export function ApplicationDetailSheet({
               </p>
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-2">
-              <ApplicationInfoQuickCopyDialog
-                trigger={
-                  <Button variant="outline" className="gap-2 rounded-full">
-                    <Copy className="size-4" />
-                    {"지원 정보"}
-                  </Button>
-                }
-              />
               <Button
                 onClick={() => router.push(`/workspace/${application.id}`)}
                 className="hidden gap-2 rounded-full bg-primary shadow-sm hover:bg-primary/90 sm:flex"

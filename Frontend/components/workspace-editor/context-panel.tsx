@@ -50,7 +50,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { ApplicationInfoQuickCopyDialog } from "@/components/application-info/application-info-quick-copy-dialog"
 import { BatchPlanDialog } from "@/components/workspace-editor/batch-plan-dialog"
 import type { TitleSuggestion } from "@/lib/workspace/types"
 import {
