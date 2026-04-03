@@ -1,9 +1,11 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { LayoutDashboard, Archive, PenTool, Moon, Sun, Library, LogOut, ChevronUp } from "lucide-react"
+import { LayoutDashboard, Archive, PenTool, Moon, Sun, Library, LogOut, ChevronUp, Bell, BellOff } from "lucide-react"
 import { useTheme } from "next-themes"
+import { isSoundMuted, setSoundMuted } from "@/lib/audio/completion-sound"
 
 import {
   Sidebar,
@@ -54,6 +56,16 @@ const navigation = [
 export function AppSidebar() {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
+  const [muted, setMuted] = useState(false)
+
+  useEffect(() => {
+    setMuted(isSoundMuted())
+    const handler = (e: Event) => setMuted((e as CustomEvent<{ muted: boolean }>).detail.muted)
+    window.addEventListener("resumade:sound-muted-change", handler)
+    return () => window.removeEventListener("resumade:sound-muted-change", handler)
+  }, [])
+
+  const toggleMute = () => setSoundMuted(!muted)
 
   return (
     <Sidebar className="border-r border-sidebar-border">
@@ -100,6 +112,18 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="px-4 py-4">
+        <button
+          onClick={toggleMute}
+          title={muted ? "알림음 켜기" : "알림음 끄기"}
+          className="mb-2 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm transition-colors duration-150 hover:bg-sidebar-accent"
+        >
+          {muted ? (
+            <BellOff className="size-4 text-muted-foreground" />
+          ) : (
+            <Bell className="size-4 text-muted-foreground" />
+          )}
+          <span className="text-muted-foreground">{muted ? "알림음 꺼짐" : "알림음 켜짐"}</span>
+        </button>
         <Separator className="mb-3" />
         <Popover>
           <PopoverTrigger asChild>

@@ -17,6 +17,8 @@ import {
   Flag,
   Loader2,
   Lock,
+  Maximize2,
+  Minimize2,
   RefreshCw,
   RotateCcw,
   Scissors,
@@ -414,6 +416,7 @@ export default function FinalEditorPage() {
   const [activeSentenceText, setActiveSentenceText] = useState<string | null>(null)
 
   // ── UI 상태 ──────────────────────────────────────────────────────────────
+  const [focusMode, setFocusMode]       = useState(false)
   const [showQuestion, setShowQuestion] = useState(false)
   const [saveStatus, setSaveStatus]     = useState<"idle" | "saving" | "saved">("idle")
   const [lastSavedAt, setLastSavedAt]   = useState<Date | null>(null)
@@ -780,7 +783,7 @@ export default function FinalEditorPage() {
 
   // ── 렌더 ─────────────────────────────────────────────────────────────────
   return (
-    <SidebarProvider>
+    <SidebarProvider open={focusMode ? false : undefined} onOpenChange={focusMode ? () => {} : undefined}>
       <AppSidebar />
       <SidebarInset className="min-h-0">
         <div className="flex h-screen min-h-0 flex-col">
@@ -831,6 +834,16 @@ export default function FinalEditorPage() {
                   <><Check className="size-3 text-emerald-500" /><span className="text-emerald-600">저장됨 · {relativeTime}</span></>
                 ) : null}
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className={`rounded-full text-xs gap-1.5 transition-colors ${focusMode ? "border-primary text-primary hover:bg-primary/5" : ""}`}
+                onClick={() => setFocusMode((v) => !v)}
+                title={focusMode ? "일반 모드로 돌아가기" : "편집기만 집중해서 보기"}
+              >
+                {focusMode ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+                {focusMode ? "일반 모드" : "집중 모드"}
+              </Button>
               <Button size="sm" className="rounded-full text-xs gap-1.5" onClick={handleComplete}>
                 <ArrowLeft className="size-3.5" />
                 완료하고 나가기
@@ -838,11 +851,11 @@ export default function FinalEditorPage() {
             </div>
           </header>
 
-          {/* ── 3열 메인 ── */}
-          <main className="grid min-h-0 flex-1 grid-cols-[2fr_2.5fr_2fr] overflow-hidden bg-muted/30 p-3 gap-3">
+          {/* ── 메인 ── */}
+          <main className={`grid min-h-0 flex-1 overflow-hidden bg-muted/30 p-3 gap-3 transition-[grid-template-columns] duration-300 ${focusMode ? "grid-cols-[1fr]" : "grid-cols-[2fr_2.5fr_2fr]"}`}>
 
             {/* ── 왼쪽: AI 보조 패널 ── */}
-            <div className="flex flex-col overflow-hidden rounded-2xl border border-border bg-background">
+            <div className={`flex flex-col overflow-hidden rounded-2xl border border-border bg-background transition-opacity duration-200 ${focusMode ? "hidden" : ""}`}>
               {/* 패널 헤더 */}
               <div className="shrink-0 border-b border-border px-4 py-3">
                 <div className="flex items-center gap-2">
@@ -1265,7 +1278,7 @@ export default function FinalEditorPage() {
             </div>
 
             {/* ── 오른쪽: 세탁본 + 원본 초안 비교 ── */}
-            <div className="flex flex-col overflow-hidden rounded-2xl border border-border bg-background">
+            <div className={`flex flex-col overflow-hidden rounded-2xl border border-border bg-background transition-opacity duration-200 ${focusMode ? "hidden" : ""}`}>
 
               <div className="shrink-0 border-b border-border bg-muted/10 px-4 py-3">
                 <div className="flex items-center justify-between">
