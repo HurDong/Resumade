@@ -18,25 +18,28 @@ import {
 import { ko } from "date-fns/locale"
 import { AnimatePresence, motion } from "framer-motion"
 import {
+  AlertCircle,
   BrainCircuit,
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
   Code2,
   FileText,
+  RefreshCw,
   TrendingUp,
   Users,
   Zap,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { useCalendarEvents } from "@/lib/hooks/use-calendar-events"
 import {
   type CalendarEventType,
   eventTypeConfig,
   formatDateKey,
   groupEventsByDate,
-  mockCalendarEvents,
 } from "./calendar-mock-data"
 import { CalendarDayDialog } from "./calendar-day-dialog"
 import { CalendarEventCard } from "./calendar-event-card"
@@ -74,10 +77,15 @@ export function RecruitmentCalendar() {
   const [dialogDate, setDialogDate] = useState<Date | null>(null)
   const [direction, setDirection] = useState(0)
 
+  const { data: allEvents = [], isLoading, isError, refetch } = useCalendarEvents(
+    currentMonth.getFullYear(),
+    currentMonth.getMonth() + 1
+  )
+
   const filteredEvents = useMemo(() => {
-    if (activeFilter === "all") return mockCalendarEvents
-    return mockCalendarEvents.filter((e) => e.type === activeFilter)
-  }, [activeFilter])
+    if (activeFilter === "all") return allEvents
+    return allEvents.filter((e) => e.type === activeFilter)
+  }, [activeFilter, allEvents])
 
   const eventsByDate = useMemo(() => groupEventsByDate(filteredEvents), [filteredEvents])
 
@@ -156,6 +164,39 @@ export function RecruitmentCalendar() {
     setSelectedDate(date)
     if (!isSameMonth(date, currentMonth)) setCurrentMonth(date)
     if ((eventsByDate.get(key) || []).length > 0) setDialogDate(date)
+  }
+
+  // ── 로딩 상태 ──────────────────────────────────────────────────────────────
+  if (isLoading) {
+    return (
+      <div className="flex h-full min-h-0 flex-col gap-2.5">
+        <Skeleton className="h-14 w-full shrink-0 rounded-[20px]" />
+        <div className="min-h-0 flex-1 rounded-[20px] border border-border/70 bg-background p-1.5">
+          <div className="grid h-full grid-cols-7 gap-1" style={{ gridAutoRows: "minmax(0, 1fr)" }}>
+            {Array.from({ length: 35 }).map((_, i) => (
+              <Skeleton key={i} className="rounded-[14px]" />
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── 에러 상태 ──────────────────────────────────────────────────────────────
+  if (isError) {
+    return (
+      <div className="flex h-full min-h-0 flex-col items-center justify-center gap-4 rounded-[20px] border border-border/70 bg-background">
+        <AlertCircle className="size-8 text-muted-foreground/50" />
+        <div className="text-center">
+          <p className="text-sm font-medium text-foreground">일정을 불러오지 못했습니다</p>
+          <p className="mt-1 text-xs text-muted-foreground">서버 연결을 확인해 주세요</p>
+        </div>
+        <Button variant="outline" size="sm" className="gap-2" onClick={() => refetch()}>
+          <RefreshCw className="size-3.5" />
+          다시 시도
+        </Button>
+      </div>
+    )
   }
 
   return (
