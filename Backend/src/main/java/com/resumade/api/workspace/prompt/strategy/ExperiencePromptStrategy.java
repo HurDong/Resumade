@@ -46,21 +46,23 @@ public class ExperiencePromptStrategy implements PromptStrategy {
                 </Question_Intent>
 
                 <Strict_Rules>
-                1. Return ONLY valid JSON: {"text":"..."}
-                2. Count ONLY characters inside the "text" value.
-                3. Never exceed maxLength. Never write below minTarget.
-                4. Start with a bracketed [제목] — must include a specific action or result, NOT just project name.
-                5. Use actual technology names from experience context (Spring Boot, Redis, Kafka, etc.) — do NOT generalize.
-                6. Every claim must be supportable by the supplied experience context. Do NOT invent metrics.
-                7. Do NOT use parenthetical meta-labels like (역할: ...), (결과: ...), [배경], [행동], [성과].
-                8. STAR/CARE is your internal thinking framework — NEVER surface framework labels.
-                9. Avoid vague openers. Start with the concrete claim.
-                10. Write in natural Korean narrative — not a resume bullet list.
-                11. Keep the scope believable for a junior applicant: highlight local technical impact and sound judgment, not company-wide transformation claims without evidence.
+                1. Return ONLY valid JSON: {"title":"...","text":"..."}
+                2. "title" field: title text only — no brackets, no JSON special chars inside the value.
+                3. "text" field: body only — do NOT repeat the title inside the text.
+                4. Count ONLY characters inside the "text" value for the character limit.
+                5. Never exceed maxLength. Never write below minTarget.
+                6. Title must include a specific action or result, NOT just project name.
+                7. Use actual technology names from experience context (Spring Boot, Redis, Kafka, etc.) — do NOT generalize.
+                8. Every claim must be supportable by the supplied experience context. Do NOT invent metrics.
+                9. Do NOT use parenthetical meta-labels like (역할: ...), (결과: ...), [배경], [행동], [성과].
+                10. STAR/CARE is your internal thinking framework — NEVER surface framework labels.
+                11. Avoid vague openers. Start with the concrete claim.
+                12. Write in natural Korean narrative — not a resume bullet list.
+                13. Keep the scope believable for a junior applicant: highlight local technical impact and sound judgment, not company-wide transformation claims without evidence.
                 </Strict_Rules>
 
                 <Output_Format>
-                Return ONLY: {"text": "[제목]\\n\\n본문..."}
+                Return ONLY: {"title": "제목 텍스트", "text": "본문..."}
                 </Output_Format>
                 """;
     }
@@ -77,7 +79,7 @@ public class ExperiencePromptStrategy implements PromptStrategy {
                         Hard limit: 800 characters | Target: 640 ~ 800 characters
                         """,
                         """
-                        {"text": "[쿼리 응답 시간 1.2초 → 120ms, Elasticsearch 인덱싱 파이프라인 재설계]\\n\\n검색 서비스의 실시간 인덱싱 파이프라인이 트래픽 피크 시간대에 처리 지연을 일으키는 문제를 해결했습니다. 기존 구조는 Kafka 컨슈머가 ElasticSearch에 문서를 건별로 색인해 초당 처리량이 한계에 달했고, 대기 큐가 분당 5만 건까지 쌓이는 상황이었습니다.\\n\\n저는 Bulk API 전환과 함께 Rolling Index 전략을 제안하고 직접 구현했습니다. 컨슈머 그룹을 재설계해 배치 사이즈를 동적으로 조절하고, 인덱스 Alias 스왑을 통해 Zero-downtime 배포를 가능하게 했습니다. 그 결과 평균 색인 지연이 1.2초에서 120ms로 감소했고, 피크 타임 대기 큐는 98% 감소했습니다. 이 경험을 통해 처리량 문제를 단순히 스케일 아웃으로 해결하기 전에 데이터 접근 패턴을 먼저 분석하는 접근이 더 효율적임을 배웠습니다."}
+                        {"title": "쿼리 응답 시간 1.2초 → 120ms, Elasticsearch 인덱싱 파이프라인 재설계", "text": "검색 서비스의 실시간 인덱싱 파이프라인이 트래픽 피크 시간대에 처리 지연을 일으키는 문제를 해결했습니다. 기존 구조는 Kafka 컨슈머가 ElasticSearch에 문서를 건별로 색인해 초당 처리량이 한계에 달했고, 대기 큐가 분당 5만 건까지 쌓이는 상황이었습니다.\\n\\n저는 Bulk API 전환과 함께 Rolling Index 전략을 제안하고 직접 구현했습니다. 컨슈머 그룹을 재설계해 배치 사이즈를 동적으로 조절하고, 인덱스 Alias 스왑을 통해 Zero-downtime 배포를 가능하게 했습니다. 그 결과 평균 색인 지연이 1.2초에서 120ms로 감소했고, 피크 타임 대기 큐는 98% 감소했습니다. 이 경험을 통해 처리량 문제를 단순히 스케일 아웃으로 해결하기 전에 데이터 접근 패턴을 먼저 분석하는 접근이 더 효율적임을 배웠습니다."}
                         """
                 )
         );
@@ -111,9 +113,9 @@ public class ExperiencePromptStrategy implements PromptStrategy {
 
                 <Output_Format>
                 Return ONLY valid JSON:
-                {"text": "[제목]\\n\\n본문..."}
-                - [제목]: specific action + result (e.g., "[응답 시간 70%% 단축, Redis 캐시 레이어 설계]")
-                - Include: role, technical decision reasoning, measurable outcome
+                {"title": "제목 텍스트", "text": "본문..."}
+                - "title": specific action + result, no brackets (e.g., "응답 시간 70%% 단축, Redis 캐시 레이어 설계")
+                - "text": body only — role, technical decision reasoning, measurable outcome
                 - Internal STAR structure — do NOT expose [배경], [행동], [결과] labels
                 </Output_Format>
                 """.formatted(

@@ -502,10 +502,11 @@ public class WorkspaceService {
             List<ChatMessage> strategyMessages = promptFactory.buildMessages(category, draftParams);
             WorkspaceDraftAiService.DraftResponse draftResponse =
                     strategyDraftGeneratorService.generate(strategyMessages);
-            logLengthMetrics("generate", maxLengthGen, minTargetChars, preferredTargetChars, draftResponse.text, 0);
+            String assembledDraft = assembleDraftText(draftResponse);
+            logLengthMetrics("generate", maxLengthGen, minTargetChars, preferredTargetChars, assembledDraft, 0);
 
             String pipelineDraft = expandToMinimumLength(
-                    normalizeTitleSpacing(draftResponse.text).trim(),
+                    normalizeTitleSpacing(assembledDraft).trim(),
                     minTargetChars,
                     preferredTargetChars,
                     maxLengthGen,
@@ -1333,6 +1334,19 @@ public class WorkspaceService {
         return safeSnippet(normalized, 320);
     }
 
+    /**
+     * title/text 분리 응답을 "[제목]\n\n본문" 형태로 조립합니다.
+     * title이 없으면 text만 반환합니다 (fallback).
+     */
+    private String assembleDraftText(WorkspaceDraftAiService.DraftResponse response) {
+        if (response == null) return null;
+        String body = response.text != null ? response.text.trim() : "";
+        if (response.title != null && !response.title.isBlank()) {
+            return "[" + response.title.trim() + "]" + "\n\n" + body;
+        }
+        return body;
+    }
+
     private String safeSnippet(String value, int maxLength) {
         if (value == null || value.isBlank()) {
             return "None";
@@ -1772,12 +1786,13 @@ public class WorkspaceService {
                     others,
                     directive);
 
-            if (regenerated == null || regenerated.text == null || regenerated.text.isBlank()) {
+            String regeneratedText = assembleDraftText(regenerated);
+            if (regenerated == null || regeneratedText == null || regeneratedText.isBlank()) {
                 return previousBestDraft;
             }
 
             return prepareDraftForTranslation(
-                    regenerated.text,
+                    regeneratedText,
                     maxLength,
                     minTargetChars,
                     preferredTargetChars,

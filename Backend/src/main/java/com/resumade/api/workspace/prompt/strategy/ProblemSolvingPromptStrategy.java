@@ -46,21 +46,23 @@ public class ProblemSolvingPromptStrategy implements PromptStrategy {
                 </Question_Intent>
 
                 <Strict_Rules>
-                1. Return ONLY valid JSON: {"text":"..."}
-                2. Count ONLY characters inside "text" value.
-                3. Never exceed maxLength. Never write below minTarget.
-                4. Start with [제목] — must name the problem or challenge specifically, NOT [도전 경험] or [실패 극복].
-                5. The problem description must be specific enough for an interviewer to ask follow-up questions.
-                6. Show the applicant's own judgment and responsibility — avoid passive constructions.
-                7. If the challenge resulted in partial failure, be honest about it and emphasize the learning.
-                8. Do NOT fabricate problem details or metrics not found in experience context.
-                9. Write in the applicant's own reflective voice — not an evaluator's summarization.
-                10. No parenthetical labels. No bullet enumerations unless explicitly requested.
-                11. Keep the scope credible for a junior applicant: reveal depth of diagnosis and follow-through without overstating senior ownership.
+                1. Return ONLY valid JSON: {"title":"...","text":"..."}
+                2. "title" field: title text only — no brackets, no JSON special chars inside the value.
+                3. "text" field: body only — do NOT repeat the title inside the text.
+                4. Count ONLY characters inside "text" value for the character limit.
+                5. Never exceed maxLength. Never write below minTarget.
+                6. Title must name the problem or challenge specifically, NOT 도전 경험 or 실패 극복.
+                7. The problem description must be specific enough for an interviewer to ask follow-up questions.
+                8. Show the applicant's own judgment and responsibility — avoid passive constructions.
+                9. If the challenge resulted in partial failure, be honest about it and emphasize the learning.
+                10. Do NOT fabricate problem details or metrics not found in experience context.
+                11. Write in the applicant's own reflective voice — not an evaluator's summarization.
+                12. No parenthetical labels. No bullet enumerations unless explicitly requested.
+                13. Keep the scope credible for a junior applicant: reveal depth of diagnosis and follow-through without overstating senior ownership.
                 </Strict_Rules>
 
                 <Output_Format>
-                Return ONLY: {"text": "[제목]\\n\\n본문..."}
+                Return ONLY: {"title": "제목 텍스트", "text": "본문..."}
                 </Output_Format>
                 """;
     }
@@ -77,7 +79,7 @@ public class ProblemSolvingPromptStrategy implements PromptStrategy {
                         Hard limit: 700 characters | Target: 560 ~ 700 characters
                         """,
                         """
-                        {"text": "[배포 직후 결제 실패율 8% 급증, 12시간 내 롤백 없이 핫픽스 완료]\\n\\n라이브 배포 3시간 후 결제 완료 API의 실패율이 갑자기 8%대로 치솟았습니다. 처음에는 새로 배포된 프로모션 로직을 의심했지만, 로그를 파고들자 실제 원인은 다른 곳에 있었습니다. Connection Pool의 소켓 재사용 시 TCP FIN_WAIT 상태가 누적되면서 DB 연결이 고갈되는 현상이었습니다.\\n\\n롤백은 배포 윈도우 정책상 불가했습니다. 저는 즉시 HikariCP 설정의 keepaliveTime 파라미터를 조정하는 핫픽스를 작성하고, 스테이징 환경에서 10분 내 재현 및 검증 후 긴급 배포를 진행했습니다. 결제 실패율은 30분 만에 0.3% 수준으로 복구됐습니다. 이 사건 이후 DB 연결 메트릭을 Grafana 대시보드에 추가하고 임계값 알림을 설정했습니다."}
+                        {"title": "배포 직후 결제 실패율 8% 급증, 12시간 내 롤백 없이 핫픽스 완료", "text": "라이브 배포 3시간 후 결제 완료 API의 실패율이 갑자기 8%대로 치솟았습니다. 처음에는 새로 배포된 프로모션 로직을 의심했지만, 로그를 파고들자 실제 원인은 다른 곳에 있었습니다. Connection Pool의 소켓 재사용 시 TCP FIN_WAIT 상태가 누적되면서 DB 연결이 고갈되는 현상이었습니다.\\n\\n롤백은 배포 윈도우 정책상 불가했습니다. 저는 즉시 HikariCP 설정의 keepaliveTime 파라미터를 조정하는 핫픽스를 작성하고, 스테이징 환경에서 10분 내 재현 및 검증 후 긴급 배포를 진행했습니다. 결제 실패율은 30분 만에 0.3% 수준으로 복구됐습니다. 이 사건 이후 DB 연결 메트릭을 Grafana 대시보드에 추가하고 임계값 알림을 설정했습니다."}
                         """
                 )
         );
@@ -111,10 +113,9 @@ public class ProblemSolvingPromptStrategy implements PromptStrategy {
 
                 <Output_Format>
                 Return ONLY valid JSON:
-                {"text": "[제목]\\n\\n본문..."}
-                - [제목]: names the specific problem, NOT generic [문제 해결] or [도전 경험]
-                - Structure: Problem → Root Cause → Decision → Outcome → Learning
-                - Active voice, applicant's own voice, no labels
+                {"title": "제목 텍스트", "text": "본문..."}
+                - "title": names the specific problem, no brackets, NOT generic 문제 해결 or 도전 경험
+                - "text": Problem → Root Cause → Decision → Outcome → Learning, active voice
                 </Output_Format>
                 """.formatted(
                 nullSafe(params.company()),

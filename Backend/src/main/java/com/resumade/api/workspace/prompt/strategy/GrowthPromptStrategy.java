@@ -38,20 +38,22 @@ public class GrowthPromptStrategy implements PromptStrategy {
                 </Question_Intent>
 
                 <Strict_Rules>
-                1. Return ONLY valid JSON: {"text":"..."}
-                2. Count ONLY characters inside "text" value.
-                3. Never exceed maxLength. Never write below minTarget.
-                4. [제목]: must name the specific technical capability or concept, NOT [성장 경험] or [자기 개발].
-                5. Avoid vague openers like "저는 항상 배우는 것을 좋아합니다".
-                6. Do NOT turn this into a generic certificate/course list. The learning must be tied to a concrete technical episode.
-                7. Show the cost of growth — what was difficult, confusing, or slow at first.
-                8. Do NOT invent learning resources, projects, or outcomes not in experience context.
-                9. Keep the tone believable for a junior applicant: emphasize learning curve, fundamentals, and applied growth over grand strategic ownership.
-                10. Natural Korean narrative, no labels, no bullet lists unless requested.
+                1. Return ONLY valid JSON: {"title":"...","text":"..."}
+                2. "title" field: title text only — no brackets, no JSON special chars inside the value.
+                3. "text" field: body only — do NOT repeat the title inside the text.
+                4. Count ONLY characters inside "text" value for the character limit.
+                5. Never exceed maxLength. Never write below minTarget.
+                6. Title must name the specific technical capability or concept, NOT 성장 경험 or 자기 개발.
+                7. Avoid vague openers like "저는 항상 배우는 것을 좋아합니다".
+                8. Do NOT turn this into a generic certificate/course list. The learning must be tied to a concrete technical episode.
+                9. Show the cost of growth — what was difficult, confusing, or slow at first.
+                10. Do NOT invent learning resources, projects, or outcomes not in experience context.
+                11. Keep the tone believable for a junior applicant: emphasize learning curve, fundamentals, and applied growth over grand strategic ownership.
+                12. Natural Korean narrative, no labels, no bullet lists unless requested.
                 </Strict_Rules>
 
                 <Output_Format>
-                Return ONLY: {"text": "[제목]\\n\\n본문..."}
+                Return ONLY: {"title": "제목 텍스트", "text": "본문..."}
                 </Output_Format>
                 """;
     }
@@ -68,7 +70,7 @@ public class GrowthPromptStrategy implements PromptStrategy {
                         Hard limit: 600 characters | Target: 480 ~ 600 characters
                         """,
                         """
-                        {"text": "[Docker 격리 개념을 끝까지 파고들어 배포 병목을 줄인 경험]\\n\\n팀 프로젝트 초기에는 Docker를 단순한 배포 도구 정도로만 이해해, 컨테이너와 이미지 개념을 혼동한 채 환경을 맞추느라 이틀 가까이 시간을 허비했습니다. 원인을 제대로 이해하지 못한 채 명령어만 따라 치는 방식으로는 반복된다고 판단했습니다.\\n\\n이후 공식 문서를 기준으로 네트워크, 볼륨, 레이어 구조를 다시 정리하고, 작은 토이 프로젝트에서 직접 컨테이너를 분리하며 동작을 검증했습니다. 그 내용을 팀 프로젝트에 다시 적용해 프론트엔드와 백엔드 실행 환경을 분리했고, 배포 스크립트도 정리했습니다. 그 결과 환경 불일치로 생기던 오류가 크게 줄었고, 이후에는 새 기능 배포 준비 시간을 절반 수준으로 줄일 수 있었습니다. 이 경험을 통해 기술은 사용법보다 원리를 이해해야 제대로 다룰 수 있다는 기준을 갖게 됐습니다."}
+                        {"title": "Docker 격리 개념을 끝까지 파고들어 배포 병목을 줄인 경험", "text": "팀 프로젝트 초기에는 Docker를 단순한 배포 도구 정도로만 이해해, 컨테이너와 이미지 개념을 혼동한 채 환경을 맞추느라 이틀 가까이 시간을 허비했습니다. 원인을 제대로 이해하지 못한 채 명령어만 따라 치는 방식으로는 반복된다고 판단했습니다.\\n\\n이후 공식 문서를 기준으로 네트워크, 볼륨, 레이어 구조를 다시 정리하고, 작은 토이 프로젝트에서 직접 컨테이너를 분리하며 동작을 검증했습니다. 그 내용을 팀 프로젝트에 다시 적용해 프론트엔드와 백엔드 실행 환경을 분리했고, 배포 스크립트도 정리했습니다. 그 결과 환경 불일치로 생기던 오류가 크게 줄었고, 이후에는 새 기능 배포 준비 시간을 절반 수준으로 줄일 수 있었습니다. 이 경험을 통해 기술은 사용법보다 원리를 이해해야 제대로 다룰 수 있다는 기준을 갖게 됐습니다."}
                         """
                 )
         );
@@ -102,9 +104,9 @@ public class GrowthPromptStrategy implements PromptStrategy {
 
                 <Output_Format>
                 Return ONLY valid JSON:
-                {"text": "[제목]\\n\\n본문..."}
-                - [제목]: names the specific technical capability or concept that deepened
-                - Show concrete trigger → deep-dive process → applied change → current engineering standard
+                {"title": "제목 텍스트", "text": "본문..."}
+                - "title": names the specific technical capability or concept that deepened, no brackets
+                - "text": concrete trigger → deep-dive process → applied change → current engineering standard
                 </Output_Format>
                 """.formatted(
                 nullSafe(params.company()), nullSafe(params.position()),

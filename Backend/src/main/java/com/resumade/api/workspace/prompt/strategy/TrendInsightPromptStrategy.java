@@ -38,19 +38,21 @@ public class TrendInsightPromptStrategy implements PromptStrategy {
                 </Question_Intent>
 
                 <Strict_Rules>
-                1. Return ONLY valid JSON: {"text":"..."}
-                2. Count ONLY characters inside "text" value.
-                3. Never exceed maxLength. Never write below minTarget.
-                4. [제목]: must name the actual issue or insight, NOT [시사 이슈], [기술 동향], or [제 생각].
-                5. Use companyContext heavily. Do NOT invent company strategy, product names, or external facts that are not supplied.
-                6. Do NOT write a broad newspaper-style essay. The answer must stay anchored to the company and role.
-                7. If experience context contains a relevant technical episode, use it briefly as a credibility anchor rather than making the whole essay autobiographical.
-                8. Keep the tone believable for a junior applicant: offer a grounded viewpoint and contribution angle, not executive-level certainty.
-                9. Natural Korean narrative only. No bullet lists or parenthetical labels unless requested.
+                1. Return ONLY valid JSON: {"title":"...","text":"..."}
+                2. "title" field: title text only — no brackets, no JSON special chars inside the value.
+                3. "text" field: body only — do NOT repeat the title inside the text.
+                4. Count ONLY characters inside "text" value for the character limit.
+                5. Never exceed maxLength. Never write below minTarget.
+                6. Title must name the actual issue or insight, NOT 시사 이슈, 기술 동향, or 제 생각.
+                7. Use companyContext heavily. Do NOT invent company strategy, product names, or external facts that are not supplied.
+                8. Do NOT write a broad newspaper-style essay. The answer must stay anchored to the company and role.
+                9. If experience context contains a relevant technical episode, use it briefly as a credibility anchor rather than making the whole essay autobiographical.
+                10. Keep the tone believable for a junior applicant: offer a grounded viewpoint and contribution angle, not executive-level certainty.
+                11. Natural Korean narrative only. No bullet lists or parenthetical labels unless requested.
                 </Strict_Rules>
 
                 <Output_Format>
-                Return ONLY: {"text": "[제목]\\n\\n본문..."}
+                Return ONLY: {"title": "제목 텍스트", "text": "본문..."}
                 </Output_Format>
                 """;
     }
@@ -68,7 +70,7 @@ public class TrendInsightPromptStrategy implements PromptStrategy {
                         Hard limit: 700 characters | Target: 560 ~ 700 characters
                         """,
                         """
-                        {"text": "[생성형 AI 확산 국면에서 더 중요해진 것은 성능보다 기업 데이터 거버넌스라고 생각합니다]\\n\\n최근 가장 중요한 IT 이슈는 생성형 AI 자체의 등장이 아니라, 이를 실제 기업 환경에 안전하게 적용할 수 있는 데이터 거버넌스 체계라고 생각합니다. 일반 사용자 서비스에서는 빠른 기능 출시가 경쟁력이 될 수 있지만, 엔터프라이즈 영역에서는 부정확한 답변이나 민감 정보 노출이 곧 신뢰 하락으로 이어질 수 있기 때문입니다.\\n\\n삼성SDS가 생성형 AI 서비스와 클라우드 사업을 함께 확장하는 상황에서는 모델 성능 못지않게 접근 권한, 로그 추적성, 운영 정책이 핵심 경쟁력이 될 것이라고 봅니다. 저 역시 프로젝트에서 로그 적재 구조와 권한 분리를 설계하며 기능보다 운영 안정성이 더 중요한 순간을 경험했습니다. 입사 후에는 AI 기능을 빠르게 붙이는 개발자보다, 실제 고객 환경에서 안전하게 작동하는 구조를 고민하는 개발자로 기여하고 싶습니다."}
+                        {"title": "생성형 AI 확산 국면에서 더 중요해진 것은 성능보다 기업 데이터 거버넌스라고 생각합니다", "text": "최근 가장 중요한 IT 이슈는 생성형 AI 자체의 등장이 아니라, 이를 실제 기업 환경에 안전하게 적용할 수 있는 데이터 거버넌스 체계라고 생각합니다. 일반 사용자 서비스에서는 빠른 기능 출시가 경쟁력이 될 수 있지만, 엔터프라이즈 영역에서는 부정확한 답변이나 민감 정보 노출이 곧 신뢰 하락으로 이어질 수 있기 때문입니다.\\n\\n삼성SDS가 생성형 AI 서비스와 클라우드 사업을 함께 확장하는 상황에서는 모델 성능 못지않게 접근 권한, 로그 추적성, 운영 정책이 핵심 경쟁력이 될 것이라고 봅니다. 저 역시 프로젝트에서 로그 적재 구조와 권한 분리를 설계하며 기능보다 운영 안정성이 더 중요한 순간을 경험했습니다. 입사 후에는 AI 기능을 빠르게 붙이는 개발자보다, 실제 고객 환경에서 안전하게 작동하는 구조를 고민하는 개발자로 기여하고 싶습니다."}
                         """
                 )
         );
@@ -102,10 +104,9 @@ public class TrendInsightPromptStrategy implements PromptStrategy {
 
                 <Output_Format>
                 Return ONLY valid JSON:
-                {"text": "[제목]\\n\\n본문..."}
-                - [제목]: names one concrete issue or insight
-                - Structure: issue definition → why it matters to this company → reasoned viewpoint → contribution angle
-                - Keep the answer grounded in company context, not a generic news commentary
+                {"title": "제목 텍스트", "text": "본문..."}
+                - "title": names one concrete issue or insight, no brackets
+                - "text": issue definition → why it matters to this company → reasoned viewpoint → contribution angle
                 </Output_Format>
                 """.formatted(
                 nullSafe(params.company()),

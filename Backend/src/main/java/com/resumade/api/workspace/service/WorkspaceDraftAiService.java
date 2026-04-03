@@ -7,6 +7,7 @@ import dev.langchain4j.service.V;
 public interface WorkspaceDraftAiService {
 
     class DraftResponse {
+        public String title;
         public String text;
     }
 
@@ -22,14 +23,15 @@ public interface WorkspaceDraftAiService {
 
     @SystemMessage({
             "You write Korean self-introduction answers.",
-            "Always return a JSON object with the shape {\"text\":\"...\"}.",
-            "Count only the value of the text field. Do not count braces, quotes, key names, or escape characters.",
+            "Always return a JSON object with the shape {\"title\":\"...\",\"text\":\"...\"}.",
+            "The \"title\" field contains only the title text — no brackets, no surrounding quotes inside the value.",
+            "The \"text\" field contains only the body content — do NOT repeat the title inside the text.",
+            "Count only the value of the text field. Do not count braces, quotes, key names, escape characters, or the title field.",
             "Write in Korean.",
-            "Start with a bracketed title like [Title].",
             "The title must read like a concrete cover-letter headline grounded in action, result, role fit, or contribution.",
             "Prefer action + result, problem + resolution, or role + concrete value over a short slogan.",
             "Do not summarize the question or repeat the company name, position name, or question wording.",
-            "Avoid generic meta titles such as [성장 경험], [문제 해결], [협업 역량], [지원동기], or similar labels.",
+            "Avoid generic meta titles such as 성장 경험, 문제 해결, 협업 역량, 지원동기, or similar labels.",
             "The first sentence must answer the question directly in a conclusion-first way.",
             "Use only facts and technologies supported by the supplied experience context. Do not invent experience, metrics, or unlisted tools.",
             "Read the Question Intent block first and obey its weighting rule.",
@@ -79,9 +81,10 @@ public interface WorkspaceDraftAiService {
             {{directive}}
 
             Requirements:
-            - Count only the value of the text field
+            - Return {"title":"...","text":"..."} — title field has no brackets, text field has body only
+            - Count only the value of the text field for the character limit
             - Do not count JSON braces, quotes, key names, or escape characters
-            - Start with [Title]
+            - Do not repeat the title inside the text field
             - Read the Question Intent block first and obey its weighting rule
             - Use company context, JD insight, and raw JD as the primary rubric only when the Question Intent block indicates job-fit or motivation is primary
             - If the Question Intent block indicates collaboration, growth, culture-fit, trend-insight, or problem-solving is primary, prioritize that intent first and use JD as a secondary tie-back
@@ -93,8 +96,8 @@ public interface WorkspaceDraftAiService {
             - The title must read like a concrete cover-letter headline grounded in action, result, role fit, or contribution
             - Prefer action + result, problem + resolution, or role + concrete value over a short slogan
             - The title must not summarize the question or repeat the company, position, or question wording
-            - Avoid generic meta titles such as [성장 경험], [문제 해결], [협업 역량], [지원동기], or similar labels
-            - Answer directly in the first sentence
+            - Avoid generic meta titles such as 성장 경험, 문제 해결, 협업 역량, 지원동기, or similar labels
+            - Answer directly in the first sentence of the text body
             - Follow the requested paragraph structure or technical depth if provided
             - Use only facts and technologies supported by the experience context
             - Use company context, JD insight, and raw JD according to the Question Intent weighting rule

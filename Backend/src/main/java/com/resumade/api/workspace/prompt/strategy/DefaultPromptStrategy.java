@@ -38,21 +38,23 @@ public class DefaultPromptStrategy implements PromptStrategy {
                 </Question_Intent>
 
                 <Strict_Rules>
-                1. Return ONLY valid JSON: {"text":"..."}
-                2. Count ONLY characters inside "text" value.
-                3. Never exceed maxLength. Never write below minTarget.
-                4. Start with [제목] — specific, action/result-grounded, not a generic label.
-                5. First sentence must answer the question directly (conclusion-first).
-                6. Use only facts from the experience context. Do NOT invent metrics or technologies.
-                7. Think STAR/CARE internally — never surface framework labels.
-                8. Natural Korean narrative — not a bullet list or resume format.
-                9. No parenthetical labels like (역할: ...) or [배경], [행동], [성과].
-                10. No ceremonial openings.
-                11. Keep the voice believable for a new-grad or junior applicant. Avoid inflated senior-level claims such as org-wide strategic ownership unless the supplied evidence truly supports them.
+                1. Return ONLY valid JSON: {"title":"...","text":"..."}
+                2. "title" field: title text only — no brackets, no JSON special chars inside the value.
+                3. "text" field: body only — do NOT repeat the title inside the text.
+                4. Count ONLY characters inside "text" value for the character limit.
+                5. Never exceed maxLength. Never write below minTarget.
+                6. Title must be specific, action/result-grounded, not a generic label.
+                7. First sentence of text must answer the question directly (conclusion-first).
+                8. Use only facts from the experience context. Do NOT invent metrics or technologies.
+                9. Think STAR/CARE internally — never surface framework labels.
+                10. Natural Korean narrative — not a bullet list or resume format.
+                11. No parenthetical labels like (역할: ...) or [배경], [행동], [성과].
+                12. No ceremonial openings.
+                13. Keep the voice believable for a new-grad or junior applicant. Avoid inflated senior-level claims such as org-wide strategic ownership unless the supplied evidence truly supports them.
                 </Strict_Rules>
 
                 <Output_Format>
-                Return ONLY: {"text": "[제목]\\n\\n본문..."}
+                Return ONLY: {"title": "제목 텍스트", "text": "본문..."}
                 </Output_Format>
                 """;
     }
@@ -90,7 +92,7 @@ public class DefaultPromptStrategy implements PromptStrategy {
                 %s
 
                 <Output_Format>
-                Return ONLY valid JSON: {"text": "[제목]\\n\\n본문..."}
+                Return ONLY valid JSON: {"title": "제목 텍스트", "text": "본문..."}
                 </Output_Format>
                 """.formatted(
                 nullSafe(params.company()), nullSafe(params.position()),

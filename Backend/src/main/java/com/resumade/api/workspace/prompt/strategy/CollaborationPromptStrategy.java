@@ -38,19 +38,21 @@ public class CollaborationPromptStrategy implements PromptStrategy {
                 </Question_Intent>
 
                 <Strict_Rules>
-                1. Return ONLY valid JSON: {"text":"..."}
-                2. Count ONLY characters inside "text" value.
-                3. Never exceed maxLength. Never write below minTarget.
-                4. [제목]: must be specific about the collaboration context, NOT [협업 경험] or [팀워크 역량].
-                5. Be honest about the team's challenges — overly positive "우리 팀은 항상 잘 맞았습니다" answers are not credible.
-                6. Clearly distinguish "what the team did" from "what I specifically did".
-                7. No parenthetical labels. No bullet lists unless requested.
-                8. Write in natural Korean narrative voice.
-                9. Keep the voice believable for a junior applicant: emphasize coordination, documentation, interface alignment, and feedback acceptance over inflated leadership claims.
+                1. Return ONLY valid JSON: {"title":"...","text":"..."}
+                2. "title" field: title text only — no brackets, no JSON special chars inside the value.
+                3. "text" field: body only — do NOT repeat the title inside the text.
+                4. Count ONLY characters inside "text" value for the character limit.
+                5. Never exceed maxLength. Never write below minTarget.
+                6. Title must be specific about the collaboration context, NOT 협업 경험 or 팀워크 역량.
+                7. Be honest about the team's challenges — overly positive "우리 팀은 항상 잘 맞았습니다" answers are not credible.
+                8. Clearly distinguish "what the team did" from "what I specifically did".
+                9. No parenthetical labels. No bullet lists unless requested.
+                10. Write in natural Korean narrative voice.
+                11. Keep the voice believable for a junior applicant: emphasize coordination, documentation, interface alignment, and feedback acceptance over inflated leadership claims.
                 </Strict_Rules>
 
                 <Output_Format>
-                Return ONLY: {"text": "[제목]\\n\\n본문..."}
+                Return ONLY: {"title": "제목 텍스트", "text": "본문..."}
                 </Output_Format>
                 """;
     }
@@ -67,7 +69,7 @@ public class CollaborationPromptStrategy implements PromptStrategy {
                         Hard limit: 600 characters | Target: 480 ~ 600 characters
                         """,
                         """
-                        {"text": "[디자인-개발 간 스펙 충돌, RFC 문서로 합의 프로세스를 만들다]\\n\\n신규 컴포넌트 라이브러리 구축 프로젝트에서 디자이너와 개발팀 사이에 반복적인 스펙 충돌이 발생했습니다. 회의 중에는 합의가 됐다가 구현 단계에서 인식이 달랐던 것입니다. 저는 이 문제의 원인이 '구두 합의'에 있다고 판단하고, Notion 기반의 Component RFC 템플릿을 제안했습니다.\\n\\n각 컴포넌트의 Props API, 상태 전이, 접근성 요건을 문서화하고 디자이너-개발자 공동 리뷰를 의무화했습니다. 처음엔 문서 작성 오버헤드에 대한 저항이 있었지만, 3스프린트 후 QA 피드백 건수가 절반으로 줄면서 팀 전체가 프로세스를 자발적으로 유지하게 됐습니다."}
+                        {"title": "디자인-개발 간 스펙 충돌, RFC 문서로 합의 프로세스를 만들다", "text": "신규 컴포넌트 라이브러리 구축 프로젝트에서 디자이너와 개발팀 사이에 반복적인 스펙 충돌이 발생했습니다. 회의 중에는 합의가 됐다가 구현 단계에서 인식이 달랐던 것입니다. 저는 이 문제의 원인이 '구두 합의'에 있다고 판단하고, Notion 기반의 Component RFC 템플릿을 제안했습니다.\\n\\n각 컴포넌트의 Props API, 상태 전이, 접근성 요건을 문서화하고 디자이너-개발자 공동 리뷰를 의무화했습니다. 처음엔 문서 작성 오버헤드에 대한 저항이 있었지만, 3스프린트 후 QA 피드백 건수가 절반으로 줄면서 팀 전체가 프로세스를 자발적으로 유지하게 됐습니다."}
                         """
                 )
         );
@@ -101,10 +103,9 @@ public class CollaborationPromptStrategy implements PromptStrategy {
 
                 <Output_Format>
                 Return ONLY valid JSON:
-                {"text": "[제목]\\n\\n본문..."}
-                - [제목]: names the specific collaboration context
-                - Clearly distinguish "I did" from "the team did"
-                - Show friction honestly and how it was resolved
+                {"title": "제목 텍스트", "text": "본문..."}
+                - "title": names the specific collaboration context, no brackets
+                - "text": body — clearly distinguish "I did" from "the team did", show friction honestly
                 </Output_Format>
                 """.formatted(
                 nullSafe(params.company()), nullSafe(params.position()),
