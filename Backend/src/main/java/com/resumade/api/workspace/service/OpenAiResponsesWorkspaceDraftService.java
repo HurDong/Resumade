@@ -43,6 +43,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Before returning, silently count visible characters including spaces and line breaks, and expand with concrete evidence until the draft reaches the range.
             Start with a bracketed title like [Title].
             The title must be short, memorable, and must not summarize the question or repeat the company name, position name, or question wording.
+            The title must be a noun-phrase or action-outcome headline. Never end the title with a future-tense promise such as ~겠습니다, ~하겠습니다, ~만들겠습니다, ~이루겠습니다, or any equivalent vow or pledge form.
             The first sentence must answer the question directly in a conclusion-first way.
             Use only facts and technologies supported by the supplied experience context or explicit user directive. Do not invent experience, metrics, or unlisted tools.
             Read the Question Intent block first and obey its weighting rule.
@@ -83,6 +84,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             Preserve the strong facts from the current draft while improving structure, specificity, and job fit.
             Keep the bracketed title format.
             The title must be short, memorable, and must not turn into a generic question summary or repeat the company name or position name.
+            The title must be a noun-phrase or action-outcome headline. Never end the title with a future-tense promise such as ~겠습니다, ~하겠습니다, ~만들겠습니다, ~이루겠습니다, or any equivalent vow or pledge form.
             The first sentence must answer the question directly in a conclusion-first way.
             Use only facts and technologies supported by the supplied experience context, current draft, or explicit user directive. Do not invent experience, metrics, or unlisted tools.
             Read the Question Intent block first and obey its weighting rule.

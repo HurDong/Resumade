@@ -30,6 +30,7 @@ public interface WorkspaceDraftAiService {
             "Write in Korean.",
             "The title must read like a concrete cover-letter headline grounded in action, result, role fit, or contribution.",
             "Prefer action + result, problem + resolution, or role + concrete value over a short slogan.",
+            "The title must be a noun-phrase or action-outcome headline. Never end the title with a future-tense promise such as ~겠습니다, ~하겠습니다, ~만들겠습니다, ~이루겠습니다, or any equivalent vow or pledge form.",
             "Do not summarize the question or repeat the company name, position name, or question wording.",
             "Avoid generic meta titles such as 성장 경험, 문제 해결, 협업 역량, 지원동기, or similar labels.",
             "The first sentence must answer the question directly in a conclusion-first way.",
@@ -288,12 +289,13 @@ public interface WorkspaceDraftAiService {
             "Write in Korean.",
             "Only improve the title. Keep the body unchanged unless absolutely necessary for spacing.",
             "Keep the title in bracket form like [Title].",
-            "The title must read like a concrete cover-letter headline grounded in action, result, role fit, or contribution.",
+            "The title must reflect BOTH the question's core theme AND the key evidence or trait shown in the body.",
+            "Read the question carefully and extract its core intent (e.g., personality trait, collaboration style, growth mindset, problem-solving approach). Weave that intent into the title alongside the concrete evidence from the body.",
+            "Do not merely copy the question wording — distill the underlying trait or quality the question is probing, and express it through the applicant's demonstrated behavior or outcome.",
+            "Prefer: [trait or quality implied by question] + [concrete action or result from body]. Examples: [꼼꼼함이 팀 배포 장애를 막다], [빠른 학습으로 낯선 기술 스택을 3주 만에 내 것으로].",
             "Internally draft multiple candidate titles and choose the most natural one.",
-            "Prefer action + result, problem + resolution, or role + concrete value over a short slogan.",
             "Use a metric only when it is explicitly supported by the current text or supplied context.",
-            "Do not use a question-summary title.",
-            "Do not repeat the company name, position name, or question wording.",
+            "Do not repeat the company name, position name, or exact question wording verbatim.",
             "Do not use first-person pronouns such as 저는 or 저의.",
             "Do not turn the title into a report label or a meta category such as [역할], [결정], [성과 요약], [성장 경험], [문제 해결], [협업 역량], or similar.",
             "Avoid vague buzzwords such as 성실, 열정, 노력, 도전정신, or bare nouns like 경험, 역량, 성장, 협업 unless they are anchored by a specific action or outcome."
@@ -312,16 +314,19 @@ public interface WorkspaceDraftAiService {
             {{context}}
 
             Goal:
-            Rewrite only the title line into an accepted-cover-letter style headline.
+            Rewrite only the title line so it captures BOTH the question's underlying theme and the body's key evidence.
 
             Requirements:
             - Keep the body content unchanged
             - Replace only the title line
             - Internally draft 4 to 6 different title candidates and choose the single best one
+            - Step 1: identify what trait, quality, or competency the question is really asking about
+            - Step 2: identify the strongest concrete evidence (action, outcome, or behavior) in the body
+            - Step 3: fuse both into one memorable headline — the trait expressed through the evidence
             - The new title should usually be around 18 to 28 Korean characters inside the brackets when natural
-            - Favor action + result, problem + resolution, or role + concrete value
+            - Do not copy question wording verbatim — express the underlying intent through behavior or outcome
             - Use a metric only when it is explicitly supported by the current text or supplied context
-            - Avoid generic labels, vague buzzwords, or question summaries
+            - Avoid generic labels, vague buzzwords, or bare meta categories
             - Return only the full updated text in the required JSON shape
             """)
     DraftResponse rewriteTitle(
