@@ -1,6 +1,7 @@
 "use client"
 
-import type { BatchPlanResponse } from "@/lib/workspace/types"
+import type { BatchPlanResponse, QuestionCategory } from "@/lib/workspace/types"
+import { QUESTION_CATEGORY_LABELS } from "@/lib/workspace/types"
 import {
   Dialog,
   DialogContent,
@@ -12,6 +13,17 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
+
+const CATEGORY_DOT_COLORS: Record<string, string> = {
+  MOTIVATION:      "bg-blue-400",
+  EXPERIENCE:      "bg-emerald-400",
+  PROBLEM_SOLVING: "bg-orange-400",
+  COLLABORATION:   "bg-violet-400",
+  GROWTH:          "bg-cyan-400",
+  CULTURE_FIT:     "bg-rose-400",
+  TREND_INSIGHT:   "bg-yellow-400",
+  DEFAULT:         "bg-muted-foreground/40",
+}
 
 interface BatchPlanDialogProps {
   open: boolean
@@ -66,9 +78,10 @@ export function BatchPlanDialog({
                   <div className="text-base font-black leading-snug text-foreground">
                     {assignment.questionTitle}
                   </div>
-                  <Badge className="h-auto max-w-full whitespace-normal rounded-full px-3 py-1.5 text-[11px] font-bold leading-relaxed">
-                    {assignment.angle}
-                  </Badge>
+                  <div className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold text-muted-foreground bg-muted/50">
+                    <span className={`size-1.5 shrink-0 rounded-full ${CATEGORY_DOT_COLORS[assignment.category ?? "DEFAULT"]}`} />
+                    {assignment.category ? QUESTION_CATEGORY_LABELS[assignment.category] : "기타"}
+                  </div>
                 </div>
 
                 <div className="mt-4 grid gap-4 md:grid-cols-2">

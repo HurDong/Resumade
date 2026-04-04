@@ -347,6 +347,7 @@ public class WorkspaceBatchPlanService {
                     .avoidDetails(normalizeList(assignment.avoidDetails))
                     .reasoning(safe(assignment.reasoning))
                     .directivePrefix(buildDirectivePrefix(assignment))
+                    .category(resolveQuestionCategory(question))
                     .build());
         }
 
@@ -425,6 +426,7 @@ public class WorkspaceBatchPlanService {
                     .avoidDetails(avoidDetails)
                     .reasoning("Fallback heuristic plan generated because structured planning was unavailable.")
                     .directivePrefix(buildDirectivePrefix(stub))
+                    .category(category)
                     .build());
         }
 

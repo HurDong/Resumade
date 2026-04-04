@@ -83,6 +83,7 @@ export interface BatchPlanAssignment {
   avoidDetails: string[];
   reasoning: string;
   directivePrefix: string;
+  category: QuestionCategory | null;
 }
 
 export interface BatchPlanResponse {

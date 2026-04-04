@@ -1,5 +1,6 @@
 package com.resumade.api.workspace.dto;
 
+import com.resumade.api.workspace.prompt.QuestionCategory;
 import lombok.Builder;
 import lombok.Data;
 
@@ -38,6 +39,9 @@ public class BatchPlanResponse {
         private List<String> avoidDetails;
         private String reasoning;
         private String directivePrefix;
+
+        /** 유저 지정 또는 AI 자동 분류 결과 카테고리 */
+        private QuestionCategory category;
     }
 
     @Data
