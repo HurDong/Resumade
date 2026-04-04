@@ -23,8 +23,6 @@ Backend/run-backend-with-env.ps1
 Frontend/node_modules/
 Frontend/.next/
 Frontend/app/assets/
-Frontend/lib/audio/
-Frontend/public/
 
 # Environment files
 .env
