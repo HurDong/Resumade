@@ -295,21 +295,29 @@ public class WorkspaceService {
                     maxLength,
                     targetChars);
 
-            WorkspaceDraftAiService.DraftResponse refineResponse = workspaceDraftAiService.refineDraft(
+            DraftParams refineParams = buildDraftParams(
                     company,
                     position,
+                    questionTitle,
                     companyContext,
-                    currentInput,
                     maxLength,
                     minTargetChars,
                     maxTargetChars,
                     context,
                     others,
                     directiveForPrompt);
-            logLengthMetrics("refine", maxLength, minTargetChars, maxTargetChars, refineResponse.text, 0);
+
+            WorkspaceDraftAiService.DraftResponse refineResponse = generateRefinedDraftWithStrategy(
+                    category,
+                    refineParams,
+                    currentInput,
+                    false);
+            String assembledRefineDraft = assembleDraftText(refineResponse);
+            logLengthMetrics("refine", maxLength, minTargetChars, maxTargetChars, assembledRefineDraft, 0);
 
             String pipelineRefinedDraft = expandToMinimumLength(
-                    normalizeTitleSpacing(refineResponse.text).trim(),
+                    normalizeTitleSpacing(assembledRefineDraft).trim(),
+                    category,
                     minTargetChars,
                     maxTargetChars,
                     maxLength,
@@ -486,27 +494,25 @@ public class WorkspaceService {
             // ── [STEP 3] Prompt Strategy 기반 초안 생성 ──────────────────────
             // PromptFactory가 카테고리에 맞는 전략(XML 구조 프롬프트 + Few-shot)을 조립하고,
             // StrategyDraftGeneratorService가 ChatLanguageModel.generate()로 직접 실행합니다.
-            DraftParams draftParams = DraftParams.builder()
-                    .company(company)
-                    .position(position)
-                    .questionTitle(questionTitle)
-                    .companyContext(companyContext)
-                    .maxLength(maxLengthGen)
-                    .minTarget(minTargetChars)
-                    .maxTarget(preferredTargetChars)
-                    .experienceContext(context)
-                    .othersContext(others)
-                    .directive(directiveForPrompt)
-                    .build();
+            DraftParams draftParams = buildDraftParams(
+                    company,
+                    position,
+                    questionTitle,
+                    companyContext,
+                    maxLengthGen,
+                    minTargetChars,
+                    preferredTargetChars,
+                    context,
+                    others,
+                    directiveForPrompt);
 
-            List<ChatMessage> strategyMessages = promptFactory.buildMessages(category, draftParams);
-            WorkspaceDraftAiService.DraftResponse draftResponse =
-                    strategyDraftGeneratorService.generate(strategyMessages);
+            WorkspaceDraftAiService.DraftResponse draftResponse = generateDraftWithStrategy(category, draftParams);
             String assembledDraft = assembleDraftText(draftResponse);
             logLengthMetrics("generate", maxLengthGen, minTargetChars, preferredTargetChars, assembledDraft, 0);
 
             String pipelineDraft = expandToMinimumLength(
                     normalizeTitleSpacing(assembledDraft).trim(),
+                    category,
                     minTargetChars,
                     preferredTargetChars,
                     maxLengthGen,
@@ -1338,6 +1344,54 @@ public class WorkspaceService {
      * title/text 분리 응답을 "[제목]\n\n본문" 형태로 조립합니다.
      * title이 없으면 text만 반환합니다 (fallback).
      */
+    private DraftParams buildDraftParams(
+            String company,
+            String position,
+            String questionTitle,
+            String companyContext,
+            int maxLength,
+            int minTargetChars,
+            int maxTargetChars,
+            String context,
+            String others,
+            String directive
+    ) {
+        return DraftParams.builder()
+                .company(company)
+                .position(position)
+                .questionTitle(questionTitle)
+                .companyContext(companyContext)
+                .maxLength(maxLength)
+                .minTarget(minTargetChars)
+                .maxTarget(maxTargetChars)
+                .experienceContext(context)
+                .othersContext(others)
+                .directive(directive)
+                .build();
+    }
+
+    private WorkspaceDraftAiService.DraftResponse generateDraftWithStrategy(
+            QuestionCategory category,
+            DraftParams params
+    ) {
+        List<ChatMessage> strategyMessages = promptFactory.buildMessages(category, params);
+        return strategyDraftGeneratorService.generate(strategyMessages);
+    }
+
+    private WorkspaceDraftAiService.DraftResponse generateRefinedDraftWithStrategy(
+            QuestionCategory category,
+            DraftParams params,
+            String currentDraft,
+            boolean lengthRetry
+    ) {
+        List<ChatMessage> strategyMessages = promptFactory.buildRefineMessages(
+                category,
+                params,
+                currentDraft,
+                lengthRetry);
+        return strategyDraftGeneratorService.generate(strategyMessages);
+    }
+
     private String assembleDraftText(WorkspaceDraftAiService.DraftResponse response) {
         if (response == null) return null;
         String body = response.text != null ? response.text.trim() : "";
@@ -1578,6 +1632,7 @@ public class WorkspaceService {
 
     private String expandToMinimumLength(
             String text,
+            QuestionCategory category,
             int minTargetChars,
             int preferredTargetChars,
             int maxLength,
@@ -1605,6 +1660,7 @@ public class WorkspaceService {
             if (family > 1) {
                 familyCandidate = regenerateFreshDraftFamily(
                         bestCandidate,
+                        category,
                         minTargetChars,
                         preferredTargetChars,
                         maxLength,
@@ -1632,11 +1688,13 @@ public class WorkspaceService {
 
             String expandedFamilyCandidate = expandDraftFamily(
                     familyCandidate,
+                    category,
                     minTargetChars,
                     preferredTargetChars,
                     maxLength,
                     company,
                     position,
+                    questionTitle,
                     companyContext,
                     context,
                     others,
@@ -1667,11 +1725,13 @@ public class WorkspaceService {
 
     private String expandDraftFamily(
             String seedCandidate,
+            QuestionCategory category,
             int minTargetChars,
             int preferredTargetChars,
             int maxLength,
             String company,
             String position,
+            String questionTitle,
             String companyContext,
             String context,
             String others,
@@ -1698,12 +1758,14 @@ public class WorkspaceService {
                 String adjustedCandidate = underMin
                         ? expandDraftCandidate(
                                 candidate,
+                                category,
                                 candidateLength,
                                 minTargetChars,
                                 preferredTargetChars,
                                 maxLength,
                                 company,
                                 position,
+                                questionTitle,
                                 companyContext,
                                 context,
                                 others,
@@ -1755,6 +1817,7 @@ public class WorkspaceService {
 
     private String regenerateFreshDraftFamily(
             String previousBestDraft,
+            QuestionCategory category,
             int minTargetChars,
             int preferredTargetChars,
             int maxLength,
@@ -1774,7 +1837,7 @@ public class WorkspaceService {
                 toKoreanNextAction("GENERATE_FRESH_FAMILY"));
 
         try {
-            WorkspaceDraftAiService.DraftResponse regenerated = workspaceDraftAiService.generateDraft(
+            DraftParams draftParams = buildDraftParams(
                     company,
                     position,
                     questionTitle,
@@ -1785,6 +1848,7 @@ public class WorkspaceService {
                     context,
                     others,
                     directive);
+            WorkspaceDraftAiService.DraftResponse regenerated = generateDraftWithStrategy(category, draftParams);
 
             String regeneratedText = assembleDraftText(regenerated);
             if (regenerated == null || regeneratedText == null || regeneratedText.isBlank()) {
@@ -1813,12 +1877,14 @@ public class WorkspaceService {
 
     private String expandDraftCandidate(
             String candidate,
+            QuestionCategory category,
             int candidateLength,
             int minTargetChars,
             int preferredTargetChars,
             int maxLength,
             String company,
             String position,
+            String questionTitle,
             String companyContext,
             String context,
             String others,
@@ -1834,11 +1900,11 @@ public class WorkspaceService {
                 family,
                 attempt);
 
-        WorkspaceDraftAiService.DraftResponse expanded = workspaceDraftAiService.refineDraft(
+        DraftParams draftParams = buildDraftParams(
                 company,
                 position,
+                questionTitle,
                 companyContext,
-                candidate,
                 maxLength,
                 minTargetChars,
                 preferredTargetChars,
@@ -1846,11 +1912,17 @@ public class WorkspaceService {
                 others,
                 expansionDirective);
 
+        WorkspaceDraftAiService.DraftResponse expanded = generateRefinedDraftWithStrategy(
+                category,
+                draftParams,
+                candidate,
+                true);
+
         if (expanded == null || expanded.text == null || expanded.text.isBlank()) {
             return candidate;
         }
 
-        return normalizeLengthText(normalizeTitleSpacing(expanded.text)).trim();
+        return normalizeLengthText(normalizeTitleSpacing(assembleDraftText(expanded))).trim();
     }
 
     private String shortenDraftCandidate(
