@@ -1,5 +1,75 @@
 # Backend Rules (Spring Boot)
 
+## 도메인 용어 사전
+| 용어 | 설명 |
+|---|---|
+| **Application** | 지원 공고 1건. Kanban 카드 1개와 1:1 대응. `workspace/domain/Application.java` |
+| **WorkspaceQuestion** | Application 하위 자소서 문항 1개. 초안~최종본까지의 상태를 보유 |
+| **Experience (Vault)** | 구직자가 업로드한 경험 데이터(.md/.json). Elasticsearch에 인덱싱되어 RAG 소스로 사용 |
+| **AI Draft** | `WorkspaceDraftAiService`가 경험 컨텍스트 + JD 기반으로 생성한 한국어 자소서 초안 |
+| **Washed Draft** | AI 초안을 번역 서비스(DeepL→Papago→Google 우선순위)로 EN→KO 세탁한 결과물. AI 탐지 우회 목적 |
+| **Human Patch** | `WorkspacePatchAiService`가 원본 초안 vs Washed Draft를 비교해 오번역/기술 용어 손실을 탐지·표시하는 검수 단계 |
+| **Snapshot** | `QuestionSnapshot`: 문항별 버전 이력 저장. `SnapshotType`(DRAFT/WASHED/PATCHED/FINAL) 구분 |
+| **Prompt Strategy** | `PromptFactory` + `QuestionCategory` 기반으로 문항 유형별 최적 프롬프트를 선택하는 전략 패턴 |
+
+## AI 파이프라인 흐름
+Workspace의 자소서 생성은 4단계 비동기 파이프라인으로 구성된다. 모든 단계는 `SseEmitter`로 스트리밍.
+
+```
+[1. 문항 분류]
+ClassifierAiService (temp=0, gpt-4o-mini)
+→ QuestionCategory 결정 (EXPERIENCE / MOTIVATION / COLLABORATION / ...)
+→ PromptFactory.select(category) → 해당 PromptStrategy 반환
+
+[2. AI 초안 생성]
+StrategyDraftGeneratorService
+→ PromptStrategy.build(DraftParams) → 프롬프트 조립
+→ OpenAiResponsesWorkspaceDraftService (Primary, Responses API 스트리밍)
+   └─ fallback: LangChain4j WorkspaceDraftAiService (레거시)
+→ 결과: { title, text } JSON — WorkspaceQuestion.aiDraft에 저장
+
+[3. 번역 세탁 (Human Patch 준비)]
+RoutingTranslationService
+→ translateToEnglish(aiDraft) → translateToKorean(englishText)
+→ Provider 우선순위: deepl → (fallback) google/papago (application.yml: translation.provider)
+→ 결과: washedDraft — WorkspaceQuestion.washedDraft에 저장
+
+[4. Human Patch 검수]
+WorkspacePatchAiService.analyzePatch(original, washed, ...)
+→ CRITICAL/WARNING 오번역 탐지 + 인라인 <mark> 태깅
+→ DraftAnalysisResult: { mistranslations[], aiReviewReport, humanPatchedText }
+→ 프론트에서 Diff 하이라이팅 UI 렌더링
+
+[보조 서비스]
+FinalEditorAiService   — 최종 편집 (plain text 출력, temp=0.7)
+SpellCheckAiService    — 맞춤법 교정 (temp=0, json_object)
+ExperienceAiService    — Vault 업로드 시 경험 요약·태깅
+JdTextAiService        — JD 텍스트 파싱
+JdVisionAiService      — JD 이미지 OCR+파싱 (gpt-4o)
+CompanyResearchService — Gemini 기반 기업 정보 수집
+```
+
+**모델 설정**: `application.yml` → `openai.models.*` 키로 서비스별 모델 독립 관리.
+**신규 AI 서비스 추가 시**: `AiConfig.java`에 `@Bean` 등록 후 `@Value`로 모델명 주입.
+
+## API 에러 응답 포맷
+`GlobalExceptionHandler`가 모든 에러를 아래 형식으로 통일:
+
+```json
+{ "message": "에러 설명", "type": "ExceptionClassName" }
+```
+
+| 상황 | HTTP Status | 비고 |
+|---|---|---|
+| `IllegalArgumentException` | **400** Bad Request | 잘못된 입력값 |
+| 그 외 모든 예외 | **500** Internal Server Error | 서버 오류 |
+| SSE 응답 중 클라이언트 끊김 | 응답 없음 (null 반환) | `isClientDisconnectException()` 처리 |
+| SSE 응답 중 예외 발생 | 응답 없음 (null 반환) | `Accept: text/event-stream` 감지 시 |
+
+**커스텀 예외 작성 규칙**: `RuntimeException` 상속 + feature별 패키지 내 위치.
+예: `workspace/exception/ApplicationNotFoundException.java`
+프론트는 `res.ok` 체크 후 `res.text()`로 `message` 필드 파싱.
+
 ## Package Structure
 Feature-based: `com.resumade.api.[feature].{domain, service, controller, dto, prompt}`
 공통 인프라: `com.resumade.api.infra.{exception, sse, ai, elasticsearch}`
