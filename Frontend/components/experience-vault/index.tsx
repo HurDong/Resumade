@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { type Experience } from "@/lib/mock-data"
+import { normalizeExperienceForUi } from "@/lib/experience/normalize"
 import { DropZone } from "./drop-zone"
 import { ExperienceCard } from "./experience-card"
 import { ExperienceDetailModal } from "./experience-detail-modal"
@@ -29,10 +30,7 @@ export function ExperienceVault() {
 
       const data = (await response.json()) as Experience[]
       setExperiences(
-        data.map((experience) => ({
-          ...experience,
-          id: String(experience.id),
-        }))
+        data.map((experience) => normalizeExperienceForUi(experience))
       )
     } catch (error) {
       console.error("Failed to fetch experiences:", error)
@@ -79,13 +77,15 @@ export function ExperienceVault() {
   }
 
   const handleExperienceUpdated = (updatedExperience: Experience) => {
+    const normalizedExperience = normalizeExperienceForUi(updatedExperience)
+
     setExperiences((prev) =>
       prev.map((experience) =>
-        experience.id === updatedExperience.id ? updatedExperience : experience
+        experience.id === normalizedExperience.id ? normalizedExperience : experience
       )
     )
     setSelectedExperience((prev) =>
-      prev?.id === updatedExperience.id ? updatedExperience : prev
+      prev?.id === normalizedExperience.id ? normalizedExperience : prev
     )
   }
 

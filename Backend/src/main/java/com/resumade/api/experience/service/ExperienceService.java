@@ -24,10 +24,13 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -36,6 +39,10 @@ import java.util.stream.Collectors;
 public class ExperienceService {
 
     private static final List<String> SUPPORTED_EXTENSIONS = List.of(".md", ".json");
+    private static final Pattern FILE_CITATION_PATTERN = Pattern.compile("?fileciteturn\\d+file\\d+(?:-L\\d+)?");
+    private static final Pattern BRACKET_CITATION_PATTERN = Pattern.compile("【\\d+:\\d+†[^】]+】");
+    private static final Pattern ZERO_WIDTH_PATTERN = Pattern.compile("[\\u200B-\\u200D\\u2060\\uFEFF]");
+    private static final Pattern MULTI_SPACE_PATTERN = Pattern.compile("[\\t\\u000B\\f\\r ]{2,}");
 
     private final ExperienceRepository experienceRepository;
     private final ExperienceDocumentRepository experienceDocumentRepository;
@@ -50,20 +57,20 @@ public class ExperienceService {
         validateSupportedFileType(file);
 
         // 1. Parse File Content
-        String content = new String(file.getBytes(), StandardCharsets.UTF_8);
+        String content = sanitizeRawContent(new String(file.getBytes(), StandardCharsets.UTF_8));
 
         // 2. Real AI Extraction
-        ExperienceExtractionResult aiResult = experienceAiService.extractExperience(content);
+        ExperienceExtractionResult aiResult = sanitizeExtractionResult(experienceAiService.extractExperience(content));
 
         // 3. Save to MySQL
         Experience experience = Experience.builder()
-                .title(aiResult.getTitle() != null ? aiResult.getTitle() : title)
-                .category(aiResult.getCategory() != null ? aiResult.getCategory() : category)
+                .title(firstNonBlank(aiResult.getTitle(), title))
+                .category(firstNonBlank(aiResult.getCategory(), category))
                 .description(aiResult.getDescription())
                 .techStack(objectMapper.writeValueAsString(aiResult.getTechStack()))
                 .metrics(objectMapper.writeValueAsString(aiResult.getMetrics()))
-                .period(aiResult.getPeriod() != null ? aiResult.getPeriod() : period)
-                .role(aiResult.getRole() != null ? aiResult.getRole() : role)
+                .period(firstNonBlank(aiResult.getPeriod(), period))
+                .role(firstNonBlank(aiResult.getRole(), role))
                 .organization(aiResult.getOrganization())
                 .rawContent(content)
                 .originalFileName(file.getOriginalFilename())
@@ -75,7 +82,7 @@ public class ExperienceService {
                 + "\nStructured raw content:\n" + content;
         indexToElasticsearch(savedExperience.getId(), narrativeText);
 
-        return ExperienceResponse.from(savedExperience, aiResult.getTechStack(), aiResult.getMetrics());
+        return buildResponse(savedExperience, aiResult.getTechStack(), aiResult.getMetrics());
     }
 
     @Transactional
@@ -93,22 +100,29 @@ public class ExperienceService {
         }
 
         try {
-            ExperienceExtractionResult aiResult = experienceAiService.extractExperience(experience.getRawContent());
+            String sanitizedRawContent = sanitizeRawContent(experience.getRawContent());
+            ExperienceExtractionResult aiResult = sanitizeExtractionResult(experienceAiService.extractExperience(sanitizedRawContent));
+            List<String> techStack = aiResult.getTechStack().isEmpty()
+                    ? readJsonArray(experience.getTechStack())
+                    : aiResult.getTechStack();
+            List<String> metrics = aiResult.getMetrics().isEmpty()
+                    ? readJsonArray(experience.getMetrics())
+                    : aiResult.getMetrics();
             experience.updateFromAi(
-                    aiResult.getTitle(),
-                    aiResult.getCategory(),
-                    aiResult.getDescription(),
-                    objectMapper.writeValueAsString(aiResult.getTechStack()),
-                    objectMapper.writeValueAsString(aiResult.getMetrics()),
-                    aiResult.getPeriod(),
-                    aiResult.getRole(),
-                    aiResult.getOrganization()
+                    firstNonBlank(aiResult.getTitle(), experience.getTitle()),
+                    firstNonBlank(aiResult.getCategory(), experience.getCategory()),
+                    firstNonBlank(aiResult.getDescription(), experience.getDescription()),
+                    objectMapper.writeValueAsString(techStack),
+                    objectMapper.writeValueAsString(metrics),
+                    firstNonBlank(aiResult.getPeriod(), experience.getPeriod()),
+                    firstNonBlank(aiResult.getRole(), experience.getRole()),
+                    firstNonBlank(aiResult.getOrganization(), experience.getOrganization())
             );
             experienceRepository.save(experience);
             // Update ES index when reclassifying
             experienceDocumentRepository.deleteByExperienceId(experience.getId());
-            String narrativeText = buildNarrativeText(experience, aiResult.getTechStack(), aiResult.getMetrics())
-                    + "\nStructured raw content:\n" + experience.getRawContent();
+            String narrativeText = buildNarrativeText(experience, techStack, metrics)
+                    + "\nStructured raw content:\n" + sanitizedRawContent;
             indexToElasticsearch(experience.getId(), narrativeText);
 
             log.info("Reclassified experience id {}", experience.getId());
@@ -171,11 +185,11 @@ public class ExperienceService {
         return experienceRepository.findAll().stream()
                 .map(exp -> {
                     try {
-                        List<String> tech = objectMapper.readValue(exp.getTechStack(), new TypeReference<>() {});
-                        List<String> metrics = objectMapper.readValue(exp.getMetrics(), new TypeReference<>() {});
-                        return ExperienceResponse.from(exp, tech, metrics);
+                        List<String> tech = sanitizeList(objectMapper.readValue(exp.getTechStack(), new TypeReference<>() {}));
+                        List<String> metrics = sanitizeList(objectMapper.readValue(exp.getMetrics(), new TypeReference<>() {}));
+                        return buildResponse(exp, tech, metrics);
                     } catch (JsonProcessingException e) {
-                        return ExperienceResponse.from(exp, List.of(), List.of());
+                        return buildResponse(exp, List.of(), List.of());
                     }
                 })
                 .collect(Collectors.toList());
@@ -187,11 +201,11 @@ public class ExperienceService {
                 .orElseThrow(() -> new IllegalArgumentException("Experience not found: " + id));
         reclassify(experience);
         try {
-            List<String> tech = objectMapper.readValue(experience.getTechStack(), new TypeReference<>() {});
-            List<String> metrics = objectMapper.readValue(experience.getMetrics(), new TypeReference<>() {});
-            return ExperienceResponse.from(experience, tech, metrics);
+            List<String> tech = sanitizeList(objectMapper.readValue(experience.getTechStack(), new TypeReference<>() {}));
+            List<String> metrics = sanitizeList(objectMapper.readValue(experience.getMetrics(), new TypeReference<>() {}));
+            return buildResponse(experience, tech, metrics);
         } catch (JsonProcessingException e) {
-            return ExperienceResponse.from(experience, List.of(), List.of());
+            return buildResponse(experience, List.of(), List.of());
         }
     }
 
@@ -200,7 +214,7 @@ public class ExperienceService {
         Experience experience = experienceRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Experience not found: " + id));
 
-        String normalizedRawContent = rawContent == null ? "" : rawContent.trim();
+        String normalizedRawContent = sanitizeRawContent(rawContent);
         if (normalizedRawContent.isBlank()) {
             throw new IllegalArgumentException("Markdown content must not be blank.");
         }
@@ -232,7 +246,7 @@ public class ExperienceService {
         indexToElasticsearch(id, narrativeText);
 
         Experience saved = experienceRepository.save(experience);
-        return ExperienceResponse.from(saved, techStack, metrics);
+        return buildResponse(saved, techStack, metrics);
     }
 
     @Transactional
@@ -265,7 +279,7 @@ public class ExperienceService {
         }
 
         try {
-            return objectMapper.readValue(value, new TypeReference<>() {});
+            return sanitizeList(objectMapper.readValue(value, new TypeReference<>() {}));
         } catch (JsonProcessingException e) {
             log.warn("Failed to parse JSON array from stored experience field", e);
             return List.of();
@@ -309,7 +323,15 @@ public class ExperienceService {
         String role = extractSingleLine(sections, "담당역할", "역할", "role");
         String organization = extractSingleLine(sections, "소속기관", "소속", "organization", "기관");
 
-        return new MarkdownSnapshot(title, description, techStack, metrics, period, role, organization);
+        return new MarkdownSnapshot(
+                sanitizeInlineText(title),
+                sanitizeInlineText(description),
+                techStack,
+                metrics,
+                sanitizeInlineText(period),
+                sanitizeInlineText(role),
+                sanitizeInlineText(organization)
+        );
     }
 
     private String normalizeHeading(String heading) {
@@ -351,17 +373,105 @@ public class ExperienceService {
             return List.of();
         }
 
-        return text.lines()
+        return sanitizeList(text.lines()
                 .map(String::trim)
                 .filter(line -> !line.isBlank())
                 .map(line -> line.replaceFirst("^[-*]\\s*", "").trim())
                 .filter(line -> !line.isBlank())
-                .collect(Collectors.toList());
+                .collect(Collectors.toList()));
     }
 
     private String getSectionText(Map<String, StringBuilder> sections, String key) {
         StringBuilder builder = sections.get(key);
         return builder == null ? "" : builder.toString().trim();
+    }
+
+    private ExperienceExtractionResult sanitizeExtractionResult(ExperienceExtractionResult result) {
+        if (result == null) {
+            return ExperienceExtractionResult.builder()
+                    .techStack(List.of())
+                    .metrics(List.of())
+                    .build();
+        }
+
+        return ExperienceExtractionResult.builder()
+                .title(sanitizeInlineText(result.getTitle()))
+                .category(sanitizeInlineText(result.getCategory()))
+                .description(sanitizeInlineText(result.getDescription()))
+                .techStack(sanitizeList(result.getTechStack()))
+                .metrics(sanitizeList(result.getMetrics()))
+                .period(sanitizeInlineText(result.getPeriod()))
+                .role(sanitizeInlineText(result.getRole()))
+                .organization(sanitizeInlineText(result.getOrganization()))
+                .build();
+    }
+
+    private ExperienceResponse buildResponse(Experience experience, List<String> techStack, List<String> metrics) {
+        return ExperienceResponse.builder()
+                .id(experience.getId())
+                .title(sanitizeInlineText(experience.getTitle()))
+                .category(sanitizeInlineText(experience.getCategory()))
+                .description(sanitizeInlineText(experience.getDescription()))
+                .techStack(sanitizeList(techStack))
+                .metrics(sanitizeList(metrics))
+                .period(sanitizeInlineText(experience.getPeriod()))
+                .role(sanitizeInlineText(experience.getRole()))
+                .organization(sanitizeInlineText(experience.getOrganization()))
+                .rawContent(sanitizeRawContent(experience.getRawContent()))
+                .build();
+    }
+
+    private List<String> sanitizeList(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> uniqueValues = new LinkedHashSet<>();
+        for (String value : values) {
+            String sanitized = sanitizeInlineText(value).replaceFirst("^[-*]\\s*", "").trim();
+            if (!sanitized.isBlank()) {
+                uniqueValues.add(sanitized);
+            }
+        }
+
+        return List.copyOf(uniqueValues);
+    }
+
+    private String sanitizeInlineText(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+
+        return MULTI_SPACE_PATTERN.matcher(stripCitationArtifacts(value).replace('\n', ' '))
+                .replaceAll(" ")
+                .trim();
+    }
+
+    private String sanitizeRawContent(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        return stripCitationArtifacts(value)
+                .replace("\r\n", "\n")
+                .replaceAll("[ \t]+\n", "\n")
+                .replaceAll("\n{3,}", "\n\n")
+                .trim();
+    }
+
+    private String stripCitationArtifacts(String value) {
+        String withoutFileCitations = FILE_CITATION_PATTERN.matcher(value).replaceAll(" ");
+        String withoutBracketCitations = BRACKET_CITATION_PATTERN.matcher(withoutFileCitations).replaceAll(" ");
+        return ZERO_WIDTH_PATTERN.matcher(withoutBracketCitations).replaceAll("");
+    }
+
+    private String firstNonBlank(String primary, String fallback) {
+        String sanitizedPrimary = sanitizeInlineText(primary);
+        if (!sanitizedPrimary.isBlank()) {
+            return sanitizedPrimary;
+        }
+
+        return sanitizeInlineText(fallback);
     }
 
     private String buildNarrativeText(Experience exp, List<String> techStack, List<String> metrics) {

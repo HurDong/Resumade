@@ -18,6 +18,8 @@ export function ExperienceCard({
   onDelete?: () => void;
 }) {
   const [isDeleting, setIsDeleting] = useState(false)
+  const visibleTechStack = experience.techStack.slice(0, 3)
+  const hiddenTechCount = Math.max(experience.techStack.length - visibleTechStack.length, 0)
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -46,7 +48,7 @@ export function ExperienceCard({
 
   return (
     <Card 
-      className={`group relative transition-all hover:shadow-md hover:border-primary/30 cursor-pointer ${isDeleting ? "opacity-50 pointer-events-none" : ""}`}
+      className={`group relative cursor-pointer overflow-hidden transition-all hover:border-primary/30 hover:shadow-md ${isDeleting ? "pointer-events-none opacity-50" : ""}`}
       onClick={onClick}
     >
       <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity z-10">
@@ -61,37 +63,49 @@ export function ExperienceCard({
       </div>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
               <Sparkles className="size-5 text-primary" />
             </div>
-            <div>
-              <CardTitle className="text-base leading-tight">{experience.title}</CardTitle>
-              <CardDescription className="flex items-center gap-1 mt-1">
+            <div className="min-w-0">
+              <CardTitle className="line-clamp-2 text-base leading-tight">{experience.title}</CardTitle>
+              <CardDescription className="mt-1 flex items-center gap-1">
                 <Folder className="size-3" />
-                {experience.category}
+                <span className="truncate">{experience.category}</span>
               </CardDescription>
             </div>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="min-w-0 space-y-4">
         <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
           {experience.description}
         </p>
         
         <div className="flex flex-wrap gap-1.5">
-          {experience.techStack.map((tech) => (
-            <Badge key={tech} variant="secondary" className="text-xs font-normal">
+          {visibleTechStack.map((tech) => (
+            <Badge
+              key={tech}
+              variant="secondary"
+              className="h-auto max-w-full justify-start whitespace-normal break-words px-2.5 py-1 text-left text-xs font-normal leading-snug"
+            >
               {tech}
             </Badge>
           ))}
+          {hiddenTechCount > 0 && (
+            <span className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+              +{hiddenTechCount}개 더보기
+            </span>
+          )}
         </div>
 
         <div className="space-y-2 pt-2 border-t border-border">
           <div className="flex flex-wrap gap-2">
             {experience.metrics.slice(0, 2).map((metric, idx) => (
-              <span key={idx} className="text-xs text-primary font-medium bg-primary/10 px-2 py-1 rounded-md">
+              <span
+                key={idx}
+                className="max-w-full rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary break-words whitespace-normal"
+              >
                 {metric}
               </span>
             ))}
