@@ -28,6 +28,12 @@ public class TechNote {
     @Column(length = 100)
     private String category;
 
+    @Column(columnDefinition = "LONGTEXT")
+    private String content;
+
+    @Column(name = "sort_order")
+    private Integer sortOrder;
+
     @Column(length = 300)
     private String summary;
 
@@ -48,23 +54,25 @@ public class TechNote {
     private LocalDateTime updatedAt;
 
     @Builder
-    public TechNote(String title, String category, String summary,
-                    String conditions, String template, String tags) {
+    public TechNote(String title, String category, String content, Integer sortOrder,
+                    String summary, String conditions, String template, String tags) {
         this.title = title;
         this.category = category;
+        this.content = content;
+        this.sortOrder = sortOrder;
         this.summary = summary;
         this.conditions = conditions;
         this.template = template;
         this.tags = tags;
     }
 
-    public void update(String title, String category, String summary,
-                       String conditions, String template, String tags) {
+    public void updateWiki(String title, String category, String content) {
         this.title = title;
         this.category = category;
-        this.summary = summary;
-        this.conditions = conditions;
-        this.template = template;
-        this.tags = tags;
+        this.content = content;
+    }
+
+    public void updateSortOrder(int sortOrder) {
+        this.sortOrder = sortOrder;
     }
 }
