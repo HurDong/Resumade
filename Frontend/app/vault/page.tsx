@@ -12,18 +12,18 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 type VaultView = "experience" | "wiki"
 
 const TABS = [
-  { key: "experience" as const, label: "Experience Vault", icon: BookOpen },
-  { key: "wiki" as const, label: "Coding Wiki", icon: Lightbulb },
+  { key: "experience" as const, label: "경험 보관소", icon: BookOpen },
+  { key: "wiki" as const, label: "코테 위키", icon: Lightbulb },
 ]
 
 const HEADER_INFO: Record<VaultView, { title: string; description: string }> = {
   experience: {
-    title: "Experience Vault",
-    description: "Upload project experience and connect it to RAG context.",
+    title: "경험 보관소",
+    description: "프로젝트 경험을 업로드하고 RAG 문맥으로 연결합니다.",
   },
   wiki: {
-    title: "Coding Wiki",
-    description: "Organize syntax and algorithm review cards for coding tests.",
+    title: "코테 위키",
+    description: "코딩테스트 직전 빠르게 훑는 문법·알고리즘 복습 카드를 정리합니다.",
   },
 }
 
