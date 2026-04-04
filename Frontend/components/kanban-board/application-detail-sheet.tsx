@@ -6,6 +6,7 @@ import { format } from "date-fns"
 import { ko } from "date-fns/locale"
 import {
   Calendar as CalendarIcon,
+  CalendarDays,
   CheckCircle2,
   ChevronDown,
   ClipboardList,
@@ -27,6 +28,7 @@ import { type Application } from "@/lib/mock-data"
 import { JDAnalysisPanel } from "./jd-analysis-panel"
 import { CompanyResearchPanel } from "./company-research-panel"
 import { QuestionsPanel } from "./questions-panel"
+import { ApplicationSchedulePanel } from "./application-schedule-panel"
 import { columns } from "./index"
 import {
   DropdownMenu,
@@ -275,7 +277,7 @@ export function ApplicationDetailSheet({
           }
           className="flex h-full min-h-0 flex-1 flex-col"
         >
-          <TabsList className="grid h-auto w-full shrink-0 grid-cols-3 rounded-none border-b border-border bg-background p-0">
+          <TabsList className="grid h-auto w-full shrink-0 grid-cols-4 rounded-none border-b border-border bg-background p-0">
             <TabsTrigger
               value="jd"
               className="gap-1.5 whitespace-normal break-words rounded-none border-b-2 border-transparent px-2 py-3 text-[11px] leading-tight data-[state=active]:border-primary data-[state=active]:bg-transparent sm:gap-2 sm:px-4 sm:text-sm"
@@ -296,6 +298,13 @@ export function ApplicationDetailSheet({
             >
               <ClipboardList className="size-4" />
               {"\ubb38\ud56d\u0020\uad00\ub9ac"}
+            </TabsTrigger>
+            <TabsTrigger
+              value="schedules"
+              className="gap-1.5 whitespace-normal break-words rounded-none border-b-2 border-transparent px-2 py-3 text-[11px] leading-tight data-[state=active]:border-primary data-[state=active]:bg-transparent sm:gap-2 sm:px-4 sm:text-sm"
+            >
+              <CalendarDays className="size-4" />
+              {"\uc804\ud615\u0020\uc77c\uc815"}
             </TabsTrigger>
           </TabsList>
 
@@ -318,6 +327,9 @@ export function ApplicationDetailSheet({
                 onRefresh={onRefresh}
                 onUpdateApplication={onUpdateApplication}
               />
+            </TabsContent>
+            <TabsContent value="schedules" className="m-0 p-4 sm:p-6 lg:p-7">
+              <ApplicationSchedulePanel applicationId={Number(application.id)} />
             </TabsContent>
           </ScrollArea>
         </Tabs>
