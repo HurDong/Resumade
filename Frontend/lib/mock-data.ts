@@ -30,11 +30,31 @@ export interface Experience {
   title: string
   category: string
   description: string
+  origin?: string
   techStack: string[]
   metrics: string[]
+  overallTechStack?: string[]
+  jobKeywords?: string[]
+  questionTypes?: string[]
   period: string
   role: string
+  organization?: string
   rawContent?: string
+  facets?: ExperienceFacet[]
+}
+
+export interface ExperienceFacet {
+  id?: string | number
+  displayOrder?: number
+  title: string
+  situation: string[]
+  role: string[]
+  judgment: string[]
+  actions: string[]
+  results: string[]
+  techStack: string[]
+  jobKeywords?: string[]
+  questionTypes?: string[]
 }
 
 // Mock Applications Data

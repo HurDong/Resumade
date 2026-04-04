@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.resumade.api.experience.domain.Experience;
+import com.resumade.api.experience.domain.ExperienceFacet;
 import com.resumade.api.experience.domain.ExperienceRepository;
 import com.resumade.api.workspace.domain.Application;
 import com.resumade.api.workspace.domain.ApplicationRepository;
@@ -23,11 +24,18 @@ import org.springframework.web.client.RestTemplate;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -40,6 +48,20 @@ public class WorkspaceBatchPlanService {
     private static final int MAX_EXPERIENCE_DESCRIPTION_CHARS = 240;
     private static final int MAX_EXPERIENCE_RAW_CHARS = 380;
     private static final int MAX_CURRENT_DRAFT_CHARS = 220;
+    private static final int INITIAL_BATCH_PLAN_MAX_OUTPUT_TOKENS = 3600;
+    private static final int RETRY_BATCH_PLAN_MAX_OUTPUT_TOKENS = 5600;
+    private static final Pattern TOKEN_PATTERN = Pattern.compile("[\\p{IsAlphabetic}\\p{IsDigit}\\u3131-\\u318E\\uAC00-\\uD7A3+#._-]+");
+    private static final Set<String> STOPWORDS = Set.of(
+            "the", "and", "for", "with", "from", "that", "this", "your", "into", "self", "intro", "introduction",
+            "resume", "question", "company", "position", "role", "experience", "project", "draft", "paragraph",
+            "focus", "tone", "keep", "avoid", "more", "detail", "details", "specific", "specificity", "structure",
+            "지원", "문항", "자소서", "자기소개서", "질문", "회사", "직무", "경험", "프로젝트", "내용", "작성"
+    );
+    private static final Set<String> AI_DOMAIN_TOKENS = Set.of(
+            "ai", "ml", "llm", "rag", "nlp", "cv", "vision", "inference", "finetuning", "prompt",
+            "embedding", "vector", "retrieval", "model", "training", "eval", "evaluation",
+            "머신러닝", "딥러닝", "생성형", "모델", "추론", "학습", "파인튜닝", "임베딩", "벡터", "검색"
+    );
     private static final String SYSTEM_PROMPT = """
             You are a senior cover-letter strategy architect for Korean self-introduction questions.
             Your task: design a differentiated, interview-verifiable writing strategy for EVERY question in one batch.
@@ -164,26 +186,45 @@ public class WorkspaceBatchPlanService {
             throw new IllegalArgumentException("At least one valid question is required");
         }
 
-        List<Experience> experiences = experienceRepository.findAll();
+        List<Experience> experiences = experienceRepository.findAllWithFacets();
         if (apiKey == null || apiKey.isBlank() || "demo".equalsIgnoreCase(apiKey.trim())) {
             log.warn("OpenAI API key missing for workspace batch plan. Falling back to heuristic planning.");
-            return buildHeuristicPlan(questions, experiences);
+            return buildHeuristicPlan(application, questions, experiences);
         }
 
         try {
-            JsonNode response = requestPlanFromOpenAi(application, questions, experiences);
+            JsonNode response = requestPlanFromOpenAi(
+                    application,
+                    questions,
+                    experiences,
+                    INITIAL_BATCH_PLAN_MAX_OUTPUT_TOKENS
+            );
             BatchPlanAiResponse parsed = parsePlanResponse(response);
-            return toResponse(parsed, questions);
+            return toResponse(parsed, questions, application, experiences);
         } catch (Exception e) {
-            log.warn("Workspace batch planning failed. Falling back to heuristic plan. model={}", modelName, e);
-            return buildHeuristicPlan(questions, experiences);
+            log.warn("Workspace batch planning primary attempt failed. Retrying once with a larger output budget. model={}",
+                    modelName, e);
+            try {
+                JsonNode retryResponse = requestPlanFromOpenAi(
+                        application,
+                        questions,
+                        experiences,
+                        RETRY_BATCH_PLAN_MAX_OUTPUT_TOKENS
+                );
+                BatchPlanAiResponse parsed = parsePlanResponse(retryResponse);
+                return toResponse(parsed, questions, application, experiences);
+            } catch (Exception retryException) {
+                log.warn("Workspace batch planning failed. Falling back to heuristic plan. model={}", modelName, retryException);
+                return buildHeuristicPlan(application, questions, experiences);
+            }
         }
     }
 
     private JsonNode requestPlanFromOpenAi(
             Application application,
             List<BatchPlanRequest.QuestionSnapshot> questions,
-            List<Experience> experiences
+            List<Experience> experiences,
+            int maxOutputTokens
     ) {
         RestTemplate restTemplate = buildRestTemplate(timeout);
         HttpHeaders headers = new HttpHeaders();
@@ -196,7 +237,7 @@ public class WorkspaceBatchPlanService {
                 message("system", SYSTEM_PROMPT),
                 message("user", buildUserPrompt(application, questions, experiences))
         ));
-        requestBody.put("max_output_tokens", 2400);
+        requestBody.put("max_output_tokens", Math.max(INITIAL_BATCH_PLAN_MAX_OUTPUT_TOKENS, maxOutputTokens));
         requestBody.put("reasoning", buildReasoningConfig());
         requestBody.put("text", buildTextConfig());
 
@@ -240,6 +281,7 @@ public class WorkspaceBatchPlanService {
 
                 Planning rules:
                 - userDirective always takes the highest priority. Read each question's userDirective first and honor it exactly before applying any default rule.
+                - Ignore any previous internal batch strategy or previously generated draft wording. Re-plan from the current experience vault and current company context.
                 - Default: assign exactly 1 primary experience per question for depth and focus. Only assign multiple experiences when the question's userDirective explicitly requests a list-style answer or multiple experiences.
                 - Same project may appear in multiple questions when the detailed topic is different.
                 - The main anti-overlap unit is detail-level evidence, not project name.
@@ -268,16 +310,12 @@ public class WorkspaceBatchPlanService {
                 shared category hint: %s
                 maxLength: %s
                 current user directive: %s
-                current strategy directive: %s
-                current draft snippet: %s
                 """.formatted(
                 question.getQuestionId(),
                 safe(question.getTitle()),
                 category.name() + " (" + category.getDisplayName() + ")",
                 question.getMaxLength() == null ? "unknown" : question.getMaxLength(),
-                safe(snippet(question.getUserDirective(), 320)),
-                safe(snippet(question.getBatchStrategyDirective(), 320)),
-                safe(snippet(preferredDraft(question), MAX_CURRENT_DRAFT_CHARS))
+                safe(snippet(question.getUserDirective(), 320))
         );
     }
 
@@ -286,37 +324,99 @@ public class WorkspaceBatchPlanService {
                 [EXPERIENCE]
                 title: %s
                 organization: %s
+                origin: %s
                 role: %s
                 period: %s
                 category: %s
                 tech stack: %s
+                overall tech stack: %s
                 metrics: %s
+                project keywords: %s
+                project question types: %s
                 summary: %s
+                facets:
+                %s
                 raw details: %s
                 """.formatted(
                 safe(experience.getTitle()),
                 safe(experience.getOrganization()),
+                safe(experience.getOrigin()),
                 safe(experience.getRole()),
                 safe(experience.getPeriod()),
                 safe(experience.getCategory()),
                 safe(joinJsonArray(experience.getTechStack())),
+                safe(joinJsonArray(experience.getOverallTechStack())),
                 safe(joinJsonArray(experience.getMetrics())),
+                safe(joinJsonArray(experience.getJobKeywords())),
+                safe(joinJsonArray(experience.getQuestionTypes())),
                 safe(snippet(experience.getDescription(), MAX_EXPERIENCE_DESCRIPTION_CHARS)),
+                safe(formatFacetBlocks(experience)),
                 safe(snippet(experience.getRawContent(), MAX_EXPERIENCE_RAW_CHARS))
         );
     }
 
+    private String formatFacetBlocks(Experience experience) {
+        if (experience == null || experience.getFacets() == null || experience.getFacets().isEmpty()) {
+            return "- none";
+        }
+
+        return experience.getFacets().stream()
+                .map(this::formatFacetBlock)
+                .collect(Collectors.joining("\n"));
+    }
+
+    private String formatFacetBlock(ExperienceFacet facet) {
+        return """
+                - facet title: %s
+                  situation: %s
+                  role: %s
+                  judgment: %s
+                  actions: %s
+                  results: %s
+                  tech stack: %s
+                  job keywords: %s
+                  question types: %s
+                """.formatted(
+                safe(facet.getTitle()),
+                safe(joinJsonArray(facet.getSituation())),
+                safe(joinJsonArray(facet.getRole())),
+                safe(joinJsonArray(facet.getJudgment())),
+                safe(joinJsonArray(facet.getActions())),
+                safe(joinJsonArray(facet.getResults())),
+                safe(joinJsonArray(facet.getTechStack())),
+                safe(joinJsonArray(facet.getJobKeywords())),
+                safe(joinJsonArray(facet.getQuestionTypes()))
+        ).trim();
+    }
+
     private BatchPlanAiResponse parsePlanResponse(JsonNode response) throws IOException {
+        JsonNode structuredNode = extractStructuredOutputNode(response);
+        if (structuredNode != null && !structuredNode.isMissingNode() && !structuredNode.isNull()) {
+            return objectMapper.treeToValue(structuredNode, BatchPlanAiResponse.class);
+        }
+
         String outputText = extractOutputText(response).trim();
         if (outputText.isBlank()) {
             throw new IllegalStateException("Responses API batch plan payload was empty");
         }
-        return objectMapper.readValue(outputText, BatchPlanAiResponse.class);
+
+        try {
+            return objectMapper.readValue(outputText, BatchPlanAiResponse.class);
+        } catch (IOException primary) {
+            String recovered = extractFirstJsonObject(outputText);
+            if (!recovered.equals(outputText)) {
+                return objectMapper.readValue(recovered, BatchPlanAiResponse.class);
+            }
+            log.warn("Failed to parse batch plan output as JSON. snippet={}", snippet(outputText, 600), primary);
+            throw primary;
+        }
     }
 
     private BatchPlanResponse toResponse(
             BatchPlanAiResponse parsed,
-            List<BatchPlanRequest.QuestionSnapshot> questions
+            List<BatchPlanRequest.QuestionSnapshot> questions,
+            Application application,
+            List<Experience> experiences
     ) {
         Map<Long, BatchPlanRequest.QuestionSnapshot> questionMap = questions.stream()
                 .collect(Collectors.toMap(
@@ -352,7 +452,11 @@ public class WorkspaceBatchPlanService {
         }
 
         if (assignments.isEmpty()) {
-            return buildHeuristicPlan(questions, experienceRepository.findAll());
+            return buildHeuristicPlan(
+                    application,
+                    questions,
+                    experiences == null || experiences.isEmpty() ? experienceRepository.findAllWithFacets() : experiences
+            );
         }
 
         BatchPlanAiOverlapValidation ov = parsed.overlapValidation;
@@ -443,6 +547,392 @@ public class WorkspaceBatchPlanService {
                 .model(modelName + " (heuristic fallback)")
                 .assignments(assignments)
                 .build();
+    }
+
+    private BatchPlanResponse buildHeuristicPlan(
+            Application application,
+            List<BatchPlanRequest.QuestionSnapshot> questions,
+            List<Experience> experiences
+    ) {
+        Set<Long> alreadyAssignedExperienceIds = new LinkedHashSet<>();
+        List<BatchPlanResponse.Assignment> assignments = new ArrayList<>();
+
+        for (int index = 0; index < questions.size(); index++) {
+            BatchPlanRequest.QuestionSnapshot question = questions.get(index);
+            QuestionCategory category = resolveQuestionCategory(question);
+            HeuristicSelection selection = selectHeuristicExperience(
+                    application,
+                    question,
+                    experiences,
+                    category,
+                    alreadyAssignedExperienceIds
+            );
+
+            if (selection.experienceId() != null) {
+                alreadyAssignedExperienceIds.add(selection.experienceId());
+            }
+
+            List<String> chosenExperiences = selection.experienceTitle() == null
+                    ? List.of("관련 경험 선택 필요")
+                    : List.of(selection.experienceTitle());
+            String intentTag = formatIntentTag(category);
+            List<String> focusDetails = selection.focusDetails().isEmpty()
+                    ? inferFallbackFocusDetails(category, question.getTitle(), experiences, index)
+                    : selection.focusDetails();
+            List<String> learningPoints = inferFallbackLearningPoints(category);
+            List<String> avoidDetails = List.of(
+                    "다른 문항과 동일한 기술 결정 설명 반복 금지",
+                    "다른 문항과 동일한 배운점 문장 반복 금지"
+            );
+            String angle = inferFallbackAngle(category);
+
+            BatchPlanAiAssignment stub = new BatchPlanAiAssignment();
+            stub.questionIntentTag = intentTag;
+            stub.intentRationale = "Heuristic fallback: aligned to shared question category taxonomy.";
+            stub.primaryExperiences = chosenExperiences;
+            stub.experienceFacets = selection.facetTitle() == null ? List.of() : List.of(selection.facetTitle());
+            stub.domainBridge = selection.domainBridge();
+            stub.angle = angle;
+            stub.focusDetails = focusDetails;
+            stub.learningPoints = learningPoints;
+            stub.avoidDetails = avoidDetails;
+
+            assignments.add(BatchPlanResponse.Assignment.builder()
+                    .questionId(question.getQuestionId())
+                    .questionTitle(question.getTitle())
+                    .questionIntentTag(intentTag)
+                    .intentRationale("Heuristic fallback: aligned to shared question category taxonomy.")
+                    .primaryExperiences(chosenExperiences)
+                    .experienceFacets(selection.facetTitle() == null ? List.of() : List.of(selection.facetTitle()))
+                    .domainBridge(selection.domainBridge())
+                    .angle(angle)
+                    .focusDetails(focusDetails)
+                    .learningPoints(learningPoints)
+                    .avoidDetails(avoidDetails)
+                    .reasoning("Fallback heuristic plan generated because structured planning was unavailable.")
+                    .directivePrefix(buildDirectivePrefix(stub))
+                    .category(category)
+                    .build());
+        }
+
+        return BatchPlanResponse.builder()
+                .coverageSummary("공유 카테고리 체계를 기준으로 문항 의도를 먼저 맞춘 뒤, 지원 직무와 공고 문맥에 더 가까운 경험을 우선 배치하도록 fallback 전략을 보정했습니다.")
+                .globalGuardrails(List.of(
+                        "같은 프로젝트 서사는 허용되되 핵심 기술 사인은 분리",
+                        "동일한 배운점과 결과 수치 반복 금지",
+                        "문항별 첫 문장 주장과 증거 축 분리",
+                        "배치 미리보기와 실제 초안 생성에 같은 카테고리 체계를 사용하도록 정렬"
+                ))
+                .overlapValidation(BatchPlanResponse.OverlapValidation.builder()
+                        .isClean(true).conflictPairs(List.of()).resolution("Heuristic fallback - no validation performed.").build())
+                .model(modelName + " (heuristic fallback)")
+                .assignments(assignments)
+                .build();
+    }
+
+    private HeuristicSelection selectHeuristicExperience(
+            Application application,
+            BatchPlanRequest.QuestionSnapshot question,
+            List<Experience> experiences,
+            QuestionCategory category,
+            Set<Long> alreadyAssignedExperienceIds
+    ) {
+        if (experiences == null || experiences.isEmpty()) {
+            return HeuristicSelection.empty();
+        }
+
+        Set<String> queryTokens = tokenize(buildHeuristicQuery(application, question, category));
+        if (queryTokens.isEmpty()) {
+            Experience first = experiences.get(0);
+            return HeuristicSelection.fromExperience(first, selectRepresentativeFacet(first), List.of(), "");
+        }
+
+        return experiences.stream()
+                .map(experience -> scoreHeuristicExperience(
+                        application,
+                        question,
+                        experience,
+                        category,
+                        queryTokens,
+                        alreadyAssignedExperienceIds
+                ))
+                .max(Comparator
+                        .comparingDouble(HeuristicSelection::score)
+                        .thenComparing(selection -> safe(selection.experienceTitle())))
+                .orElse(HeuristicSelection.empty());
+    }
+
+    private HeuristicSelection scoreHeuristicExperience(
+            Application application,
+            BatchPlanRequest.QuestionSnapshot question,
+            Experience experience,
+            QuestionCategory category,
+            Set<String> queryTokens,
+            Set<Long> alreadyAssignedExperienceIds
+    ) {
+        double titleWeight = 18;
+        double descriptionWeight = 18;
+        double techWeight = 16;
+        double keywordWeight = 28;
+        double resultWeight = 10;
+        double roleWeight = 8;
+
+        switch (category != null ? category : QuestionCategory.DEFAULT) {
+            case MOTIVATION -> {
+                keywordWeight = 34;
+                descriptionWeight = 20;
+                techWeight = 10;
+                roleWeight = 10;
+                resultWeight = 6;
+            }
+            case EXPERIENCE -> {
+                techWeight = 28;
+                resultWeight = 18;
+                descriptionWeight = 22;
+                keywordWeight = 14;
+            }
+            case PROBLEM_SOLVING -> {
+                descriptionWeight = 28;
+                resultWeight = 16;
+                techWeight = 14;
+            }
+            case COLLABORATION -> {
+                descriptionWeight = 24;
+                roleWeight = 18;
+                keywordWeight = 18;
+            }
+            case GROWTH -> {
+                descriptionWeight = 22;
+                techWeight = 18;
+                keywordWeight = 22;
+            }
+            case TREND_INSIGHT -> {
+                keywordWeight = 26;
+                descriptionWeight = 20;
+                techWeight = 18;
+            }
+            default -> {
+            }
+        }
+
+        Set<String> titleTokens = tokenize(joinNonBlank(
+                safe(experience.getTitle()),
+                experience.getFacets().stream()
+                        .map(ExperienceFacet::getTitle)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.joining(" "))
+        ));
+        Set<String> descriptionTokens = tokenize(joinNonBlank(
+                safe(experience.getDescription()),
+                safe(experience.getOrigin()),
+                safe(experience.getOrganization()),
+                facetText(experience, ExperienceFacet::getSituation),
+                facetText(experience, ExperienceFacet::getJudgment),
+                facetText(experience, ExperienceFacet::getActions)
+        ));
+        Set<String> techTokens = tokenize(joinNonBlank(
+                joinJsonArray(experience.getTechStack()),
+                joinJsonArray(experience.getOverallTechStack()),
+                facetText(experience, ExperienceFacet::getTechStack)
+        ));
+        Set<String> keywordTokens = tokenize(joinNonBlank(
+                joinJsonArray(experience.getJobKeywords()),
+                joinJsonArray(experience.getQuestionTypes()),
+                facetText(experience, ExperienceFacet::getJobKeywords),
+                facetText(experience, ExperienceFacet::getQuestionTypes)
+        ));
+        Set<String> resultTokens = tokenize(joinNonBlank(
+                joinJsonArray(experience.getMetrics()),
+                facetText(experience, ExperienceFacet::getResults)
+        ));
+        Set<String> roleTokens = tokenize(joinNonBlank(
+                safe(experience.getRole()),
+                facetText(experience, ExperienceFacet::getRole)
+        ));
+
+        double score = 0;
+        score += overlapScore(queryTokens, titleTokens, titleWeight);
+        score += overlapScore(queryTokens, descriptionTokens, descriptionWeight);
+        score += overlapScore(queryTokens, techTokens, techWeight);
+        score += overlapScore(queryTokens, keywordTokens, keywordWeight);
+        score += overlapScore(queryTokens, resultTokens, resultWeight);
+        score += overlapScore(queryTokens, roleTokens, roleWeight);
+
+        boolean queryHasAiSignal = containsAnyToken(queryTokens, AI_DOMAIN_TOKENS);
+        Set<String> experienceTokens = new LinkedHashSet<>();
+        experienceTokens.addAll(titleTokens);
+        experienceTokens.addAll(descriptionTokens);
+        experienceTokens.addAll(techTokens);
+        experienceTokens.addAll(keywordTokens);
+
+        if (queryHasAiSignal && containsAnyToken(experienceTokens, AI_DOMAIN_TOKENS)) {
+            score += 18;
+        }
+
+        if (alreadyAssignedExperienceIds != null
+                && experience.getId() != null
+                && alreadyAssignedExperienceIds.contains(experience.getId())) {
+            score -= 6;
+        }
+
+        ExperienceFacet representativeFacet = selectRepresentativeFacet(experience);
+        List<String> focusDetails = buildHeuristicFocusDetails(experience, representativeFacet);
+        String domainBridge = buildHeuristicDomainBridge(application, question, experience, representativeFacet, category);
+
+        return new HeuristicSelection(
+                experience.getId(),
+                safe(experience.getTitle()),
+                representativeFacet == null ? null : safe(representativeFacet.getTitle()),
+                normalizeList(focusDetails),
+                safe(domainBridge),
+                score
+        );
+    }
+
+    private String buildHeuristicQuery(
+            Application application,
+            BatchPlanRequest.QuestionSnapshot question,
+            QuestionCategory category
+    ) {
+        return joinNonBlank(
+                question == null ? "" : safe(question.getTitle()),
+                application == null ? "" : safe(application.getPosition()),
+                application == null ? "" : snippet(application.getAiInsight(), 220),
+                application == null ? "" : snippet(application.getCompanyResearch(), 220),
+                application == null ? "" : snippet(application.getRawJd(), 220),
+                question == null ? "" : safe(question.getUserDirective()),
+                category == null ? "" : category.name()
+        );
+    }
+
+    private ExperienceFacet selectRepresentativeFacet(Experience experience) {
+        if (experience == null || experience.getFacets() == null || experience.getFacets().isEmpty()) {
+            return null;
+        }
+
+        return experience.getFacets().stream()
+                .max(Comparator.comparingInt(facet -> tokenize(joinNonBlank(
+                        joinJsonArray(facet.getSituation()),
+                        joinJsonArray(facet.getJudgment()),
+                        joinJsonArray(facet.getActions()),
+                        joinJsonArray(facet.getResults()),
+                        joinJsonArray(facet.getTechStack())
+                )).size()))
+                .orElse(experience.getFacets().get(0));
+    }
+
+    private List<String> buildHeuristicFocusDetails(Experience experience, ExperienceFacet facet) {
+        List<String> details = new ArrayList<>();
+        if (facet != null) {
+            details.addAll(readJsonArray(facet.getTechStack()));
+            details.addAll(readJsonArray(facet.getResults()));
+            details.addAll(readJsonArray(facet.getJudgment()));
+        }
+        details.addAll(readJsonArray(experience.getJobKeywords()));
+        details.addAll(readJsonArray(experience.getQuestionTypes()));
+        if (experience.getDescription() != null && !experience.getDescription().isBlank()) {
+            details.add(snippet(experience.getDescription(), 90));
+        }
+        return normalizeList(details);
+    }
+
+    private String buildHeuristicDomainBridge(
+            Application application,
+            BatchPlanRequest.QuestionSnapshot question,
+            Experience experience,
+            ExperienceFacet facet,
+            QuestionCategory category
+    ) {
+        String company = application == null ? "" : safe(application.getCompanyName());
+        String position = application == null ? "" : safe(application.getPosition());
+        String result = facet != null
+                ? readJsonArray(facet.getResults()).stream().findFirst().orElse("")
+                : readJsonArray(experience.getMetrics()).stream().findFirst().orElse("");
+        String detail = facet != null
+                ? safe(facet.getTitle())
+                : safe(experience.getTitle());
+
+        if (category == QuestionCategory.MOTIVATION) {
+            return firstNonBlank(
+                    joinNonBlank(
+                            detail,
+                            "경험이",
+                            company.isBlank() ? position : company + "의 " + position,
+                            "문제를 더 직접적으로 다루고 싶다는 동기로 이어졌습니다."
+                    ),
+                    ""
+            );
+        }
+
+        return firstNonBlank(
+                joinNonBlank(
+                        result.isBlank() ? detail : result,
+                        "성과를",
+                        company.isBlank() ? position : company + "의 " + position,
+                        "문맥에서 활용 가능한 역량으로 연결합니다."
+                ),
+                ""
+        );
+    }
+
+    private String facetText(Experience experience, java.util.function.Function<ExperienceFacet, String> extractor) {
+        if (experience == null || experience.getFacets() == null || experience.getFacets().isEmpty()) {
+            return "";
+        }
+
+        return experience.getFacets().stream()
+                .map(extractor)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining(" "));
+    }
+
+    private Set<String> tokenize(String text) {
+        if (text == null || text.isBlank()) {
+            return Collections.emptySet();
+        }
+
+        LinkedHashSet<String> tokens = new LinkedHashSet<>();
+        Matcher matcher = TOKEN_PATTERN.matcher(text.toLowerCase(Locale.ROOT));
+        while (matcher.find()) {
+            String token = matcher.group();
+            if (token.length() < 2 || STOPWORDS.contains(token)) {
+                continue;
+            }
+            tokens.add(token);
+        }
+        return tokens;
+    }
+
+    private double overlapScore(Set<String> queryTokens, Set<String> targetTokens, double weight) {
+        if (queryTokens == null || queryTokens.isEmpty() || targetTokens == null || targetTokens.isEmpty()) {
+            return 0;
+        }
+
+        long matches = queryTokens.stream()
+                .filter(targetTokens::contains)
+                .count();
+        if (matches == 0) {
+            return 0;
+        }
+
+        double coverage = (double) matches / queryTokens.size();
+        double density = (double) matches / targetTokens.size();
+        return weight * Math.min(1.0, coverage + (density * 0.35));
+    }
+
+    private boolean containsAnyToken(Set<String> sourceTokens, Set<String> expectedTokens) {
+        if (sourceTokens == null || sourceTokens.isEmpty() || expectedTokens == null || expectedTokens.isEmpty()) {
+            return false;
+        }
+        return sourceTokens.stream().anyMatch(expectedTokens::contains);
+    }
+
+    private String joinNonBlank(String... values) {
+        return Arrays.stream(values)
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .collect(Collectors.joining(" "));
     }
 
     private QuestionCategory resolveQuestionCategory(BatchPlanRequest.QuestionSnapshot question) {
@@ -624,43 +1114,127 @@ public class WorkspaceBatchPlanService {
             }
         }
 
-        StringBuilder builder = new StringBuilder();
         JsonNode outputs = response.path("output");
         if (outputs.isArray()) {
-            outputs.forEach(item -> {
-                appendIfPresent(builder, item.get("arguments"));
-                appendIfPresent(builder, item.get("json"));
-                appendIfPresent(builder, item.get("parsed"));
+            for (JsonNode item : outputs) {
+                String directItemText = firstNonBlank(
+                        extractNodeText(item.get("arguments")),
+                        extractNodeText(item.get("json")),
+                        extractNodeText(item.get("parsed"))
+                );
+                if (!directItemText.isBlank()) {
+                    return directItemText;
+                }
 
                 JsonNode content = item.path("content");
                 if (!content.isArray()) {
-                    return;
+                    continue;
                 }
-                content.forEach(part -> {
-                    appendIfPresent(builder, part.get("text"));
-                    appendIfPresent(builder, part.get("output_text"));
-                    appendIfPresent(builder, part.get("json"));
-                    appendIfPresent(builder, part.get("parsed"));
-                    appendIfPresent(builder, part.get("arguments"));
-                });
-            });
+                for (JsonNode part : content) {
+                    String partText = firstNonBlank(
+                            extractNodeText(part.get("text")),
+                            extractNodeText(part.get("output_text")),
+                            extractNodeText(part.get("json")),
+                            extractNodeText(part.get("parsed")),
+                            extractNodeText(part.get("arguments"))
+                    );
+                    if (!partText.isBlank()) {
+                        return partText;
+                    }
+                }
+            }
         }
 
-        if (builder.length() == 0) {
-            throw new IllegalStateException("Responses API returned no parseable batch plan output");
-        }
-        return builder.toString();
+        throw new IllegalStateException("Responses API returned no parseable batch plan output");
     }
 
-    private void appendIfPresent(StringBuilder builder, JsonNode node) {
-        String extracted = extractNodeText(node);
-        if (extracted.isBlank()) {
-            return;
+    private JsonNode extractStructuredOutputNode(JsonNode response) {
+        JsonNode[] directCandidates = new JsonNode[] {
+                response.get("output_parsed"),
+                response.get("parsed"),
+                response.get("json")
+        };
+        for (JsonNode candidate : directCandidates) {
+            JsonNode coerced = coerceStructuredNode(candidate);
+            if (coerced != null) {
+                return coerced;
+            }
         }
-        if (builder.length() > 0) {
-            builder.append('\n');
+
+        JsonNode outputs = response.path("output");
+        if (!outputs.isArray()) {
+            return null;
         }
-        builder.append(extracted);
+
+        for (JsonNode item : outputs) {
+            JsonNode itemCandidate = firstStructuredNode(item.get("parsed"), item.get("json"), item.get("arguments"));
+            if (itemCandidate != null) {
+                return itemCandidate;
+            }
+
+            JsonNode content = item.path("content");
+            if (!content.isArray()) {
+                continue;
+            }
+
+            for (JsonNode part : content) {
+                JsonNode partCandidate = firstStructuredNode(
+                        part.get("parsed"),
+                        part.get("json"),
+                        part.get("arguments"),
+                        part.get("output_text"),
+                        part.get("text")
+                );
+                if (partCandidate != null) {
+                    return partCandidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private JsonNode firstStructuredNode(JsonNode... candidates) {
+        if (candidates == null) {
+            return null;
+        }
+
+        for (JsonNode candidate : candidates) {
+            JsonNode coerced = coerceStructuredNode(candidate);
+            if (coerced != null) {
+                return coerced;
+            }
+        }
+        return null;
+    }
+
+    private JsonNode coerceStructuredNode(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return null;
+        }
+
+        if (node.isObject() || node.isArray()) {
+            return node;
+        }
+
+        JsonNode value = node.get("value");
+        if (value != null && value != node) {
+            JsonNode nested = coerceStructuredNode(value);
+            if (nested != null) {
+                return nested;
+            }
+        }
+
+        String extracted = extractNodeText(node).trim();
+        if (extracted.isBlank() || (!extracted.startsWith("{") && !extracted.startsWith("["))) {
+            return null;
+        }
+
+        try {
+            return objectMapper.readTree(extracted);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private String extractNodeText(JsonNode node) {
@@ -687,6 +1261,27 @@ public class WorkspaceBatchPlanService {
         return node.asText("");
     }
 
+    private String extractFirstJsonObject(String raw) {
+        String candidate = raw == null ? "" : raw.trim();
+        if (candidate.isBlank()) {
+            return "";
+        }
+
+        int start = candidate.indexOf('{');
+        int end = candidate.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return candidate.substring(start, end + 1);
+        }
+
+        int arrayStart = candidate.indexOf('[');
+        int arrayEnd = candidate.lastIndexOf(']');
+        if (arrayStart >= 0 && arrayEnd > arrayStart) {
+            return candidate.substring(arrayStart, arrayEnd + 1);
+        }
+
+        return candidate;
+    }
+
     private static RestTemplate buildRestTemplate(Duration timeout) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         int timeoutMillis = (int) Math.min(Integer.MAX_VALUE, Math.max(1L, timeout.toMillis()));
@@ -706,6 +1301,18 @@ public class WorkspaceBatchPlanService {
                 .distinct()
                 .limit(5)
                 .toList();
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 
     private String preferredDraft(BatchPlanRequest.QuestionSnapshot question) {
@@ -838,5 +1445,34 @@ public class WorkspaceBatchPlanService {
         public List<String> learningPoints;
         public List<String> avoidDetails;
         public String reasoning;
+    }
+
+    private record HeuristicSelection(
+            Long experienceId,
+            String experienceTitle,
+            String facetTitle,
+            List<String> focusDetails,
+            String domainBridge,
+            double score
+    ) {
+        private static HeuristicSelection empty() {
+            return new HeuristicSelection(null, null, null, List.of(), "", 0);
+        }
+
+        private static HeuristicSelection fromExperience(
+                Experience experience,
+                ExperienceFacet facet,
+                List<String> focusDetails,
+                String domainBridge
+        ) {
+            return new HeuristicSelection(
+                    experience == null ? null : experience.getId(),
+                    experience == null ? null : experience.getTitle(),
+                    facet == null ? null : facet.getTitle(),
+                    focusDetails == null ? List.of() : focusDetails,
+                    domainBridge == null ? "" : domainBridge,
+                    0
+            );
+        }
     }
 }

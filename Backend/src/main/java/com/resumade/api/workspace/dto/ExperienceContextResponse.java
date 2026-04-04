@@ -20,7 +20,10 @@ public class ExperienceContextResponse {
     @AllArgsConstructor
     public static class ContextItem {
         private String id;
+        private Long experienceId;
+        private Long facetId;
         private String experienceTitle;
+        private String facetTitle;
         private String relevantPart;
         private int relevanceScore;
     }

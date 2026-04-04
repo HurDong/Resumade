@@ -8,56 +8,255 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { Sparkles, FileText, Bot, Send, Loader2 } from "lucide-react"
-import { type Experience } from "@/lib/mock-data"
+import { type Experience, type ExperienceFacet } from "@/lib/mock-data"
 
 const INITIAL_CHAT_MESSAGES: Array<{ role: "user" | "assistant"; content: string }> = [
   {
     role: "assistant",
     content:
-      "이 영역은 아직 실제 AI와 연결되어 있지 않습니다. 우선은 최신 권장 Markdown 구조로 경험을 직접 정리하고 저장하는 용도로 맞춰두었습니다.",
+      "이 영역은 아직 실제 AI와 연결되어 있지 않습니다. 우선은 최신 권장 Markdown 구조로 경험을 직접 정리하고 저장할 수 있도록 맞춰두었습니다.",
   },
 ]
 
+function isLikelyJsonContent(value?: string | null) {
+  const trimmed = value?.trim() ?? ""
+  return trimmed.startsWith("{") || trimmed.startsWith("[")
+}
+
+function asTrimmedText(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim()
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value).trim()
+  }
+
+  return ""
+}
+
+function asTextList(value: unknown) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => asTrimmedText(item))
+      .filter((item) => item.length > 0)
+  }
+
+  const text = asTrimmedText(value)
+  if (!text) {
+    return []
+  }
+
+  return text
+    .split(/\r?\n|,\s*/g)
+    .map((item) => item.replace(/^[-*]\s*/, "").trim())
+    .filter((item) => item.length > 0)
+}
+
+function buildNarrativeSummary(value: string) {
+  const normalized = value.replace(/\s+/g, " ").trim()
+  if (!normalized) {
+    return ""
+  }
+
+  if (normalized.length <= 180) {
+    return normalized
+  }
+
+  const sentenceBoundary = normalized.lastIndexOf(". ", 180)
+  if (sentenceBoundary >= 80) {
+    return normalized.slice(0, sentenceBoundary + 1).trim()
+  }
+
+  return `${normalized.slice(0, 180).trim()}...`
+}
+
+function buildListBlock(values?: string[] | null, fallback = "- 미확인") {
+  if (!values?.length) {
+    return fallback
+  }
+
+  return values.map((value) => `- ${value}`).join("\n")
+}
+
+function buildFallbackFacet(experience: Experience): ExperienceFacet {
+  return {
+    id: "fallback",
+    title: experience.title,
+    situation: [],
+    role: experience.role ? [experience.role] : [],
+    judgment: [],
+    actions: [],
+    results: experience.metrics,
+    techStack: experience.techStack,
+    jobKeywords: experience.jobKeywords,
+    questionTypes: experience.questionTypes,
+  }
+}
+
+function toMarkdownSource(experience: Experience): Experience {
+  if (!isLikelyJsonContent(experience.rawContent)) {
+    return experience
+  }
+
+  try {
+    const parsed = JSON.parse(experience.rawContent ?? "") as Record<string, unknown>
+    const narrative =
+      asTrimmedText(parsed.content) ||
+      asTrimmedText(parsed.body) ||
+      asTrimmedText(parsed.narrative) ||
+      asTrimmedText(parsed.details)
+    const projectTechStack = asTextList(parsed.projectTechStack)
+    const overallTechStack = asTextList(parsed.overallTechStack)
+    const techStack = asTextList(parsed.techStack)
+    const metrics = asTextList(parsed.metrics)
+    const jobKeywords = asTextList(parsed.jobKeywords)
+    const questionTypes = asTextList(parsed.questionTypes)
+
+    const parsedFacets: ExperienceFacet[] = Array.isArray(parsed.facets)
+      ? parsed.facets
+          .map((facet, index) => {
+            const candidate = typeof facet === "object" && facet ? (facet as Record<string, unknown>) : null
+            if (!candidate) {
+              return null
+            }
+
+            const facetResults = asTextList(candidate.results)
+            const facetMetrics = asTextList(candidate.metrics)
+
+            return {
+              id: index,
+              displayOrder: index,
+              title: asTrimmedText(candidate.title) || `Facet ${index + 1}`,
+              situation: asTextList(candidate.situation),
+              role: asTextList(candidate.role),
+              judgment: asTextList(candidate.judgment),
+              actions: asTextList(candidate.actions),
+              results: facetResults.length > 0 ? facetResults : facetMetrics,
+              techStack: asTextList(candidate.techStack),
+              jobKeywords: asTextList(candidate.jobKeywords),
+              questionTypes: asTextList(candidate.questionTypes),
+            } satisfies ExperienceFacet
+          })
+          .filter((facet): facet is ExperienceFacet => facet !== null)
+      : []
+
+    const fallbackFacet: ExperienceFacet[] =
+      parsedFacets.length > 0
+        ? parsedFacets
+        : [
+            {
+              id: 0,
+              displayOrder: 0,
+              title: asTrimmedText(parsed.facetTitle) || asTrimmedText(parsed.title) || experience.title,
+              situation: asTextList(parsed.situation),
+              role: asTextList(parsed.role).length > 0 ? asTextList(parsed.role) : experience.role ? [experience.role] : [],
+              judgment: asTextList(parsed.judgment),
+              actions: asTextList(parsed.actions).length > 0 ? asTextList(parsed.actions) : narrative ? [narrative] : [],
+              results: asTextList(parsed.results).length > 0 ? asTextList(parsed.results) : metrics,
+              techStack: techStack.length > 0 ? techStack : overallTechStack.length > 0 ? overallTechStack : projectTechStack,
+              jobKeywords,
+              questionTypes,
+            },
+          ]
+
+    return {
+      ...experience,
+      title: asTrimmedText(parsed.title) || experience.title,
+      category: asTrimmedText(parsed.category) || experience.category,
+      description:
+        asTrimmedText(parsed.summary) ||
+        asTrimmedText(parsed.description) ||
+        buildNarrativeSummary(narrative) ||
+        experience.description,
+      origin:
+        asTrimmedText(parsed.origin) ||
+        asTrimmedText(parsed.source) ||
+        asTrimmedText(parsed.context) ||
+        experience.origin,
+      organization: asTrimmedText(parsed.organization) || experience.organization,
+      period: asTrimmedText(parsed.period) || experience.period,
+      role: asTrimmedText(parsed.role) || experience.role,
+      overallTechStack:
+        overallTechStack.length > 0
+          ? overallTechStack
+          : projectTechStack.length > 0
+            ? projectTechStack
+            : experience.overallTechStack,
+      techStack: techStack.length > 0 ? techStack : experience.techStack,
+      metrics: metrics.length > 0 ? metrics : experience.metrics,
+      jobKeywords: jobKeywords.length > 0 ? jobKeywords : experience.jobKeywords,
+      questionTypes: questionTypes.length > 0 ? questionTypes : experience.questionTypes,
+      facets: fallbackFacet,
+    }
+  } catch {
+    return experience
+  }
+}
+
 function buildMarkdownFromExperience(experience: Experience) {
-  if (experience.rawContent?.trim()) {
+  if (experience.rawContent?.trim() && !isLikelyJsonContent(experience.rawContent)) {
     return experience.rawContent
   }
 
-  return `# ${experience.title}
+  const source = toMarkdownSource(experience)
+  const facets = source.facets?.length ? source.facets : [buildFallbackFacet(source)]
+  const overallTechStack =
+    source.overallTechStack?.length && source.overallTechStack.length > 0
+      ? source.overallTechStack
+      : source.techStack
+
+  const facetBlocks = facets
+    .map(
+      (facet, index) => `## Facet ${index + 1} | ${facet.title || source.title}
+### 문제 상황
+${buildListBlock(facet.situation)}
+
+### 내가 맡은 역할
+${buildListBlock(facet.role, `- ${source.role || "미확인"}`)}
+
+### 내가 한 판단
+${buildListBlock(facet.judgment)}
+
+### 내가 실제로 한 행동
+${buildListBlock(facet.actions)}
+
+### 결과
+${buildListBlock(facet.results, buildListBlock(source.metrics))}
+
+### 기술 스택
+${buildListBlock(facet.techStack, buildListBlock(source.techStack))}
+
+### 직무 연결 키워드
+${buildListBlock(facet.jobKeywords, buildListBlock(source.jobKeywords))}
+
+### 활용 가능한 문항 유형
+${buildListBlock(facet.questionTypes, buildListBlock(source.questionTypes))}`
+    )
+    .join("\n\n")
+
+  return `# ${source.title}
 
 ## 한 줄 요약
-${experience.description}
+${source.description || "미확인"}
 
-## 출처 / 맥락
-- 미작성
+## 프로젝트 메타데이터
+- 출처/맥락: ${source.origin || "미확인"}
+- 조직/소속: ${source.organization || "미확인"}
+- 역할: ${source.role || "미확인"}
+- 기간: ${source.period || "미확인"}
+- 카테고리: ${source.category || "미확인"}
 
-## 문제 상황
-- 미작성
+## 프로젝트 전체 기술 스택
+${buildListBlock(overallTechStack)}
 
-## 내가 맡은 역할
-- ${experience.role}
+## 대표 직무 연결 키워드
+${buildListBlock(source.jobKeywords)}
 
-## 내가 한 판단
-- 미작성
+## 대표 활용 가능한 문항 유형
+${buildListBlock(source.questionTypes)}
 
-## 내가 실제로 한 행동
-- 미작성
-
-## 결과
-${experience.metrics.map((metric) => `- ${metric}`).join("\n")}
-
-## 기술 스택
-${experience.techStack.map((tech) => `- ${tech}`).join("\n")}
-
-## 프로젝트 기간
-${experience.period}
-
-## 직무 연결 키워드
-- 미작성
-
-## 활용 가능한 문항 유형
-- 문제 해결
-- 직무 역량`
+${facetBlocks}`
 }
 
 export function ExperienceDetailModal({
@@ -156,7 +355,7 @@ export function ExperienceDetailModal({
       {
         role: "assistant",
         content:
-          "이 채팅은 아직 데모 응답입니다. 실제 AI 편집 기능을 붙이기 전까지는 오른쪽 Markdown 편집기를 기준으로 경험 구조를 정리해 주세요.",
+          "이 채팅은 아직 데모 응답입니다. 실제 AI 편집 기능을 붙이기 전까지는 왼쪽 Markdown 편집기를 기준으로 경험 구조를 다듬어 주세요.",
       },
     ])
     setChatInput("")

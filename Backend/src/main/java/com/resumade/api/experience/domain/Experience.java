@@ -9,6 +9,8 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.time.LocalDateTime;
 
 @Entity
@@ -38,13 +40,25 @@ public class Experience {
     @Column(columnDefinition = "JSON")
     private String metrics;
 
-    @Column(length = 100)
+    @Column(length = 300)
+    private String origin;
+
+    @Column(columnDefinition = "JSON")
+    private String overallTechStack;
+
+    @Column(columnDefinition = "JSON")
+    private String jobKeywords;
+
+    @Column(columnDefinition = "JSON")
+    private String questionTypes;
+
+    @Column(length = 150)
     private String period;
 
-    @Column(length = 100)
+    @Column(length = 500)
     private String role;
 
-    @Column(length = 200)
+    @Column(length = 300)
     private String organization;
 
     @Column(columnDefinition = "TEXT")
@@ -52,6 +66,10 @@ public class Experience {
 
     @Column(nullable = false, updatable = false)
     private String originalFileName;
+
+    @OneToMany(mappedBy = "experience", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("displayOrder ASC, id ASC")
+    private final List<ExperienceFacet> facets = new ArrayList<>();
 
     @CreatedDate
     @Column(updatable = false)
@@ -61,12 +79,31 @@ public class Experience {
     private LocalDateTime updatedAt;
 
     @Builder
-    public Experience(String title, String category, String description, String techStack, String metrics, String period, String role, String organization, String rawContent, String originalFileName) {
+    public Experience(
+            String title,
+            String category,
+            String description,
+            String techStack,
+            String metrics,
+            String origin,
+            String overallTechStack,
+            String jobKeywords,
+            String questionTypes,
+            String period,
+            String role,
+            String organization,
+            String rawContent,
+            String originalFileName
+    ) {
         this.title = title;
         this.category = category;
         this.description = description;
         this.techStack = techStack;
         this.metrics = metrics;
+        this.origin = origin;
+        this.overallTechStack = overallTechStack;
+        this.jobKeywords = jobKeywords;
+        this.questionTypes = questionTypes;
         this.period = period;
         this.role = role;
         this.organization = organization;
@@ -74,25 +111,51 @@ public class Experience {
         this.originalFileName = originalFileName;
     }
 
-    public void updateFromAi(String title, String category, String description, String techStack, String metrics, String period, String role, String organization) {
+    public void updateStructuredDetails(
+            String title,
+            String category,
+            String description,
+            String techStack,
+            String metrics,
+            String origin,
+            String overallTechStack,
+            String jobKeywords,
+            String questionTypes,
+            String period,
+            String role,
+            String organization,
+            String rawContent
+    ) {
         this.title = title;
         this.category = category;
         this.description = description;
         this.techStack = techStack;
         this.metrics = metrics;
-        this.period = period;
-        this.role = role;
-        this.organization = organization;
-    }
-
-    public void updateFromMarkdown(String title, String description, String techStack, String metrics, String period, String role, String organization, String rawContent) {
-        this.title = title;
-        this.description = description;
-        this.techStack = techStack;
-        this.metrics = metrics;
+        this.origin = origin;
+        this.overallTechStack = overallTechStack;
+        this.jobKeywords = jobKeywords;
+        this.questionTypes = questionTypes;
         this.period = period;
         this.role = role;
         this.organization = organization;
         this.rawContent = rawContent;
+    }
+
+    public void replaceFacets(List<ExperienceFacet> nextFacets) {
+        facets.clear();
+        if (nextFacets == null || nextFacets.isEmpty()) {
+            return;
+        }
+
+        nextFacets.forEach(this::addFacet);
+    }
+
+    public void addFacet(ExperienceFacet facet) {
+        if (facet == null) {
+            return;
+        }
+
+        facet.attachTo(this);
+        facets.add(facet);
     }
 }

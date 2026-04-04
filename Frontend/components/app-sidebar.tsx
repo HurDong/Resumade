@@ -56,9 +56,11 @@ const navigation = [
 export function AppSidebar() {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
   const [muted, setMuted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
     setMuted(isSoundMuted())
     const handler = (e: Event) => setMuted((e as CustomEvent<{ muted: boolean }>).detail.muted)
     window.addEventListener("resumade:sound-muted-change", handler)
@@ -66,6 +68,22 @@ export function AppSidebar() {
   }, [])
 
   const toggleMute = () => setSoundMuted(!muted)
+  const profileButton = (
+    <button
+      type="button"
+      className="flex w-full items-center gap-3 rounded-lg px-2 py-2.5 transition-all duration-200 cursor-pointer group hover:bg-sidebar-accent"
+    >
+      <Avatar className="size-9 transition-transform duration-200 group-hover:scale-105">
+        <AvatarImage src="https://github.com/shadcn.png" alt="?ъ슜???꾨컮?" />
+        <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">源</AvatarFallback>
+      </Avatar>
+      <div className="flex-1 min-w-0 text-left">
+        <p className="text-sm font-medium truncate">源媛쒕컻</p>
+        <p className="text-xs text-muted-foreground truncate">dev.kim@example.com</p>
+      </div>
+      <ChevronUp className="size-4 text-muted-foreground transition-all duration-200 group-hover:-translate-y-0.5 group-hover:text-foreground" />
+    </button>
+  )
 
   return (
     <Sidebar className="border-r border-sidebar-border">
@@ -125,7 +143,8 @@ export function AppSidebar() {
           <span className="text-muted-foreground">{muted ? "알림음 꺼짐" : "알림음 켜짐"}</span>
         </button>
         <Separator className="mb-3" />
-        <Popover>
+        {mounted ? (
+          <Popover>
           <PopoverTrigger asChild>
             <button className="flex w-full items-center gap-3 px-2 py-2.5 rounded-lg hover:bg-sidebar-accent transition-all duration-200 cursor-pointer group">
               <Avatar className="size-9 transition-transform duration-200 group-hover:scale-105">
@@ -165,7 +184,10 @@ export function AppSidebar() {
               </button>
             </div>
           </PopoverContent>
-        </Popover>
+          </Popover>
+        ) : (
+          profileButton
+        )}
       </SidebarFooter>
     </Sidebar>
   )

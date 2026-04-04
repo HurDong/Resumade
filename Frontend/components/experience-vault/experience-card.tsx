@@ -8,6 +8,33 @@ import { type Experience } from "@/lib/mock-data"
 import { toast } from "sonner"
 import { useState } from "react"
 
+function buildPreviewSummary(experience: Experience) {
+  const normalizedDescription = experience.description.trim()
+  if (normalizedDescription && normalizedDescription !== experience.title.trim()) {
+    return normalizedDescription
+  }
+
+  const facet = experience.facets?.find(
+    (candidate) =>
+      candidate.results.length > 0 ||
+      candidate.actions.length > 0 ||
+      candidate.situation.length > 0 ||
+      candidate.judgment.length > 0
+  )
+
+  const fallback =
+    facet?.results[0] ||
+    facet?.actions[0] ||
+    facet?.situation[0] ||
+    facet?.judgment[0] ||
+    experience.metrics[0] ||
+    experience.role ||
+    experience.origin ||
+    experience.title
+
+  return fallback.trim()
+}
+
 export function ExperienceCard({ 
   experience, 
   onClick,
@@ -20,6 +47,7 @@ export function ExperienceCard({
   const [isDeleting, setIsDeleting] = useState(false)
   const visibleTechStack = experience.techStack.slice(0, 3)
   const hiddenTechCount = Math.max(experience.techStack.length - visibleTechStack.length, 0)
+  const previewSummary = buildPreviewSummary(experience)
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -79,7 +107,7 @@ export function ExperienceCard({
       </CardHeader>
       <CardContent className="min-w-0 space-y-4">
         <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
-          {experience.description}
+          {previewSummary}
         </p>
         
         <div className="flex flex-wrap gap-1.5">

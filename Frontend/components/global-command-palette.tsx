@@ -113,11 +113,16 @@ async function fetchPaletteApplications(): Promise<PaletteApplication[]> {
 export function GlobalCommandPalette() {
   const router = useRouter()
   const pathname = usePathname()
+  const [mounted, setMounted] = React.useState(false)
   const [open, setOpen] = React.useState(false)
   const [mode, setMode] = React.useState<PaletteMode>("root")
   const [selectedValue, setSelectedValue] = React.useState("")
   const [applications, setApplications] = React.useState<PaletteApplication[]>([])
   const [isLoadingApplications, setIsLoadingApplications] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // "/" 키로 팔레트 열기 (인풋·텍스트에어리어·에디터 안에서는 무시)
   React.useEffect(() => {
@@ -235,6 +240,10 @@ export function GlobalCommandPalette() {
     if (!open) return
     setSelectedValue(defaultSelectionValue)
   }, [defaultSelectionValue, open])
+
+  if (!mounted) {
+    return null
+  }
 
   return (
     <CommandDialog

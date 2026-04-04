@@ -153,6 +153,9 @@ public class FinalEditorService {
                 sb.append("[관련 경험 팩트]\n");
                 for (ExperienceContextResponse.ContextItem exp : experiences) {
                     sb.append("• 경험: ").append(exp.getExperienceTitle()).append("\n");
+                    if (exp.getFacetTitle() != null && !exp.getFacetTitle().isBlank()) {
+                        sb.append("  facet: ").append(exp.getFacetTitle()).append("\n");
+                    }
                     if (exp.getRelevantPart() != null && !exp.getRelevantPart().isBlank()) {
                         sb.append("  내용: ").append(exp.getRelevantPart().strip()).append("\n");
                     }
@@ -204,6 +207,9 @@ public class FinalEditorService {
                     sb.append("[관련 경험 팩트]\n");
                     for (ExperienceContextResponse.ContextItem exp : experiences) {
                         sb.append("• 경험: ").append(exp.getExperienceTitle()).append("\n");
+                        if (exp.getFacetTitle() != null && !exp.getFacetTitle().isBlank()) {
+                            sb.append("  facet: ").append(exp.getFacetTitle()).append("\n");
+                        }
                         if (exp.getRelevantPart() != null && !exp.getRelevantPart().isBlank()) {
                             sb.append("  내용: ").append(exp.getRelevantPart().strip()).append("\n");
                         }

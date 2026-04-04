@@ -476,12 +476,23 @@ public class WorkspaceService {
             sendProgress(emitter, STAGE_DRAFT, "엄선한 경험 데이터를 바탕으로 새로운 초안을 생성 중입니다. ✍️");
 
             int maxLengthGen = initialQuestion.getMaxLength();
+            String batchStrategy = safeTrim(initialQuestion.getBatchStrategyDirective());
+            String userDirective = safeTrim(initialQuestion.getUserDirective());
             String rawDirective = mergeDirectiveLayers(
-                    initialQuestion.getBatchStrategyDirective(),
-                    initialQuestion.getUserDirective());
+                    batchStrategy,
+                    userDirective);
             String directiveForPrompt = useDirective
                     ? augmentDirectiveForPrompt(rawDirective, maxLengthGen, targetChars)
                     : NO_EXTRA_USER_DIRECTIVE;
+            log.info(
+                    "HumanPatch directives questionId={} useDirective={} hasBatchStrategy={} hasUserDirective={} batchStrategySnippet={} userDirectiveSnippet={}",
+                    questionId,
+                    useDirective,
+                    !batchStrategy.isBlank(),
+                    !userDirective.isBlank(),
+                    safeSnippet(batchStrategy, 220),
+                    safeSnippet(userDirective, 220)
+            );
             int[] targetRange = resolveTargetRange(
                     maxLengthGen,
                     rawDirective,
@@ -885,18 +896,21 @@ public class WorkspaceService {
                 .map(q -> {
                     String draft = preferredQuestionDraft(q);
                     String usedProjects = detectUsedProjects(draft, allExperiences);
+                    String usedFacets = extractFacetHintsFromDirective(q.getBatchStrategyDirective());
                     String titleLine = extractTitleLine(draft);
                     String bodySnippet = summarizeDraftForOverlap(draft);
                     return """
                             [OTHER_QUESTION]
                             Question: %s
                             Used projects: %s
+                            Used facets: %s
                             Title used: %s
                             Body snippet: %s
                             Project overlap itself is allowed when needed, but avoid reusing the same detailed technical decision, troubleshooting point, lesson learned, metric cluster, opening claim, or action-result arc for the current question unless the user explicitly requires it.
                             """.formatted(
                             safeSnippet(q.getTitle(), 180),
                             safeSnippet(usedProjects, 180),
+                            safeSnippet(usedFacets, 220),
                             safeSnippet(titleLine, 120),
                             safeSnippet(bodySnippet, 320));
                 })
@@ -2304,6 +2318,8 @@ public class WorkspaceService {
         String company = safeTrim(question.getApplication().getCompanyName());
         String position = safeTrim(question.getApplication().getPosition());
         String userDirective = compactQueryText(question.getUserDirective(), 180);
+        String batchStrategy = compactQueryText(question.getBatchStrategyDirective(), 220);
+        String facetHints = compactQueryText(extractFacetHintsFromDirective(question.getBatchStrategyDirective()), 220);
         String jdInsight = compactQueryText(question.getApplication().getAiInsight(), 220);
         String companyResearch = compactQueryText(question.getApplication().getCompanyResearch(), 220);
         String rawJd = compactQueryText(question.getApplication().getRawJd(), 220);
@@ -2311,6 +2327,9 @@ public class WorkspaceService {
         addSupportingQuery(queries, joinQueryParts(title, position));
         addSupportingQuery(queries, joinQueryParts(title, company, position));
         addSupportingQuery(queries, joinQueryParts(title, position, userDirective));
+        addSupportingQuery(queries, joinQueryParts(title, position, batchStrategy));
+        addSupportingQuery(queries, joinQueryParts(title, position, facetHints));
+        addSupportingQuery(queries, joinQueryParts(title, position, userDirective, facetHints));
         addSupportingQuery(queries, joinQueryParts(title, position, jdInsight, companyResearch));
         addSupportingQuery(queries, joinQueryParts(title, position, rawJd));
 
@@ -2365,7 +2384,9 @@ public class WorkspaceService {
      */
     private String buildFilteredContext(WorkspaceQuestion initialQuestion, Long questionId,
             List<Experience> allExperiences, QuestionCategory category) {
-        Set<Long> excludedExperienceIds = extractUsedExperienceIds(initialQuestion, questionId, allExperiences);
+        Set<Long> excludedExperienceIds = shouldRelaxExperienceExclusion(initialQuestion)
+                ? Set.of()
+                : extractUsedExperienceIds(initialQuestion, questionId, allExperiences);
         List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> selectedContext = experienceVectorRetrievalService
                 .search(
                         initialQuestion.getTitle(),
@@ -2376,8 +2397,12 @@ public class WorkspaceService {
 
         if (!selectedContext.isEmpty()) {
             return selectedContext.stream()
-                    .map(item -> String.format("[Matched Experience: %s]\n%s", item.getExperienceTitle(),
-                            item.getRelevantPart()))
+                    .map(item -> {
+                        String header = (item.getFacetTitle() != null && !item.getFacetTitle().isBlank())
+                                ? String.format("[Matched Experience: %s | Facet: %s]", item.getExperienceTitle(), item.getFacetTitle())
+                                : String.format("[Matched Experience: %s]", item.getExperienceTitle());
+                        return header + "\n" + item.getRelevantPart();
+                    })
                     .collect(Collectors.joining("\n---\n"));
         }
 
@@ -2410,6 +2435,27 @@ public class WorkspaceService {
                 })
                 .filter(id -> id != null)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private boolean shouldRelaxExperienceExclusion(WorkspaceQuestion question) {
+        return !extractFacetHintsFromDirective(question == null ? null : question.getBatchStrategyDirective()).isBlank();
+    }
+
+    private String extractFacetHintsFromDirective(String directive) {
+        if (directive == null || directive.isBlank()) {
+            return "";
+        }
+
+        return directive.lines()
+                .map(String::trim)
+                .filter(line -> !line.isBlank())
+                .filter(line -> line.toLowerCase().startsWith("use this specific facet"))
+                .map(line -> {
+                    int separatorIndex = line.indexOf(':');
+                    return separatorIndex >= 0 ? line.substring(separatorIndex + 1).trim() : line;
+                })
+                .findFirst()
+                .orElse("");
     }
 
     private String normalizeTitleSpacing(String text) {

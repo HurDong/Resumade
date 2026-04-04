@@ -1,33 +1,14 @@
-export const EXPERIENCE_MARKDOWN_TEMPLATE = `# SSAFY 결제 서버 장애 대응
+export const EXPERIENCE_MARKDOWN_TEMPLATE = `# SSAFY 결제 서버 안정성 개선
 
 ## 한 줄 요약
-결제 승인 흐름의 정합성과 운영 추적성을 높이기 위해 트랜잭션 경계와 재시도 정책을 재설계한 경험
+결제 승인 흐름의 정합성과 운영 추적성을 높이기 위해 상태 전이와 장애 대응 흐름을 재설계한 프로젝트 경험
 
-## 출처 / 맥락
-- SSAFY 공통 프로젝트
-- 백엔드 개발 담당
-
-## 문제 상황
-- 결제 승인 과정에서 중복 승인 가능성과 재시도 처리 충돌이 발생
-- 운영 중 장애 원인 추적이 어려웠음
-
-## 내가 맡은 역할
-- 결제 상태 전이 로직 설계
-- 예외 로그와 재처리 정책 정리
-
-## 내가 한 판단
-- 단순 성능보다 정합성과 운영 안정성을 우선해야 한다고 판단
-- 트랜잭션 범위를 축소하고 상태 전이를 분리하는 방향으로 설계
-
-## 내가 실제로 한 행동
-- 결제 상태 전이 로직 분리
-- 트랜잭션 경계 재설계
-- 재시도 정책 및 예외 로그 체계 정리
-
-## 결과
-- 중복 승인 케이스 감소
-- 장애 원인 추적성 향상
-- 운영 안정성 개선
+## 프로젝트 메타데이터
+- 출처: SSAFY 공통 프로젝트
+- 조직/소속: SSAFY
+- 역할: 백엔드 개발 담당
+- 기간: 2024.01 - 2024.06
+- 카테고리: 백엔드 개발
 
 ## 프로젝트 전체 기술 스택
 - Spring Boot
@@ -35,168 +16,266 @@ export const EXPERIENCE_MARKDOWN_TEMPLATE = `# SSAFY 결제 서버 장애 대응
 - MySQL
 - Redis
 
-## 기술 스택
-- Spring Boot
-- JPA
-- MySQL
-- Transaction
-
-## 직무 연결 키워드
+## 대표 직무 연결 키워드
 - 백엔드
 - 운영 안정성
 - 데이터 정합성
 - 장애 대응
 
-## 활용 가능한 문항 유형
+## 대표 활용 가능한 문항 유형
+- 직무 역량
+- 문제 해결
+- 협업
+
+## Facet 1 | 결제 상태 전이 재설계
+### 문제 상황
+- 결제 승인 과정에서 중복 승인 가능성과 재시도 충돌이 동시에 발생했다.
+- 운영 중 장애가 났을 때 어느 상태에서 꼬였는지 추적하기 어려웠다.
+
+### 내가 맡은 역할
+- 결제 상태 전이 로직을 설계하고 구현했다.
+- 재시도와 예외 처리 경계를 서비스 계층 기준으로 정리했다.
+
+### 내가 한 판단
+- 단순 처리량보다 정합성과 운영 추적성을 먼저 확보해야 한다고 판단했다.
+- 트랜잭션 범위를 축소하고 상태 전이를 명시적으로 나누는 구조가 더 안전하다고 봤다.
+
+### 내가 실제로 한 행동
+- 결제 상태 전이 로직을 별도 서비스 흐름으로 분리했다.
+- 승인/실패/재시도 케이스별 상태 변경 조건을 다시 정의했다.
+- 예외 로그와 재처리 기준을 운영 로그에서 바로 보이도록 정리했다.
+
+### 결과
+- 중복 승인 케이스를 줄였다.
+- 장애 발생 시 어떤 상태에서 실패했는지 더 빠르게 추적할 수 있게 됐다.
+- 운영 안정성이 개선됐다.
+
+### 기술 스택
+- Spring Boot
+- JPA
+- MySQL
+- Transaction
+
+### 직무 연결 키워드
+- 백엔드
+- 데이터 정합성
+- 장애 대응
+
+### 활용 가능한 문항 유형
 - 문제 해결
 - 직무 역량
+
+## Facet 2 | 장애 원인 추적 로그 체계 정리
+### 문제 상황
+- 결제 장애가 발생했을 때 운영 로그만으로는 재현 경로를 빠르게 좁히기 어려웠다.
+
+### 내가 맡은 역할
+- 운영 로그와 예외 로그 포맷을 정리하는 작업을 맡았다.
+
+### 내가 한 판단
+- 장애 대응 속도를 높이려면 기능 구현과 별도로 운영 추적 정보를 남기는 구조가 필요하다고 판단했다.
+
+### 내가 실제로 한 행동
+- 상태 전이별 로그 포인트를 다시 배치했다.
+- 재시도 여부와 실패 원인을 한 번에 확인할 수 있는 예외 로그 기준을 정의했다.
+
+### 결과
+- 장애 원인 파악 시간이 단축됐다.
+- 운영자 입장에서 재현 포인트를 더 빠르게 찾을 수 있게 됐다.
+
+### 기술 스택
+- Spring Boot
+- Logging
+- MySQL
+
+### 직무 연결 키워드
+- 운영 안정성
+- 관측 가능성
+- 장애 대응
+
+### 활용 가능한 문항 유형
+- 문제 해결
 - 협업
 `;
 
 export const EXPERIENCE_JSON_TEMPLATE = `{
-  "title": "SSAFY 결제 서버 장애 대응",
-  "summary": "결제 승인 흐름의 정합성과 운영 추적성을 높이기 위해 트랜잭션 경계와 재시도 정책을 재설계한 경험",
+  "schemaVersion": "experience-upload.v2",
+  "title": "SSAFY 결제 서버 안정성 개선",
+  "summary": "결제 승인 흐름의 정합성과 운영 추적성을 높이기 위해 상태 전이와 장애 대응 흐름을 재설계한 프로젝트 경험",
   "origin": "SSAFY 공통 프로젝트",
-  "role": "백엔드 개발",
-  "situation": [
-    "결제 승인 과정에서 중복 승인 가능성과 재시도 충돌이 발생",
-    "운영 중 장애 원인 추적이 어려웠음"
-  ],
-  "judgment": [
-    "단순 성능보다 정합성과 운영 안정성을 우선해야 한다고 판단",
-    "트랜잭션 범위를 축소하고 상태 전이를 분리하는 방향으로 설계"
-  ],
-  "actions": [
-    "결제 상태 전이 로직 분리",
-    "트랜잭션 경계 재설계",
-    "재시도 정책 및 예외 로그 체계 정리"
-  ],
-  "results": [
-    "중복 승인 케이스 감소",
-    "장애 원인 추적성 향상",
-    "운영 안정성 개선"
-  ],
-  "techStack": ["Spring Boot", "JPA", "MySQL", "Transaction"],
+  "organization": "SSAFY",
+  "role": "백엔드 개발 담당",
+  "period": "2024.01 - 2024.06",
+  "category": "백엔드 개발",
+  "overallTechStack": ["Spring Boot", "JPA", "MySQL", "Redis"],
   "jobKeywords": ["백엔드", "운영 안정성", "데이터 정합성", "장애 대응"],
-  "questionTypes": ["문제 해결", "직무 역량", "협업"]
+  "questionTypes": ["직무 역량", "문제 해결", "협업"],
+  "facets": [
+    {
+      "title": "결제 상태 전이 재설계",
+      "situation": [
+        "결제 승인 과정에서 중복 승인 가능성과 재시도 충돌이 동시에 발생했다.",
+        "운영 중 장애가 났을 때 어느 상태에서 꼬였는지 추적하기 어려웠다."
+      ],
+      "role": [
+        "결제 상태 전이 로직을 설계하고 구현했다.",
+        "재시도와 예외 처리 경계를 서비스 계층 기준으로 정리했다."
+      ],
+      "judgment": [
+        "단순 처리량보다 정합성과 운영 추적성을 먼저 확보해야 한다고 판단했다.",
+        "트랜잭션 범위를 축소하고 상태 전이를 명시적으로 나누는 구조가 더 안전하다고 봤다."
+      ],
+      "actions": [
+        "결제 상태 전이 로직을 별도 서비스 흐름으로 분리했다.",
+        "승인/실패/재시도 케이스별 상태 변경 조건을 다시 정의했다.",
+        "예외 로그와 재처리 기준을 운영 로그에서 바로 보이도록 정리했다."
+      ],
+      "results": [
+        "중복 승인 케이스를 줄였다.",
+        "장애 발생 시 어떤 상태에서 실패했는지 더 빠르게 추적할 수 있게 됐다.",
+        "운영 안정성이 개선됐다."
+      ],
+      "techStack": ["Spring Boot", "JPA", "MySQL", "Transaction"],
+      "jobKeywords": ["백엔드", "데이터 정합성", "장애 대응"],
+      "questionTypes": ["문제 해결", "직무 역량"]
+    },
+    {
+      "title": "장애 원인 추적 로그 체계 정리",
+      "situation": [
+        "결제 장애가 발생했을 때 운영 로그만으로는 재현 경로를 빠르게 좁히기 어려웠다."
+      ],
+      "role": [
+        "운영 로그와 예외 로그 포맷을 정리하는 작업을 맡았다."
+      ],
+      "judgment": [
+        "장애 대응 속도를 높이려면 기능 구현과 별도로 운영 추적 정보를 남기는 구조가 필요하다고 판단했다."
+      ],
+      "actions": [
+        "상태 전이별 로그 포인트를 다시 배치했다.",
+        "재시도 여부와 실패 원인을 한 번에 확인할 수 있는 예외 로그 기준을 정의했다."
+      ],
+      "results": [
+        "장애 원인 파악 시간이 단축됐다.",
+        "운영자 입장에서 재현 포인트를 더 빠르게 찾을 수 있게 됐다."
+      ],
+      "techStack": ["Spring Boot", "Logging", "MySQL"],
+      "jobKeywords": ["운영 안정성", "관측 가능성", "장애 대응"],
+      "questionTypes": ["문제 해결", "협업"]
+    }
+  ]
 }`;
 
-export const EXPERIENCE_MARKDOWN_SCHEMA_TEMPLATE = `# [경험 제목]
+export const EXPERIENCE_MARKDOWN_SCHEMA_TEMPLATE = `# [프로젝트 제목]
 
 ## 한 줄 요약
-[검증 가능한 핵심 요약]
+[검증 가능한 프로젝트 요약]
 
-## 출처 / 맥락
-- [프로젝트 / 조직 / 저장소]
-- [담당 역할]
-
-## 문제 상황
-- [당시 문제를 bullet로 정리]
-- 필요하면 여러 개 작성
-
-## 내가 맡은 역할
-- [본인 역할을 bullet로 정리]
-- 필요하면 여러 개 작성
-
-## 내가 한 판단
-- [판단 근거를 bullet로 정리]
-- 필요하면 여러 개 작성
-
-## 내가 실제로 한 행동
-- [실행 내용을 bullet로 정리]
-- 필요하면 여러 개 작성
-
-## 결과
-- [확인 가능한 결과를 bullet로 정리]
-- 필요하면 여러 개 작성
+## 프로젝트 메타데이터
+- 출처: [프로젝트 / 저장소 / 활동 맥락]
+- 조직/소속: [조직 / 팀 / 과정명]
+- 역할: [프로젝트 단위에서 맡은 역할]
+- 기간: [예: 2024.01 - 2024.06]
+- 카테고리: [예: 백엔드 개발]
 
 ## 프로젝트 전체 기술 스택
-- [README와 코드베이스에서 확인한 프로젝트 전반 기술]
-- 필요하면 여러 개 작성
+- [프로젝트 전반 기술]
 
-## 기술 스택
-- [실제로 사용한 기술]
-- 필요하면 여러 개 작성
+## 대표 직무 연결 키워드
+- [프로젝트 전체 관점 키워드]
 
-## 직무 연결 키워드
-- [직무와 연결되는 키워드]
-- 필요하면 여러 개 작성
+## 대표 활용 가능한 문항 유형
+- [프로젝트 전체 관점 문항 유형]
 
-## 활용 가능한 문항 유형
-- [활용 가능한 문항 유형]
-- 필요하면 여러 개 작성
+## Facet 1 | [문항에 꽂을 수 있는 사건 제목]
+### 문제 상황
+- [당시 문제나 맥락]
+
+### 내가 맡은 역할
+- [그 사건에서 맡은 역할]
+
+### 내가 한 판단
+- [왜 그렇게 판단했는지]
+
+### 내가 실제로 한 행동
+- [실제로 한 행동]
+
+### 결과
+- [근거 있는 결과]
+
+### 기술 스택
+- [이 facet에 직접 걸리는 기술]
+
+### 직무 연결 키워드
+- [이 facet가 연결되는 키워드]
+
+### 활용 가능한 문항 유형
+- [이 facet를 쓸 수 있는 문항 유형]
+
+## Facet 2 | [필요한 경우에만 추가]
+### 문제 상황
+- [근거가 충분할 때만 작성]
 `;
 
-export const EXPERIENCE_LOCAL_PROMPT = `아래 경험 원문을 RESUMADE 업로드용 사실 기반 파일로 구조화해줘.
+export const EXPERIENCE_LOCAL_PROMPT = `아래 경험 원문을 RESUMADE 업로드용 canonical schema v2 Markdown으로 구조화해줘.
 
-중요 규칙:
-- 반드시 경험 1개만 반환해. 여러 경험이 보이면 가장 근거가 풍부한 1개만 선택해.
-- 절대 없는 수치, 없는 도구, 없는 성과를 만들지 마.
-- 애매하면 비워두거나 "미확인"이라고 써.
-- 추상적인 미사여구보다 인터뷰에서 검증 가능한 사실을 우선해.
-- 문제 상황 / 내가 맡은 역할 / 내가 한 판단 / 내가 실제로 한 행동 / 결과를 분리해.
-- "프로젝트 전체 기술 스택"에는 프로젝트 전반 스택을, "기술 스택"에는 이 경험에 직접 쓰인 기술만 적어.
-- 결과는 과장하지 말고 근거가 있는 것만 적어.
+핵심 원칙:
+- 반드시 프로젝트 1개만 반환해. 여러 프로젝트가 섞여 있으면 가장 근거가 풍부한 1개만 남겨.
+- facet는 기술 스택 분류가 아니라 문항에 꽂을 수 있는 사건/판단/행동/결과 단위여야 해.
+- minor contribution이나 근거가 약한 내용은 억지로 facet로 만들지 마.
+- facet가 꼭 여러 개일 필요는 없어. 근거가 약하면 1개만 두거나 필요한 값만 "미확인"으로 적어.
+- 없는 수치, 없는 역할, 없는 성과, 없는 기술은 절대 만들지 마.
+- 애매하면 빈칸 대신 "미확인"을 쓰거나 bullet를 줄여.
+- 프로젝트 메타데이터와 facet block을 분리해.
+- "프로젝트 전체 기술 스택"에는 프로젝트 전반 스택을, 각 facet의 "기술 스택"에는 그 사건에 직접 걸리는 기술만 적어.
 - 최종 출력은 업로드 가능한 Markdown 본문 하나만 반환해.
-- 코드블록(\`\`\`), 설명 문장, 머리말, 꼬리말, 번호 목록을 붙이지 마.
+- 코드블록(\`\`\`), 설명 문장, 머리말, 꼬리말을 붙이지 마.
 - 응답은 반드시 \`# \` 제목으로 시작해야 해.
-- 섹션 제목은 아래 스키마의 문구를 그대로 사용해.
+- 아래 섹션 제목을 그대로 사용해.
 
 반환 형식:
-아래 구조는 출력 스키마 예시이며, 대괄호 안의 문구는 실제 내용으로 치환해야 하는 자리표시자다.
+아래 구조는 자리표시자 예시이며, 대괄호 안의 문구는 실제 내용으로 치환해야 한다.
 
 ${EXPERIENCE_MARKDOWN_SCHEMA_TEMPLATE}`;
 
 export const EXPERIENCE_GITHUB_PROMPT = `You are extracting fact-grounded experience records from a GitHub repository or project materials for RESUMADE.
 
 Goal:
-Create a single Markdown experience file that can be uploaded into an experience vault for RAG retrieval and interview-verifiable self-introduction writing.
+Create one upload-ready Markdown file in RESUMADE canonical schema v2.
+The output must represent one project plus one or more evidence-backed facets.
 
-Rules:
-- Return exactly one experience record. If multiple plausible experiences exist, choose the single one with the strongest visible evidence.
-- Codebase-first research is mandatory. Start by scanning the repository structure and reading the relevant implementation files end-to-end.
-- Use README as a primary evidence source together with the codebase for feature intent, architecture, and product context.
-- Prioritize source code evidence and README over all other materials.
-- Base the experience mainly on implementation that spans multiple files, classes, modules, or flows, not on a single recent commit.
-- Use commits only as a secondary signal to estimate likely author contribution in team projects.
-- Never let commits outweigh codebase or README evidence.
-- Do not rely on issues unless the user explicitly asks for them.
-- Use only evidence that is actually visible from the codebase, README, repository docs, or explicitly supplied notes.
-- Do not invent impact metrics, responsibilities, production scale, team size, or technologies.
-- If evidence is partial, say "미확인" instead of guessing.
-- Separate situation, role, judgment, actions, and results.
-- Prefer concrete implementation details over polished summary language.
-- Mention concrete code evidence when available: key modules, classes, endpoints, schedulers, event listeners, repositories, or data flows.
-- If the code evidence is weak or too fragmented to support one solid experience, return "미확인" where needed instead of filling gaps with assumptions.
-- Split the stack into two layers.
-- In "프로젝트 전체 기술 스택", include the broader stack confirmed by README and codebase for the overall project.
-- In "기술 스택", include only the technologies that materially participate in the chosen feature.
-- Prefer explicit technology names exactly as they appear in README or codebase when available.
-- Add jobKeywords and questionTypes based on evidence-backed inference only.
-- Return upload-ready Markdown only.
+Critical rules:
+- Return exactly one project record.
+- A facet is an event-level unit that can anchor a self-introduction answer: situation, your role, judgment, action, result.
+- Do not create facets for weak or minor contributions. Fewer facets is better than invented structure.
+- Codebase-first research is mandatory. Read repository structure, README, and the implementation files end-to-end before writing.
+- Use only evidence visible in code, README, docs, or explicitly supplied notes.
+- Never invent impact metrics, ownership scope, production scale, team size, or technologies.
+- If evidence is partial, write "미확인" instead of guessing.
+- Keep project-level metadata and facet-level blocks separate.
+- Put broad repository stack in "프로젝트 전체 기술 스택".
+- Put only facet-direct technologies in each facet's "기술 스택".
+- Return Markdown only.
 - Do not return JSON.
 - Do not wrap the answer in code fences.
-- Do not add any introduction, explanation, commentary, or closing sentence.
+- Do not add commentary before or after the Markdown.
 - The first line must start with "# ".
-- Use the exact section headings shown in the schema.
-- Use bullet lists for list sections. Add as many bullets as needed.
+- Use the exact section headings from the schema.
+- If there is only one solid facet, return one facet block only.
 
-Recommended research process:
-1. Read repository structure and identify substantial feature areas.
-2. Read README to understand the product goal, architecture, and feature framing.
-3. Read the main implementation files for one feature end-to-end.
-4. Trace related controllers, services, repositories, schedulers, event handlers, configs, and DTOs.
-5. In team projects, review commits only to refine likely ownership or contribution boundaries for the already-identified feature.
-6. Compile the broader project stack from README and codebase, then separate out the feature-direct stack for the chosen experience.
-7. Produce one upload-ready Markdown experience grounded in the strongest code-backed feature.
+Recommended research flow:
+1. Scan the repository structure.
+2. Read README for product goal and architecture.
+3. Trace one substantial feature end-to-end.
+4. Follow related controllers, services, repositories, schedulers, listeners, DTOs, and configs.
+5. Use commits only as a secondary hint for likely ownership boundaries.
+6. Separate project-wide stack from facet-direct stack.
+7. Write one canonical upload-ready Markdown project with evidence-backed facets.
 
-Output format:
-The structure below is a placeholder-only schema. Replace bracketed placeholders with repository-specific facts and do not reuse them literally.
-
+Output schema:
 ${EXPERIENCE_MARKDOWN_SCHEMA_TEMPLATE}`;
 
 export const REINDEXING_NOTES = [
-  "질문 문구나 검색 로직만 바꾸면 기존 파일을 다시 넣지 않아도 됩니다.",
-  "경험을 임베딩하는 서술 구조나 인덱싱 텍스트를 바꾸면 기존 경험을 다시 재인덱싱해야 효과가 납니다.",
-  "원문 Markdown/JSON 자체를 더 구조화해서 보강하면 재업로드보다 재편집 후 재분류가 더 좋습니다.",
+  "질문 문구만 바뀌면 기존 파일을 다시 올리지 않아도 됩니다.",
+  "facet 구조, 임베딩 텍스트, 검색 기준이 바뀌면 기존 경험은 재분류 또는 재업로드 후 재인덱싱하는 편이 좋습니다.",
+  "legacy flat Markdown/JSON도 계속 허용되지만, facet 중심 검색 품질은 schema v2로 정리할수록 좋아집니다.",
 ];

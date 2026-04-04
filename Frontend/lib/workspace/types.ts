@@ -107,7 +107,10 @@ export interface TitleSuggestionResponse {
 
 export interface ContextItem {
   id: string;
+  experienceId?: number;
+  facetId?: number;
   experienceTitle: string;
+  facetTitle?: string;
   relevantPart: string;
   relevanceScore: number;
 }

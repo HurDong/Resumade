@@ -28,6 +28,7 @@ import {
   User,
   Code2,
   BarChart3,
+  Layers3,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -120,6 +121,7 @@ const SECTION_MATCHERS: Record<DirectiveFieldKey, RegExp> = {
 
 // ── 경험 컨텍스트 relevantPart 파서 ─────────────────────────────────────────
 interface ParsedRelevantPart {
+  facet?: string
   role?: string
   period?: string
   stack?: string[]
@@ -137,7 +139,8 @@ function parseRelevantPart(raw: string): ParsedRelevantPart {
     const key = seg.slice(0, colonIdx).trim().toLowerCase()
     const val = seg.slice(colonIdx + 2).trim()
     if (!val) continue
-    if (key === "role") result.role = val
+    if (key === "facet") result.facet = val
+    else if (key === "role") result.role = val
     else if (key === "period") result.period = val
     else if (key === "stack") result.stack = val.split(/,\s*/).filter(Boolean)
     else if (key === "outcome") result.outcome = val
@@ -172,6 +175,15 @@ function RelevantPartCard({ relevantPart, relevanceScore }: { relevantPart: stri
 
   return (
     <div className="space-y-2.5">
+      {parsed.facet && (
+        <div className="flex items-center gap-1.5">
+          <Layers3 className="size-3 shrink-0 text-primary/70" />
+          <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary/80">
+            {parsed.facet}
+          </span>
+        </div>
+      )}
+
       {/* Role + Period row */}
       {(parsed.role || parsed.period) && (
         <div className="flex flex-wrap gap-x-4 gap-y-1">

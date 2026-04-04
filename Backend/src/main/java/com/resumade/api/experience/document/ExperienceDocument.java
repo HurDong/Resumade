@@ -23,6 +23,12 @@ public class ExperienceDocument {
     @Field(type = FieldType.Long)
     private Long experienceId;
 
+    @Field(type = FieldType.Long)
+    private Long facetId;
+
+    @Field(type = FieldType.Keyword)
+    private String facetTitle;
+
     @Field(type = FieldType.Text, analyzer = "standard") 
     private String chunkText;
 
@@ -30,8 +36,10 @@ public class ExperienceDocument {
     private float[] embedding;
 
     @Builder
-    public ExperienceDocument(Long experienceId, String chunkText, float[] embedding) {
+    public ExperienceDocument(Long experienceId, Long facetId, String facetTitle, String chunkText, float[] embedding) {
         this.experienceId = experienceId;
+        this.facetId = facetId;
+        this.facetTitle = facetTitle;
         this.chunkText = chunkText;
         this.embedding = embedding;
     }
