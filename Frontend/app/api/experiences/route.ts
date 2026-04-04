@@ -1,8 +1,7 @@
-﻿const BACKEND_API_BASE_URL =
-  process.env.RESUMADE_API_BASE_URL ?? "http://127.0.0.1:8080"
+import { getRequiredServerBackendOrigin } from "@/lib/network/backend-origin"
 
 export async function GET() {
-  const response = await fetch(`${BACKEND_API_BASE_URL}/api/experiences`, {
+  const response = await fetch(`${getRequiredServerBackendOrigin()}/api/experiences`, {
     cache: "no-store",
   })
 

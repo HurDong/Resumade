@@ -5,7 +5,8 @@ import { DragDropContext, Droppable, type DropResult } from "@hello-pangea/dnd"
 import { ArchiveX, ChevronRight, ChevronsUp, Loader2, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { type Application, type ApplicationStatus } from "@/lib/mock-data"
+import { mockApplications, type Application, type ApplicationStatus } from "@/lib/mock-data"
+import { isFrontendOnlyMode } from "@/lib/frontend-only"
 import { getCompanyLogo } from "@/lib/logo-utils"
 import { countResumeCharacters } from "@/lib/text/resume-character-count"
 import { KanbanColumn, type ColumnDefinition } from "./kanban-column"
@@ -119,16 +120,24 @@ export function KanbanBoard() {
 
   const fetchApplications = async () => {
     setIsLoading(true)
+    if (isFrontendOnlyMode()) {
+      setLocalApplications(mockApplications)
+      setIsLoading(false)
+      return
+    }
+
     try {
       const response = await fetch("/api/applications")
       const data = await response.json()
       if (!Array.isArray(data)) {
         console.error("Expected array from /api/applications, but got:", data)
+        setLocalApplications(mockApplications)
         return
       }
       setLocalApplications(data.map(mapApplicationFromApi))
     } catch (error) {
       console.error("Failed to fetch applications:", error)
+      setLocalApplications(mockApplications)
     } finally {
       setIsLoading(false)
     }

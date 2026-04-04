@@ -5,8 +5,9 @@ import { Info, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { type Experience } from "@/lib/mock-data"
+import { mockExperiences, type Experience } from "@/lib/mock-data"
 import { normalizeExperienceForUi } from "@/lib/experience/normalize"
+import { isFrontendOnlyMode } from "@/lib/frontend-only"
 import { DropZone } from "./drop-zone"
 import { ExperienceCard } from "./experience-card"
 import { ExperienceDetailModal } from "./experience-detail-modal"
@@ -19,6 +20,11 @@ export function ExperienceVault() {
   const [isClassifying, setIsClassifying] = useState(false)
 
   const fetchExperiences = async () => {
+    if (isFrontendOnlyMode()) {
+      setExperiences(mockExperiences.map((experience) => normalizeExperienceForUi(experience)))
+      return
+    }
+
     try {
       const response = await fetch("/api/experiences", {
         cache: "no-store",
@@ -34,6 +40,9 @@ export function ExperienceVault() {
       )
     } catch (error) {
       console.error("Failed to fetch experiences:", error)
+      setExperiences(
+        mockExperiences.map((experience) => normalizeExperienceForUi(experience))
+      )
     }
   }
 

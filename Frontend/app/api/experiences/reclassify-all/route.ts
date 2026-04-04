@@ -1,8 +1,7 @@
-const BACKEND_API_BASE_URL =
-  process.env.RESUMADE_API_BASE_URL ?? "http://127.0.0.1:8080"
+import { getRequiredServerBackendOrigin } from "@/lib/network/backend-origin"
 
 export async function POST() {
-  const response = await fetch(`${BACKEND_API_BASE_URL}/api/experiences/reclassify-all`, {
+  const response = await fetch(`${getRequiredServerBackendOrigin()}/api/experiences/reclassify-all`, {
     method: "POST",
   })
 

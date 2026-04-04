@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from "react"
 import { fetchCalendarEvents, toCalendarEvent } from "@/lib/api/calendar"
-import type { CalendarEvent } from "@/components/recruitment-calendar/calendar-mock-data"
+import {
+  mockCalendarEvents,
+  type CalendarEvent,
+} from "@/components/recruitment-calendar/calendar-mock-data"
+import { isFrontendOnlyMode } from "@/lib/frontend-only"
 
 interface UseCalendarEventsResult {
   data: CalendarEvent[]
@@ -17,11 +21,18 @@ export function useCalendarEvents(year: number, month: number): UseCalendarEvent
   const load = useCallback(async () => {
     setIsLoading(true)
     setIsError(false)
+    if (isFrontendOnlyMode()) {
+      setData(mockCalendarEvents)
+      setIsLoading(false)
+      return
+    }
+
     try {
       const dtos = await fetchCalendarEvents(year, month)
       setData(dtos.map(toCalendarEvent))
     } catch {
-      setIsError(true)
+      setData(mockCalendarEvents)
+      setIsError(false)
     } finally {
       setIsLoading(false)
     }

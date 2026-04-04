@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Search, PenTool, LayoutDashboard, ArrowRight, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { getDDay, type Application } from "@/lib/mock-data"
+import { getDDay, mockApplications, type Application } from "@/lib/mock-data"
+import { isFrontendOnlyMode } from "@/lib/frontend-only"
 
 export function WorkspaceSelector() {
   const router = useRouter()
@@ -18,6 +19,12 @@ export function WorkspaceSelector() {
 
   useEffect(() => {
     const fetchApps = async () => {
+      if (isFrontendOnlyMode()) {
+        setApplications(mockApplications)
+        setLoading(false)
+        return
+      }
+
       try {
         const response = await fetch("/api/applications/workspace-selector")
         const data = await response.json()
@@ -36,9 +43,12 @@ export function WorkspaceSelector() {
             questions: app.questions || []
           }))
           setApplications(mapped)
+        } else {
+          setApplications(mockApplications)
         }
       } catch (err) {
         console.error("Failed to fetch apps", err)
+        setApplications(mockApplications)
       } finally {
         setLoading(false)
       }

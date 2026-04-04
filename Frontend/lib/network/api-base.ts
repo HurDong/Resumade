@@ -1,8 +1,8 @@
-const DEFAULT_BACKEND_ORIGIN = "http://127.0.0.1:8080";
+import { resolveServerBackendOrigin } from "@/lib/network/backend-origin";
 
 export function resolveApiBaseUrl() {
   if (typeof window === "undefined") {
-    return process.env.RESUMADE_API_BASE_URL ?? DEFAULT_BACKEND_ORIGIN;
+    return resolveServerBackendOrigin() ?? "";
   }
 
   const configuredBaseUrl = process.env.NEXT_PUBLIC_RESUMADE_API_BASE_URL;
