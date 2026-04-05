@@ -28,7 +28,7 @@ public class WorkspaceQuestion {
     @JoinColumn(name = "application_id")
     private Application application;
 
-    @Column(nullable = false, length = 500)
+    @Column(nullable = false, length = 2000)
     private String title;
 
     @Column(nullable = false)
