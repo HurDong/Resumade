@@ -1,9 +1,10 @@
 "use client"
 
 import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd"
+import { AnimatePresence, motion } from "framer-motion"
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { GripVertical, Loader2, Plus, Search } from "lucide-react"
+import { GripVertical, Lock, Plus, Search } from "lucide-react"
 import { toast } from "sonner"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -39,21 +40,37 @@ function reorderList<T>(items: T[], startIndex: number, endIndex: number) {
   return next
 }
 
+const listVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.06 } },
+}
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 8 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.2, ease: "easeOut" } },
+}
+
 function LoadingCards() {
   return (
-    <div className="flex flex-col gap-3">
+    <motion.div
+      className="flex flex-col gap-3"
+      initial="hidden"
+      animate="visible"
+      variants={listVariants}
+    >
       {Array.from({ length: 4 }).map((_, index) => (
-        <div
+        <motion.div
           key={`wiki-skeleton-${index}`}
+          variants={itemVariants}
           className="rounded-2xl border border-border/70 bg-background px-5 py-5"
         >
           <div className="flex items-start justify-between gap-3">
             <Skeleton className="h-8 w-56" />
             <Skeleton className="h-6 w-16 rounded-full" />
           </div>
-        </div>
+        </motion.div>
       ))}
-    </div>
+    </motion.div>
   )
 }
 
@@ -214,7 +231,16 @@ export function CoteWiki() {
         <div className="flex flex-col gap-4 rounded-3xl border border-border/70 bg-background px-5 py-5 shadow-sm">
           <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
             <div className="flex flex-col gap-1">
-              <p className="text-sm font-medium text-muted-foreground">코테 직전 복습용 개인 위키</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-muted-foreground">코테 직전 복습용 개인 위키</p>
+                {notes.length > 0 && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+                    {filteredNotes.length < notes.length
+                      ? `${filteredNotes.length} / ${notes.length}`
+                      : notes.length}
+                  </span>
+                )}
+              </div>
               <h2 className="text-2xl font-semibold tracking-tight">
                 짧은 설명과 Java 템플릿만 빠르게 훑을 수 있게 정리하세요.
               </h2>
@@ -261,7 +287,7 @@ export function CoteWiki() {
 
           {isOrderLocked ? (
             <Alert className="border-amber-200 bg-amber-50/70 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
-              <Loader2 className="animate-none text-amber-500" />
+              <Lock className="text-amber-500" />
               <AlertTitle>순서 변경이 잠겨 있습니다.</AlertTitle>
               <AlertDescription className="text-amber-900/85 dark:text-amber-200">
                 검색/필터 중에는 순서를 변경할 수 없습니다. 전체 보기에서 정렬하세요.
@@ -278,65 +304,83 @@ export function CoteWiki() {
           )}
         </div>
 
-        {filteredNotes.length === 0 ? (
-          <Empty className="min-h-[340px] rounded-3xl border border-dashed border-border/70 bg-background/70">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <Search />
-              </EmptyMedia>
-              <EmptyTitle>조건에 맞는 카드가 없습니다.</EmptyTitle>
-              <EmptyDescription>
-                검색어를 지우거나 필터를 전체로 바꾸면 전체 위키 순서를 다시 정렬할 수 있습니다.
-              </EmptyDescription>
-            </EmptyHeader>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus data-icon="inline-start" />
-              새 카드 만들기
-            </Button>
-          </Empty>
-        ) : (
-          <DragDropContext onDragEnd={(result) => void handleDragEnd(result)}>
-            <Droppable droppableId="cote-wiki-list" isDropDisabled={isOrderLocked}>
-              {(droppableProvided) => (
-                <div
-                  ref={droppableProvided.innerRef}
-                  {...droppableProvided.droppableProps}
-                  className="flex flex-col gap-3"
-                >
-                  {filteredNotes.map((note, index) => (
-                    <Draggable
-                      key={note.id}
-                      draggableId={String(note.id)}
-                      index={index}
-                      isDragDisabled={isOrderLocked}
+        <AnimatePresence mode="wait">
+          {filteredNotes.length === 0 ? (
+            <motion.div
+              key="empty"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+            >
+              <Empty className="min-h-[340px] rounded-3xl border border-dashed border-border/70 bg-background/70">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Search />
+                  </EmptyMedia>
+                  <EmptyTitle>조건에 맞는 카드가 없습니다.</EmptyTitle>
+                  <EmptyDescription>
+                    검색어를 지우거나 필터를 전체로 바꾸면 전체 위키 순서를 다시 정렬할 수 있습니다.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <Button onClick={() => setCreateOpen(true)}>
+                  <Plus data-icon="inline-start" />
+                  새 카드 만들기
+                </Button>
+              </Empty>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="list"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+            >
+              <DragDropContext onDragEnd={(result) => void handleDragEnd(result)}>
+                <Droppable droppableId="cote-wiki-list" isDropDisabled={isOrderLocked}>
+                  {(droppableProvided) => (
+                    <div
+                      ref={droppableProvided.innerRef}
+                      {...droppableProvided.droppableProps}
+                      className="flex flex-col gap-3"
                     >
-                      {(draggableProvided, snapshot) => (
-                        <div
-                          ref={draggableProvided.innerRef}
-                          {...draggableProvided.draggableProps}
-                          {...draggableProvided.dragHandleProps}
-                          className={cn(snapshot.isDragging && "rotate-[0.4deg]")}
+                      {filteredNotes.map((note, index) => (
+                        <Draggable
+                          key={note.id}
+                          draggableId={String(note.id)}
+                          index={index}
+                          isDragDisabled={isOrderLocked}
                         >
-                          <CoteWikiCard
-                            note={note}
-                            expanded={expandedId === note.id}
-                            onToggle={() =>
-                              setExpandedId((current) => (current === note.id ? null : note.id))
-                            }
-                            onEdit={() => router.push(`/vault/wiki/${note.id}/edit`)}
-                            onDelete={() => void handleDelete(note)}
-                            className={cn(snapshot.isDragging && "shadow-xl ring-1 ring-primary/20")}
-                          />
-                        </div>
-                      )}
-                    </Draggable>
-                  ))}
-                  {droppableProvided.placeholder}
-                </div>
-              )}
-            </Droppable>
-          </DragDropContext>
-        )}
+                          {(draggableProvided, snapshot) => (
+                            <div
+                              ref={draggableProvided.innerRef}
+                              {...draggableProvided.draggableProps}
+                              {...draggableProvided.dragHandleProps}
+                              className={cn(snapshot.isDragging && "rotate-[0.4deg]")}
+                            >
+                              <CoteWikiCard
+                                note={note}
+                                expanded={expandedId === note.id}
+                                onToggle={() =>
+                                  setExpandedId((current) => (current === note.id ? null : note.id))
+                                }
+                                onEdit={() => router.push(`/vault/wiki/${note.id}/edit`)}
+                                onDelete={() => void handleDelete(note)}
+                                className={cn(snapshot.isDragging && "shadow-xl ring-1 ring-primary/20")}
+                              />
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {droppableProvided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
+              </DragDropContext>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <CreateCoteWikiDialog

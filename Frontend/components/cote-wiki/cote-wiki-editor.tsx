@@ -1,5 +1,6 @@
 "use client"
 
+import { AnimatePresence, motion } from "framer-motion"
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Eye, Loader2 } from "lucide-react"
@@ -221,10 +222,20 @@ export function CoteWikiEditor({ noteId }: { noteId: number }) {
             </Link>
           </Button>
 
-          <Badge variant="outline" className={statusMeta.className}>
-            {saveState === "saving" ? <Loader2 className="animate-spin" /> : null}
-            {statusMeta.label}
-          </Badge>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={saveState}
+              initial={{ opacity: 0, scale: 0.92 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.92 }}
+              transition={{ duration: 0.14 }}
+            >
+              <Badge variant="outline" className={statusMeta.className}>
+                {saveState === "saving" ? <Loader2 className="animate-spin" /> : null}
+                {statusMeta.label}
+              </Badge>
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">

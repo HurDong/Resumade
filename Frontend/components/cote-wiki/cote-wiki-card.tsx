@@ -1,7 +1,7 @@
 "use client"
 
 import { AnimatePresence, motion } from "framer-motion"
-import { PencilLine, Trash2 } from "lucide-react"
+import { ChevronDown, PencilLine, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -33,21 +33,34 @@ export function CoteWikiCard({
   return (
     <Card
       className={cn(
-        "overflow-hidden border-border/70 bg-background py-0 transition-all duration-200 hover:border-primary/30 hover:shadow-md",
+        "overflow-hidden border-border/70 bg-background py-0 transition-colors transition-shadow duration-150 hover:border-primary/30 hover:shadow-md",
         expanded && "border-primary/30 shadow-sm",
         className,
       )}
     >
-      <button type="button" onClick={onToggle} className="w-full text-left">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      >
         <CardHeader className="px-5 py-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <CardTitle className="text-2xl font-semibold tracking-tight">{note.title}</CardTitle>
-            <Badge
-              variant="outline"
-              className={cn("rounded-full text-[11px] font-semibold", getCoteWikiBadgeClassName(note.category))}
-            >
-              {note.category}
-            </Badge>
+            <div className="flex items-center gap-2.5">
+              <Badge
+                variant="outline"
+                className={cn("rounded-full text-[11px] font-semibold", getCoteWikiBadgeClassName(note.category))}
+              >
+                {note.category}
+              </Badge>
+              <motion.div
+                animate={{ rotate: expanded ? 180 : 0 }}
+                transition={{ duration: 0.2, ease: "easeInOut" }}
+                className="text-muted-foreground"
+              >
+                <ChevronDown className="size-4" />
+              </motion.div>
+            </div>
           </div>
         </CardHeader>
       </button>
