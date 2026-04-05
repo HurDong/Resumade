@@ -8,7 +8,9 @@ import com.resumade.api.workspace.dto.TitleSuggestionResponse;
 import com.resumade.api.workspace.dto.UpdateCategoryRequest;
 import com.resumade.api.workspace.service.WorkspaceBatchPlanService;
 import com.resumade.api.workspace.service.WorkspaceService;
+import com.resumade.api.workspace.service.WorkspaceTaskCache;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +32,7 @@ public class WorkspaceController {
 
     private final WorkspaceService workspaceService;
     private final WorkspaceBatchPlanService workspaceBatchPlanService;
+    private final WorkspaceTaskCache workspaceTaskCache;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     @GetMapping(value = "/stream/{questionId}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
@@ -64,6 +67,13 @@ public class WorkspaceController {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
         executorService.execute(() -> workspaceService.processRepatch(questionId, emitter));
         return emitter;
+    }
+
+    @GetMapping("/task-status/{questionId}")
+    public ResponseEntity<java.util.Map<String, Object>> getTaskStatus(@PathVariable Long questionId) {
+        return workspaceTaskCache.getStatus(questionId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/title-suggestions/{questionId}")

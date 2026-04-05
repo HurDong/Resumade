@@ -128,6 +128,7 @@ public class WorkspaceService {
     private final QuestionClassifierService questionClassifierService;
     private final PromptFactory promptFactory;
     private final StrategyDraftGeneratorService strategyDraftGeneratorService;
+    private final WorkspaceTaskCache workspaceTaskCache;
 
     public List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> getMatchedExperiences(
             Long questionId, String customQuery) {
@@ -258,6 +259,7 @@ public class WorkspaceService {
     @Transactional
     public void processRefinement(Long questionId, String directive, Integer targetChars, SseEmitter emitter) {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
+        workspaceTaskCache.setRunning(questionId);
         try {
             WorkspaceQuestion initialQuestion = questionRepository.findById(questionId)
                     .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
@@ -418,6 +420,7 @@ public class WorkspaceService {
                     analysis);
             logLengthMetrics("final", maxLength, minTargetChars, maxTargetChars, responseDraft, 0);
 
+            workspaceTaskCache.setComplete(questionId, result);
             sendStage(emitter, STAGE_DONE);
             sendSse(emitter, "complete", result);
             emitter.complete();
@@ -425,6 +428,7 @@ public class WorkspaceService {
             log.info("Refinement stream closed by client");
         } catch (Exception e) {
             log.error("Refinement process failed", e);
+            workspaceTaskCache.setError(questionId, resolveUserFacingErrorMessage(e));
             try {
                 sendSse(emitter, "error", resolveUserFacingErrorMessage(e));
             } catch (SseConnectionClosedException ignored) {
@@ -439,6 +443,7 @@ public class WorkspaceService {
     @Transactional
     public void processHumanPatch(Long questionId, boolean useDirective, Integer targetChars, SseEmitter emitter) {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
+        workspaceTaskCache.setRunning(questionId);
         try {
             WorkspaceQuestion initialQuestion = questionRepository.findById(questionId)
                     .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
@@ -633,6 +638,7 @@ public class WorkspaceService {
                     analysis);
             logLengthMetrics("final", maxLengthFinal, minTargetChars, preferredTargetChars, responseDraft, 0);
 
+            workspaceTaskCache.setComplete(questionId, result);
             sendStage(emitter, STAGE_DONE);
             sendSse(emitter, "complete", result);
             emitter.complete();
@@ -640,6 +646,7 @@ public class WorkspaceService {
             log.info("Human patch stream closed by client");
         } catch (Exception e) {
             log.error("Human Patch process failed", e);
+            workspaceTaskCache.setError(questionId, resolveUserFacingErrorMessage(e));
             try {
                 sendSse(emitter, "error", resolveUserFacingErrorMessage(e));
             } catch (SseConnectionClosedException ignored) {
@@ -654,6 +661,7 @@ public class WorkspaceService {
     @Transactional
     public void processRewash(Long questionId, SseEmitter emitter) {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
+        workspaceTaskCache.setRunning(questionId);
         try {
             WorkspaceQuestion question = questionRepository.findById(questionId)
                     .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
@@ -739,6 +747,7 @@ public class WorkspaceService {
             log.info("Rewash stream closed by client");
         } catch (Exception e) {
             log.error("Rewash process failed", e);
+            workspaceTaskCache.setError(questionId, resolveUserFacingErrorMessage(e));
             try {
                 sendSse(emitter, "error", resolveUserFacingErrorMessage(e));
             } catch (SseConnectionClosedException ignored) {
@@ -753,6 +762,7 @@ public class WorkspaceService {
     @Transactional
     public void processRepatch(Long questionId, SseEmitter emitter) {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
+        workspaceTaskCache.setRunning(questionId);
         try {
             WorkspaceQuestion question = questionRepository.findById(questionId)
                     .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
@@ -797,6 +807,7 @@ public class WorkspaceService {
             log.info("Repatch stream closed by client");
         } catch (Exception e) {
             log.error("Repatch process failed", e);
+            workspaceTaskCache.setError(questionId, resolveUserFacingErrorMessage(e));
             try {
                 sendSse(emitter, "error", resolveUserFacingErrorMessage(e));
             } catch (SseConnectionClosedException ignored) {
@@ -867,6 +878,7 @@ public class WorkspaceService {
                 analysis);
         logLengthMetrics("final", maxLength, finalTargetRange[0], finalTargetRange[1], responseDraft, 0);
 
+        workspaceTaskCache.setComplete(questionId, result);
         sendStage(emitter, STAGE_DONE);
         sendSse(emitter, "complete", result);
     }

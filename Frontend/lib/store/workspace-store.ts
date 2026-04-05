@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { toApiUrl } from "@/lib/network/api-base";
 import { streamSse } from "@/lib/network/stream-sse";
+import { useBackgroundTaskStore, type BackgroundTaskType } from "@/lib/store/background-task-store";
 import {
   playCompletionSound,
   prepareCompletionSound,
@@ -530,6 +531,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     void playCompletionSound();
 
     if (activeQ.dbId) {
+      useBackgroundTaskStore.getState().unregister(activeQ.dbId);
       persistQuestionUpdate({
         ...activeQ,
         content: sourceDraft,
@@ -603,6 +605,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const normalizedTarget = normalizeLengthTarget(requestedLengthTarget, activeQ.maxLength);
     const targetQuery = normalizedTarget ? `&targetChars=${normalizedTarget}` : "";
 
+    registerBackgroundTask(activeQ.dbId, get().applicationId, "generate");
     await runWorkspaceSse({
       url: toApiUrl(
         `/api/workspace/stream/${activeQ.dbId}?useDirective=${useDirective}${targetQuery}`
@@ -635,6 +638,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const normalizedTarget = normalizeLengthTarget(requestedLengthTarget, activeQ.maxLength);
     const targetQuery = normalizedTarget ? `&targetChars=${normalizedTarget}` : "";
 
+    registerBackgroundTask(activeQ.dbId, get().applicationId, "refine");
     await runWorkspaceSse({
       url: toApiUrl(
         `/api/workspace/refine-stream/${activeQ.dbId}?directive=${encodeURIComponent(
@@ -736,6 +740,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     await prepareCompletionSound();
     state.startProcessing();
 
+    registerBackgroundTask(activeQ.dbId, get().applicationId, "rewash");
     await runWorkspaceSse({
       url: toApiUrl(`/api/workspace/rewash-stream/${activeQ.dbId}`),
       set,
@@ -755,6 +760,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     await prepareCompletionSound();
     state.startProcessing();
 
+    registerBackgroundTask(activeQ.dbId, get().applicationId, "repatch");
     await runWorkspaceSse({
       url: toApiUrl(`/api/workspace/repatch-stream/${activeQ.dbId}`),
       set,
@@ -904,6 +910,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { activeStreamController } = get();
     if (!activeStreamController) return;
     activeStreamController.abort();
+    const activeQ = findActiveQuestion(get());
+    if (activeQ?.dbId) {
+      useBackgroundTaskStore.getState().unregister(activeQ.dbId);
+    }
     set((state) => ({
       isProcessing: false,
       pipelineStage: "IDLE",
@@ -1107,6 +1117,20 @@ async function runWorkspaceSse({
       set({ activeStreamController: null });
     }
   }
+}
+
+function registerBackgroundTask(
+  questionId: number | undefined,
+  applicationId: string | null,
+  taskType: BackgroundTaskType
+) {
+  if (!questionId || !applicationId) return;
+  useBackgroundTaskStore.getState().register({
+    questionId,
+    applicationId,
+    taskType,
+    startedAt: Date.now(),
+  });
 }
 
 function normalizeSseError(error: unknown, fallbackMessage: string) {

@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { WorkspaceSelector } from "./workspace-selector"
 import { useWorkspaceStore } from "@/lib/store/workspace-store"
 import { writeLastWorkspaceContext } from "@/lib/workspace/last-workspace-context"
+import { useBackgroundTaskPoller } from "@/lib/hooks/use-background-task-poller"
 
 interface WorkspaceEditorProps {
   applicationId?: string
@@ -57,6 +58,8 @@ export function WorkspaceEditor({ applicationId, initialQuestionDbId }: Workspac
   }, [applicationId, initialQuestionDbId, fetchApplicationData])
 
   const activeQuestion = questions.find((question) => question.id === activeQuestionId) ?? questions[0]
+
+  useBackgroundTaskPoller(activeQuestion?.dbId)
 
   useEffect(() => {
     if (!applicationId) return
