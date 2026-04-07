@@ -19,7 +19,7 @@ const CATEGORY_DOT_COLORS: Record<string, string> = {
   EXPERIENCE:      "bg-emerald-400",
   PROBLEM_SOLVING: "bg-orange-400",
   COLLABORATION:   "bg-violet-400",
-  GROWTH:          "bg-cyan-400",
+  PERSONAL_GROWTH: "bg-rose-400",
   CULTURE_FIT:     "bg-rose-400",
   TREND_INSIGHT:   "bg-yellow-400",
   DEFAULT:         "bg-muted-foreground/40",

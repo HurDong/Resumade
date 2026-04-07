@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useRef } from "react"
 import { motion, useMotionValue, useMotionTemplate } from "framer-motion"
@@ -60,6 +60,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { getDisplayedWashedText } from "@/lib/workspace/translation-panel-helpers"
+import { type PersonalStory, STORY_TYPE_LABELS } from "@/lib/workspace/types"
+import { Checkbox } from "@/components/ui/checkbox"
 
 // Helper for standard character length (including spaces)
 const getLength = (str: string) => {
@@ -88,7 +90,7 @@ const CATEGORY_DOT_COLORS: Record<string, string> = {
   EXPERIENCE:      "bg-emerald-400",
   PROBLEM_SOLVING: "bg-orange-400",
   COLLABORATION:   "bg-violet-400",
-  GROWTH:          "bg-cyan-400",
+  PERSONAL_GROWTH: "bg-rose-400",
   CULTURE_FIT:     "bg-pink-400",
   TREND_INSIGHT:   "bg-indigo-400",
   DEFAULT:         "bg-muted-foreground/30",
@@ -586,6 +588,8 @@ export function ContextPanel() {
   const [currentTitleLine, setCurrentTitleLine] = useState("")
   const [isCompanyInsightOpen, setIsCompanyInsightOpen] = useState(false)
   const [isRagContextOpen, setIsRagContextOpen] = useState(false)
+  const [personalStories, setPersonalStories] = useState<PersonalStory[]>([])
+  const [isStoriesLoading, setIsStoriesLoading] = useState(false)
   const [justCompleted, setJustCompleted] = useState(false)
   const completionBtnRef = useRef<HTMLDivElement>(null)
   const batchBtnRef = useRef<HTMLDivElement>(null)
@@ -612,6 +616,26 @@ export function ContextPanel() {
     setSelectedTitleSuggestion("")
     setCurrentTitleLine("")
   }, [activeQuestion.id])
+
+  useEffect(() => {
+    if (activeQuestion.category === "PERSONAL_GROWTH") {
+      const fetchStories = async () => {
+        try {
+          setIsStoriesLoading(true)
+          const response = await fetch("/api/personal-stories")
+          if (response.ok) {
+            const data = await response.json()
+            setPersonalStories(data)
+          }
+        } catch (err) {
+          console.error("Failed to fetch stories in workspace", err)
+        } finally {
+          setIsStoriesLoading(false)
+        }
+      }
+      fetchStories()
+    }
+  }, [activeQuestion.category])
 
   const { mistranslations, aiReviewReport, washedKr } = activeQuestion
   const companyResearchData = parseCompanyResearch(companyResearch)
@@ -1279,10 +1303,12 @@ export function ContextPanel() {
                       {Array.from(
                         new Set(
                           [
-                            companyResearchData.focus.businessUnit,
-                            companyResearchData.focus.targetService,
-                            companyResearchData.focus.focusRole,
-                            companyResearchData.focus.techFocus,
+                            companyResearchData.focus.company,
+                            companyResearchData.focus.position,
+                            companyResearchData.focus.inferredBusinessUnit,
+                            companyResearchData.focus.inferredProduct,
+                            companyResearchData.discoveredContext?.businessUnit,
+                            companyResearchData.discoveredContext?.product,
                           ].filter(
                             (item): item is string =>
                               typeof item === "string" &&
@@ -1319,49 +1345,139 @@ export function ContextPanel() {
             <button
               type="button"
               onClick={() => setIsRagContextOpen((prev) => !prev)}
-              className="mb-3 flex w-full items-center justify-between rounded-2xl border border-primary/15 bg-gradient-to-r from-background via-primary/[0.03] to-background px-4 py-2.5 text-left shadow-sm transition-all hover:border-primary/30 hover:bg-primary/[0.04]"
+              className={`mb-3 flex w-full items-center justify-between rounded-2xl border px-4 py-2.5 text-left shadow-sm transition-all ${
+                activeQuestion.category === "PERSONAL_GROWTH"
+                  ? "border-rose-200 bg-rose-50/30 hover:bg-rose-50/50"
+                  : "border-primary/15 bg-gradient-to-r from-background via-primary/[0.03] to-background hover:border-primary/30 hover:bg-primary/[0.04]"
+              }`}
             >
               <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                  <TrendingUp className="size-4" />
+                <div className={`flex size-10 shrink-0 items-center justify-center rounded-2xl ${
+                  activeQuestion.category === "PERSONAL_GROWTH" ? "bg-rose-100 text-rose-500" : "bg-primary/10 text-primary"
+                }`}>
+                  {activeQuestion.category === "PERSONAL_GROWTH" ? <User className="size-4" /> : <TrendingUp className="size-4" />}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[11px] font-black uppercase tracking-[0.24em] text-primary/70">경험 컨텍스트</p>
-                  <h3 className="truncate text-sm font-black tracking-tight text-foreground">연결된 경험 컨텍스트</h3>
+                  <p className={`text-[11px] font-black uppercase tracking-[0.24em] ${
+                    activeQuestion.category === "PERSONAL_GROWTH" ? "text-rose-400" : "text-primary/70"
+                  }`}>
+                    {activeQuestion.category === "PERSONAL_GROWTH" ? "인생 서사 소재" : "경험 컨텍스트"}
+                  </p>
+                  <h3 className="truncate text-sm font-black tracking-tight text-foreground">
+                    {activeQuestion.category === "PERSONAL_GROWTH" ? "작성에 활용할 소재 선택" : "연결된 경험 컨텍스트"}
+                  </h3>
                 </div>
               </div>
               <div className="flex items-center gap-2 pl-4 shrink-0">
-                {!isRagContextOpen && extractedContext.length > 0 && (
-                  <Badge variant="secondary" className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-primary/15 bg-primary/[0.06] text-primary/80">
-                    {extractedContext.length}개 연결됨
+                {!isRagContextOpen && (activeQuestion.category === "PERSONAL_GROWTH" 
+                  ? (activeQuestion.selectedStoryIds?.length ?? 0) > 0 
+                  : extractedContext.length > 0) && (
+                  <Badge variant="secondary" className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    activeQuestion.category === "PERSONAL_GROWTH" 
+                      ? "border-rose-200 bg-rose-100/50 text-rose-600" 
+                      : "border-primary/15 bg-primary/[0.06] text-primary/80"
+                  }`}>
+                    {activeQuestion.category === "PERSONAL_GROWTH" 
+                      ? `${activeQuestion.selectedStoryIds?.length}개 선택됨` 
+                      : `${extractedContext.length}개 연결됨`}
                   </Badge>
                 )}
                 <span className="hidden text-[11px] font-bold text-muted-foreground sm:inline">
                   {isRagContextOpen ? "접기" : "펼치기"}
                 </span>
-                <div className="flex size-8 items-center justify-center rounded-full border border-primary/15 bg-background/80">
-                  <ChevronDown className={`size-4 text-primary transition-transform duration-200 ${isRagContextOpen ? "rotate-180" : ""}`} />
+                <div className={`flex size-8 items-center justify-center rounded-full border bg-background/80 ${
+                  activeQuestion.category === "PERSONAL_GROWTH" ? "border-rose-200" : "border-primary/15"
+                }`}>
+                  <ChevronDown className={`size-4 transition-transform duration-200 ${
+                    activeQuestion.category === "PERSONAL_GROWTH" ? "text-rose-500" : "text-primary"
+                  } ${isRagContextOpen ? "rotate-180" : ""}`} />
                 </div>
               </div>
             </button>
+            
             {isRagContextOpen && (
               <div className="space-y-3 animate-in fade-in-50 slide-in-from-top-1">
-                {extractedContext.map((ctx, index) => (
-                  <Card
-                    key={`${ctx.id ?? "ctx"}-${ctx.experienceTitle}-${index}`}
-                    className="min-w-0 overflow-hidden border border-border/60 bg-background shadow-sm group hover:border-primary/30 hover:shadow-md transition-all"
-                  >
-                    <CardContent className="p-4">
-                      <p className="mb-3 min-w-0 break-words text-sm font-black group-hover:text-primary transition-colors text-foreground">
-                        {ctx.experienceTitle}
-                      </p>
-                      <RelevantPartCard
-                        relevantPart={ctx.relevantPart}
-                        relevanceScore={ctx.relevanceScore}
-                      />
-                    </CardContent>
-                  </Card>
-                ))}
+                {activeQuestion.category === "PERSONAL_GROWTH" ? (
+                  isStoriesLoading ? (
+                    <div className="flex justify-center p-8">
+                      <Loader2 className="size-6 animate-spin text-rose-300" />
+                    </div>
+                  ) : personalStories.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-rose-200 p-8 text-center bg-rose-50/10">
+                      <p className="text-xs text-muted-foreground mb-4">저장된 인생 서사가 없습니다.</p>
+                      <Button variant="outline" size="sm" className="h-8 border-rose-200 text-rose-600 hover:bg-rose-50" asChild>
+                        <a href="/vault?view=story">서사 보관소 가기</a>
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="grid gap-2.5">
+                      {personalStories.map((story) => {
+                        const isSelected = activeQuestion.selectedStoryIds?.includes(story.id)
+                        return (
+                          <div
+                            key={story.id}
+                            className={`flex flex-col gap-2 rounded-xl border p-4 transition-all cursor-pointer ${
+                              isSelected 
+                                ? "border-rose-400 bg-rose-50 shadow-sm" 
+                                : "border-border/60 hover:border-rose-200 hover:bg-rose-50/30"
+                            }`}
+                            onClick={() => {
+                              const currentIds = activeQuestion.selectedStoryIds || []
+                              const nextIds = isSelected 
+                                ? currentIds.filter(id => id !== story.id)
+                                : [...currentIds, story.id]
+                              updateActiveQuestion({ selectedStoryIds: nextIds })
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge variant="outline" className="h-5 rounded-md border-rose-200 bg-white px-1.5 py-0 text-[9px] font-bold text-rose-500">
+                                    {STORY_TYPE_LABELS[story.type]}
+                                  </Badge>
+                                  <span className="text-[10px] font-bold text-muted-foreground/60">{story.period}</span>
+                                </div>
+                                <p className={`text-xs leading-relaxed line-clamp-2 ${isSelected ? "text-rose-900 font-medium" : "text-muted-foreground"}`}>
+                                  {story.content}
+                                </p>
+                              </div>
+                              <Checkbox 
+                                checked={isSelected}
+                                className="mt-1 data-[state=checked]:bg-rose-500 data-[state=checked]:border-rose-500"
+                              />
+                            </div>
+                            {story.keywords && story.keywords.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {story.keywords.map((kw, i) => (
+                                  <span key={i} className={`text-[9px] font-bold ${isSelected ? "text-rose-400" : "text-muted-foreground/40"}`}>
+                                    #{kw}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                ) : (
+                  extractedContext.map((ctx, index) => (
+                    <Card
+                      key={`${ctx.id ?? "ctx"}-${ctx.experienceTitle}-${index}`}
+                      className="min-w-0 overflow-hidden border border-border/60 bg-background shadow-sm group hover:border-primary/30 hover:shadow-md transition-all"
+                    >
+                      <CardContent className="p-4">
+                        <p className="mb-3 min-w-0 break-words text-sm font-black group-hover:text-primary transition-colors text-foreground">
+                          {ctx.experienceTitle}
+                        </p>
+                        <RelevantPartCard
+                          relevantPart={ctx.relevantPart}
+                          relevanceScore={ctx.relevanceScore}
+                        />
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
               </div>
             )}
           </section>

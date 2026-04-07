@@ -129,6 +129,7 @@ public class WorkspaceService {
     private final PromptFactory promptFactory;
     private final StrategyDraftGeneratorService strategyDraftGeneratorService;
     private final WorkspaceTaskCache workspaceTaskCache;
+    private final com.resumade.api.experience.domain.PersonalStoryRepository personalStoryRepository;
 
     public List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> getMatchedExperiences(
             Long questionId, String customQuery) {
@@ -257,7 +258,7 @@ public class WorkspaceService {
     }
 
     @Transactional
-    public void processRefinement(Long questionId, String directive, Integer targetChars, SseEmitter emitter) {
+    public void processRefinement(Long questionId, String directive, Integer targetChars, List<Long> storyIds, SseEmitter emitter) {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
         workspaceTaskCache.setRunning(questionId);
         try {
@@ -278,7 +279,9 @@ public class WorkspaceService {
 
             List<Experience> allExperiences = experienceRepository.findAll();
             String others = buildOthersContext(initialQuestion, questionId, allExperiences);
-            String context = buildFilteredContext(initialQuestion, questionId, allExperiences, category);
+            
+            // storyIds가 있으면 서사 컨텍스트 구축, 없으면 기존 RAG/필터링 컨텍스트 사용
+            String context = buildContext(initialQuestion, questionId, allExperiences, category, storyIds);
 
             paceProcessing();
             sendProgress(emitter, STAGE_DRAFT, "선택한 경험과 요청 사항을 반영해 초안을 다시 생성하고 있습니다. ✍️");
@@ -441,7 +444,7 @@ public class WorkspaceService {
     }
 
     @Transactional
-    public void processHumanPatch(Long questionId, boolean useDirective, Integer targetChars, SseEmitter emitter) {
+    public void processHumanPatch(Long questionId, boolean useDirective, Integer targetChars, List<Long> storyIds, SseEmitter emitter) {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
         workspaceTaskCache.setRunning(questionId);
         try {
@@ -457,7 +460,6 @@ public class WorkspaceService {
             sendProgress(emitter, STAGE_RAG, "자기소개서 생성을 위해 기업 분석 데이터와 문항을 준비하고 있어요. 🧭");
 
             // ── [STEP 1] 문항 카테고리 분류 ──────────────────────────────────
-            // 경량 LLM 호출로 문항 유형을 판별합니다. 실패 시 DEFAULT로 자동 fallback합니다.
             QuestionCategory category = questionClassifierService.classify(questionTitle);
             String companyContext = buildApplicationResearchContext(initialQuestion, category);
             sendProgress(emitter, STAGE_RAG,
@@ -465,17 +467,16 @@ public class WorkspaceService {
 
             paceProcessing();
 
-            // ── [STEP 2] 카테고리 인식 RAG 검색 ─────────────────────────────
-            // 판별된 카테고리에 따라 Elasticsearch 키워드 필드 가중치를 동적으로 조정합니다.
+            // ── [STEP 2] 컨텍스트 구축 ──────────────────────────────────────
             sendProgress(emitter, STAGE_RAG, "질문 의도와 글자 수 조건을 먼저 맞춰 초안 방향을 정리하고 있습니다. 📐");
 
             List<Experience> allExperiences = experienceRepository.findAll();
             String others = buildOthersContext(initialQuestion, questionId, allExperiences);
 
-            sendProgress(emitter, STAGE_RAG, "문항에 가장 잘 맞는 핵심 경험만 골라 연결하고 있어요. 🧩");
+            sendProgress(emitter, STAGE_RAG, "문항에 가장 잘 맞는 핵심 소재를 골라 연결하고 있어요. 🧩");
 
-            // 카테고리 부스팅 적용 — buildFilteredContext에 category 전달
-            String context = buildFilteredContext(initialQuestion, questionId, allExperiences, category);
+            // storyIds가 있으면 서사 컨텍스트 구축, 없으면 기존 RAG/필터링 컨텍스트 사용
+            String context = buildContext(initialQuestion, questionId, allExperiences, category, storyIds);
 
             paceProcessing();
             sendProgress(emitter, STAGE_DRAFT, "엄선한 경험 데이터를 바탕으로 새로운 초안을 생성 중입니다. ✍️");
@@ -2236,9 +2237,9 @@ public class WorkspaceService {
                 primaryFocus = "role clarity, friction handling, interface alignment, and team outcome";
                 weightingRule = "Prioritize the team context and the applicant's specific contribution first. Do not force a pure technical-fit essay when the question is about collaboration.";
             }
-            case GROWTH -> {
-                primaryFocus = "technical learning trigger, CS or deep-dive process, applied change, and stronger engineering standards";
-                weightingRule = "Prioritize the learning curve and applied technical growth first. Avoid vague self-development language and use JD only as a bridge to relevance.";
+            case PERSONAL_GROWTH -> {
+                primaryFocus = "authentic life episode, turning point, value formation, and how it drives current behavior";
+                weightingRule = "Prioritize the personal narrative and the emotional/cognitive shift it produced. Avoid technical stacks and project metrics. Connect the formed value to why this role matters to the applicant.";
             }
             case CULTURE_FIT -> {
                 primaryFocus = "execution speed, customer or operational signal, bounded ownership, and culture fit";
@@ -2291,8 +2292,8 @@ public class WorkspaceService {
             avoid = "Avoid startup-style slogan writing or trend commentary that is disconnected from enterprise execution and customer trust.";
         }
 
-        if (category == QuestionCategory.GROWTH) {
-            emphasis += " For growth questions, favor CS fundamentals and deep-dive learning over generic self-development language.";
+        if (category == QuestionCategory.PERSONAL_GROWTH) {
+            emphasis += " For personal growth questions, focus on the authentic human story — the specific episode, emotional shift, and value formed — rather than technical capability or project outcomes.";
         } else if (category == QuestionCategory.CULTURE_FIT) {
             emphasis += " For culture-fit questions, prove the working style with one bounded execution episode instead of praising the company culture abstractly.";
         } else if (category == QuestionCategory.TREND_INSIGHT) {
@@ -3114,7 +3115,32 @@ public class WorkspaceService {
         }
     }
 
-private record RequestedLengthDirective(int minimum, int preferredTarget) {
+    private String buildContext(WorkspaceQuestion question, Long questionId, List<Experience> allExperiences, QuestionCategory category, List<Long> storyIds) {
+        if (storyIds != null && !storyIds.isEmpty()) {
+            return buildStoryContext(storyIds);
+        }
+        return buildFilteredContext(question, questionId, allExperiences, category);
+    }
+
+    private String buildStoryContext(List<Long> storyIds) {
+        List<com.resumade.api.experience.domain.PersonalStory> stories = personalStoryRepository.findAllById(storyIds);
+        if (stories.isEmpty()) {
+            return "No personal stories selected.";
+        }
+
+        StringBuilder sb = new StringBuilder("### SELECTED PERSONAL STORIES ###\n\n");
+        for (var story : stories) {
+            sb.append("[").append(story.getType().name()).append("] ").append(story.getPeriod()).append("\n");
+            sb.append("Content: ").append(story.getContent()).append("\n");
+            if (story.getKeywords() != null && !story.getKeywords().isEmpty()) {
+                sb.append("Keywords: ").append(String.join(", ", story.getKeywords())).append("\n");
+            }
+            sb.append("---\n");
+        }
+        return sb.toString();
+    }
+
+    private record RequestedLengthDirective(int minimum, int preferredTarget) {
     }
 }
 

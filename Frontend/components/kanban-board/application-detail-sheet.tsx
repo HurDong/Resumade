@@ -30,12 +30,6 @@ import { CompanyResearchPanel } from "./company-research-panel"
 import { QuestionsPanel } from "./questions-panel"
 import { ApplicationSchedulePanel } from "./application-schedule-panel"
 import { columns } from "./index"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 
 export function ApplicationDetailSheet({
   application,
@@ -99,21 +93,14 @@ export function ApplicationDetailSheet({
                 {"\uc791\uc5c5\uc2e4"}
               </Button>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="size-10 rounded-full">
-                    <Trash2 className="size-5 text-muted-foreground transition-colors hover:text-destructive" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    className="cursor-pointer font-medium text-destructive focus:text-destructive"
-                    onClick={() => onDelete(application.id)}
-                  >
-                    {"\uacf5\uace0\u0020\uc0ad\uc81c"}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-10 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                onClick={() => onDelete(application.id)}
+              >
+                <Trash2 className="size-5" />
+              </Button>
             </div>
           </div>
 

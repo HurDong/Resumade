@@ -26,13 +26,13 @@ public interface ClassifierAiService {
             - EXPERIENCE: 직무 관련 프로젝트, 기술 스택 활용, 구체적 성과, 역할과 기여도
             - PROBLEM_SOLVING: 어려움 극복, 실패 경험, 문제 해결 과정, 도전 사례
             - COLLABORATION: 팀워크, 협업, 갈등 해결, 의사소통, 리더십
-            - GROWTH: 성장/자기개발 중에서도 CS 기본기, 기술적 깊이 탐구, 피드백 수용, 새로운 기술·개념의 학습과 적용
+            - PERSONAL_GROWTH: 어린 시절·가정 환경·인생 전환점 등 삶의 서사를 통해 지원자의 가치관, 인성, 삶의 태도가 형성된 과정을 묻는 문항
             - CULTURE_FIT: 빠른 실행, MVP, 고객 중심, 실험 문화, 오너십, 회사의 일하는 방식과의 적합성
             - TREND_INSIGHT: 최근 기술/산업/사회 이슈에 대한 견해, 비즈니스 영향 해석, 회사/직무와의 연결
             - DEFAULT: 위 어느 카테고리에도 명확히 해당하지 않는 복합/기타 문항
 
             [구분 기준]
-            1. 단순한 성장담이 아니라 "왜 이 기술/CS 개념을 깊이 파고들었는가"를 묻는다면 GROWTH입니다.
+            1. "성장과정을 써주세요", "어떤 경험이 지금의 당신을 만들었나요", "가치관이 열 문항이면 PERSONAL_GROWTH입니다. 프로젝트나 기술지식이 아닌 인생 이야기가 추요되는 문항입니다.
             2. "빠르게 실행해 성과를 냈다", "고객 반응으로 검증했다", "조직 문화와 맞는 일하는 방식"을 묻는다면 CULTURE_FIT입니다.
             3. "최근 기술/산업/사회 이슈에 대한 견해"를 묻는다면 TREND_INSIGHT입니다.
             4. 회사 선택 이유가 중심이면 MOTIVATION, 실제 프로젝트 수행과 기술 성과가 중심이면 EXPERIENCE입니다.
@@ -42,7 +42,7 @@ public interface ClassifierAiService {
             1. 반드시 위 카테고리 이름 중 정확히 하나만 반환하세요.
             2. JSON, 설명문, 추가 텍스트를 절대 포함하지 마세요.
             3. 확신이 없으면 DEFAULT를 반환하세요.
-            4. 예시: MOTIVATION / EXPERIENCE / PROBLEM_SOLVING / COLLABORATION / GROWTH / CULTURE_FIT / TREND_INSIGHT / DEFAULT
+            4. 예시: MOTIVATION / EXPERIENCE / PROBLEM_SOLVING / COLLABORATION / PERSONAL_GROWTH / CULTURE_FIT / TREND_INSIGHT / DEFAULT
             """)
     @UserMessage("분류할 문항: {{question}}")
     String classify(@V("question") String question);

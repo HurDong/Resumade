@@ -76,7 +76,7 @@ public class WorkspaceBatchPlanService {
               EXPERIENCE       – technical experience, project execution, engineering judgment, measurable outcome
               PROBLEM_SOLVING  – root-cause analysis, challenge, troubleshooting, adaptation under constraint
               COLLABORATION    – teamwork, conflict resolution, communication, alignment, documentation
-              GROWTH           – CS fundamentals, deep-dive learning, feedback acceptance, technical learning curve
+              PERSONAL_GROWTH   – personal life narrative, turning points, value formation, character shaping episodes (NOT technical growth)
               CULTURE_FIT      – fast execution, MVP judgment, customer focus, experiment culture, ownership
               TREND_INSIGHT    – industry/technology issue analysis, business implication, company relevance
               DEFAULT          – only when none of the above clearly dominates
@@ -84,7 +84,7 @@ public class WorkspaceBatchPlanService {
             Rules:
             - If a question title is about 지원동기, 입사 후 포부, 회사/직무 선택 이유 → MOTIVATION.
             - If it asks about 협업, 갈등, 조율, 팀 프로젝트 → COLLABORATION.
-            - If it asks about 특별한 노력, 학습, 기본기, 약점 보완, 기술적 성장 → GROWTH unless the core is one incident-level troubleshooting story.
+            - If it asks about 성장과정, 가치관, 인생 노선, 어린 시절, 전환점 → PERSONAL_GROWTH (NOT about tech learning).
             - If it asks about 빠른 실행, 고객 반응, 실험, 적응, 새로운 방식 활용 → prefer CULTURE_FIT or PROBLEM_SOLVING depending on whether the emphasis is working style or diagnosis.
             - If it asks about 최근 기술/산업/사회 이슈 견해 → TREND_INSIGHT.
             - DEFAULT should be rare.
@@ -701,10 +701,10 @@ public class WorkspaceBatchPlanService {
                 roleWeight = 18;
                 keywordWeight = 18;
             }
-            case GROWTH -> {
+            case PERSONAL_GROWTH -> {
                 descriptionWeight = 22;
-                techWeight = 18;
-                keywordWeight = 22;
+                keywordWeight = 24;
+                techWeight = 4; // 기술 스택 관련성 낮음
             }
             case TREND_INSIGHT -> {
                 keywordWeight = 26;
@@ -971,7 +971,7 @@ public class WorkspaceBatchPlanService {
             case EXPERIENCE -> candidates.add("직무에서 즉시 발휘 가능한 기술 판단과 실행 이력");
             case PROBLEM_SOLVING -> candidates.add("문제 원인 규명과 해결 방식의 차이를 보여주는 판단 근거");
             case COLLABORATION -> candidates.add("협업 과정에서 맡은 역할과 조율 방식");
-            case GROWTH -> candidates.add("기술 이해 수준이 바뀐 계기와 적용 결과");
+            case PERSONAL_GROWTH -> candidates.add("삶의 전환점과 그로부터 형성된 가치관의 연결고리");
             case CULTURE_FIT -> candidates.add("빠르게 실행하고 검증한 working style의 증거");
             case TREND_INSIGHT -> candidates.add("회사 도메인과 연결되는 이슈 해석 관점");
             default -> candidates.add("문항 의도에 맞는 핵심 증거 한 축");
@@ -986,7 +986,7 @@ public class WorkspaceBatchPlanService {
             case EXPERIENCE -> List.of("기술 역량이 실제 비즈니스 임팩트로 이어진 경로");
             case PROBLEM_SOLVING -> List.of("문제 해결 경험을 직무 역량으로 번역하는 시각");
             case COLLABORATION -> List.of("기술 설명을 팀 상황에 맞게 조정하는 능력");
-            case GROWTH -> List.of("문제 원인을 구조적으로 다시 보는 습관");
+            case PERSONAL_GROWTH -> List.of("인생 경험에서 형성된 가치관이 지금의 선택과 태도에 미치는 영향");
             case CULTURE_FIT -> List.of("빠르게 만들고 실제 신호로 검증하는 일하는 방식");
             case TREND_INSIGHT -> List.of("기술 이슈를 회사 맥락으로 해석하는 관점");
             default -> List.of("문항 의도에 맞는 증거를 선별하는 기준");
@@ -999,7 +999,7 @@ public class WorkspaceBatchPlanService {
             case EXPERIENCE -> "보유 역량과 실행 이력을 직무 수행 청사진으로 연결하는 역량 어필 각도";
             case PROBLEM_SOLVING -> "핵심 문제를 해결하며 만든 판단과 실행의 차별점을 보여주는 각도";
             case COLLABORATION -> "협업 과정에서 기술 판단과 조율 역량을 증명하는 각도";
-            case GROWTH -> "시행착오를 통해 판단 기준이 정교해진 성장 각도";
+            case PERSONAL_GROWTH -> "삶의 전환점을 통해 형성된 가치관이 현재의 일하는 방식과 직무 선택으로 이어지는 서사 각도";
             case CULTURE_FIT -> "빠르게 실행하고 검증한 방식이 조직 문화와 맞닿는 각도";
             case TREND_INSIGHT -> "기술·산업 이슈를 회사의 현재 사업 맥락과 연결해 해석하는 각도";
             default -> "문항 의도에 맞는 핵심 증거를 한 축으로 세우는 각도";
@@ -1018,8 +1018,8 @@ public class WorkspaceBatchPlanService {
                 lines.add("→ Start from domain/company interest. Do NOT open with tech stack.");
             } else if (intentTag.contains("COLLABORATION")) {
                 lines.add("→ Lead with human dynamics and interpersonal process, then connect to outcome.");
-            } else if (intentTag.contains("GROWTH")) {
-                lines.add("→ Focus on technical learning curve and deep-dive growth, not generic self-development language.");
+            } else if (intentTag.contains("PERSONAL_GROWTH")) {
+                lines.add("→ Focus on authentic life episodes and formed values. Avoid generic self-development or family chronicles.");
             } else if (intentTag.contains("CULTURE_FIT")) {
                 lines.add("→ Prove working style with one execution-and-validation episode rather than abstract culture praise.");
             } else if (intentTag.contains("TREND_INSIGHT")) {

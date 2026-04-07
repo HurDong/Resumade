@@ -56,7 +56,7 @@ public class ExperienceVectorRetrievalService {
             QuestionCategory.EXPERIENCE, new CategoryFieldBoost(0, 2, 14, 10, 10, 0, 0),
             QuestionCategory.PROBLEM_SOLVING, new CategoryFieldBoost(0, 14, 0, 4, 0, 10, 0),
             QuestionCategory.COLLABORATION, new CategoryFieldBoost(0, 8, 0, 0, 14, 4, 0),
-            QuestionCategory.GROWTH, new CategoryFieldBoost(0, 10, 8, 2, 0, 10, 0),
+            QuestionCategory.PERSONAL_GROWTH, CategoryFieldBoost.none(), // RAG 우회 대상 — Personal Story Vault로 처리
             QuestionCategory.CULTURE_FIT, new CategoryFieldBoost(0, 8, 4, 8, 10, 8, 0),
             QuestionCategory.TREND_INSIGHT, new CategoryFieldBoost(4, 8, 8, 0, 0, 10, 0),
             QuestionCategory.DEFAULT, CategoryFieldBoost.none()

@@ -5,6 +5,24 @@ import { DragDropContext, Droppable, type DropResult } from "@hello-pangea/dnd"
 import { ArchiveX, ChevronRight, ChevronsUp, Loader2, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { mockApplications, type Application, type ApplicationStatus } from "@/lib/mock-data"
 import { isFrontendOnlyMode } from "@/lib/frontend-only"
 import { getCompanyLogo } from "@/lib/logo-utils"
@@ -93,6 +111,7 @@ export function KanbanBoard() {
   const [localApplications, setLocalApplications] = useState<Application[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isFailedDrawerOpen, setIsFailedDrawerOpen] = useState(false)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   const sortedApplications = [...localApplications].sort((a, b) => {
     const resultPriority = { pending: 0, pass: 1, fail: 2 }
@@ -209,21 +228,28 @@ export function KanbanBoard() {
 
   const handleCloseSheet = () => {
     setIsSheetOpen(false)
+    // 즉시 null로 초기화해야 같은 카드를 다시 클릭해도 열림
     setSelectedApplication(null)
   }
 
   const handleDeleteApplication = async (id: string) => {
-    if (!confirm("정말 이 공고를 삭제하시겠습니까?\n연관된 모든 자소서 문항과 데이터가 영구적으로 삭제됩니다.")) {
-      return
-    }
+    // confirm 대신 AlertDialog를 띄우기 위해 deleteTargetId만 설정
+    setDeleteTargetId(id)
+  }
 
+  const confirmDelete = async () => {
+    if (!deleteTargetId) return
+    const id = deleteTargetId
+    setDeleteTargetId(null)
+    // Sheet를 먼저 닫아야 다음 카드 클릭이 즉시 동작함
+    setIsSheetOpen(false)
+    setSelectedApplication(null)
     try {
       const response = await fetch(`/api/applications/${id}`, { method: "DELETE" })
       if (!response.ok) throw new Error("Failed to delete application")
-      await fetchApplications()
+      setLocalApplications((prev) => prev.filter((a) => a.id !== id))
     } catch (error) {
       console.error(error)
-      alert("공고 삭제에 실패했습니다.")
     }
   }
 
@@ -475,6 +501,27 @@ export function KanbanBoard() {
         onClose={() => setIsAddDialogOpen(false)}
         onAdd={handleAddApplication}
       />
+
+      {/* 삭제 확인 Dialog */}
+      <Dialog open={!!deleteTargetId} onOpenChange={(open) => !open && setDeleteTargetId(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>공고를 삭제할까요?</DialogTitle>
+            <DialogDescription>
+              연관된 자소서 문항과 데이터가 모두 사라집니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setDeleteTargetId(null)}>취소</Button>
+            <Button
+              onClick={confirmDelete}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              삭제
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

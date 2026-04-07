@@ -3,7 +3,7 @@ export type QuestionCategory =
   | "EXPERIENCE"
   | "PROBLEM_SOLVING"
   | "COLLABORATION"
-  | "GROWTH"
+  | "PERSONAL_GROWTH"
   | "CULTURE_FIT"
   | "TREND_INSIGHT"
   | "DEFAULT"
@@ -13,7 +13,7 @@ export const QUESTION_CATEGORY_LABELS: Record<QuestionCategory, string> = {
   EXPERIENCE: "직무 경험 및 성과",
   PROBLEM_SOLVING: "문제 해결 및 도전",
   COLLABORATION: "협업 및 리더십",
-  GROWTH: "CS/딥다이브 기반 성장",
+  PERSONAL_GROWTH: "성장과정 및 가치관",
   CULTURE_FIT: "조직문화 및 실행력",
   TREND_INSIGHT: "기술/산업 인사이트",
   DEFAULT: "기타",
@@ -71,6 +71,8 @@ export interface WorkspaceQuestion {
   isCompleted: boolean;
   /** 유저가 직접 지정한 카테고리. null이면 AI 자동 분류 사용 */
   category: QuestionCategory | null;
+  /** 성장과정 문항에서 선택된 인생 서사 ID 목록 */
+  selectedStoryIds?: number[];
 }
 
 export interface BatchPlanAssignment {
@@ -116,3 +118,35 @@ export interface ContextItem {
 }
 
 export type PipelineStage = "IDLE" | "RAG" | "DRAFT" | "WASH" | "PATCH" | "DONE";
+
+export type StoryType =
+  | "TURNING_POINT"
+  | "VALUE"
+  | "ENVIRONMENT"
+  | "INFLUENCE"
+  | "FAILURE_RECOVERY"
+  | "MILESTONE";
+
+export const STORY_TYPE_LABELS: Record<StoryType, string> = {
+  TURNING_POINT: "전환점",
+  VALUE: "가치관",
+  ENVIRONMENT: "성장 환경",
+  INFLUENCE: "영향받은 인물/경험",
+  FAILURE_RECOVERY: "실패와 극복",
+  MILESTONE: "인생 이정표",
+};
+
+export interface PersonalStory {
+  id: number;
+  type: StoryType;
+  period: string;
+  content: string;
+  keywords: string[];
+}
+
+export interface StoryUpsertRequest {
+  type: StoryType;
+  period: string;
+  content: string;
+  keywords: string[];
+}

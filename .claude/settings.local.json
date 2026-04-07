@@ -1,0 +1,14 @@
+{
+  "disableAllHooks": true,
+  "disabledMcpjsonServers": ["Claude_Preview"],
+  "enabledPlugins": {
+    "claude-preview@builtin": false,
+    "preview@builtin": false
+  },
+  "permissions": {
+    "allow": [
+      "Skill(update-config)",
+      "Skill(update-config:*)"
+    ]
+  }
+}

@@ -3,16 +3,18 @@
 import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { motion } from "framer-motion"
-import { BookOpen, Lightbulb } from "lucide-react"
+import { BookOpen, Lightbulb, UserRound } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { CoteWiki } from "@/components/cote-wiki"
 import { ExperienceVault } from "@/components/experience-vault"
+import { StoryVault } from "@/components/story-vault"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 
-type VaultView = "experience" | "wiki"
+type VaultView = "experience" | "story" | "wiki"
 
 const TABS = [
   { key: "experience" as const, label: "경험 보관소", icon: BookOpen },
+  { key: "story" as const, label: "인생 서사", icon: UserRound },
   { key: "wiki" as const, label: "코테 위키", icon: Lightbulb },
 ]
 
@@ -20,6 +22,10 @@ const HEADER_INFO: Record<VaultView, { title: string; description: string }> = {
   experience: {
     title: "경험 보관소",
     description: "프로젝트 경험을 업로드하고 RAG 문맥으로 연결합니다.",
+  },
+  story: {
+    title: "인생 서사 보관소",
+    description: "가치관, 삶의 전환점 등 성장과정 문항의 핵심 소재를 관리합니다.",
   },
   wiki: {
     title: "코테 위키",
@@ -29,7 +35,8 @@ const HEADER_INFO: Record<VaultView, { title: string; description: string }> = {
 
 function VaultPageContent() {
   const searchParams = useSearchParams()
-  const requestedView = searchParams.get("view") === "wiki" ? "wiki" : "experience"
+  const rawView = searchParams.get("view")
+  const requestedView = (rawView === "wiki" || rawView === "story") ? rawView as VaultView : "experience"
   const [view, setView] = useState<VaultView>(requestedView)
   const { title, description } = HEADER_INFO[view]
 
@@ -73,7 +80,13 @@ function VaultPageContent() {
       </header>
 
       <main className="flex-1 overflow-auto bg-muted/30 p-6">
-        {view === "experience" ? <ExperienceVault /> : <CoteWiki />}
+        {view === "experience" ? (
+          <ExperienceVault />
+        ) : view === "story" ? (
+          <StoryVault />
+        ) : (
+          <CoteWiki />
+        )}
       </main>
     </div>
   )

@@ -39,9 +39,10 @@ public class WorkspaceController {
     public SseEmitter streamHumanPatch(
             @PathVariable Long questionId,
             @RequestParam(defaultValue = "true") boolean useDirective,
-            @RequestParam(required = false) Integer targetChars) {
+            @RequestParam(required = false) Integer targetChars,
+            @RequestParam(required = false) java.util.List<Long> storyIds) {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
-        executorService.execute(() -> workspaceService.processHumanPatch(questionId, useDirective, targetChars, emitter));
+        executorService.execute(() -> workspaceService.processHumanPatch(questionId, useDirective, targetChars, storyIds, emitter));
         return emitter;
     }
 
@@ -49,9 +50,10 @@ public class WorkspaceController {
     public SseEmitter streamRefinement(
             @PathVariable Long questionId,
             @RequestParam String directive,
-            @RequestParam(required = false) Integer targetChars) {
+            @RequestParam(required = false) Integer targetChars,
+            @RequestParam(required = false) java.util.List<Long> storyIds) {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
-        executorService.execute(() -> workspaceService.processRefinement(questionId, directive, targetChars, emitter));
+        executorService.execute(() -> workspaceService.processRefinement(questionId, directive, targetChars, storyIds, emitter));
         return emitter;
     }
 
