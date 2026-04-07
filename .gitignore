@@ -2,9 +2,16 @@
 # .cursor/
 TestData/
 
+# Crawler local dependencies and caches
+Crawler/venv/
+Crawler/.venv/
+**/__pycache__/
+*.pyc
+
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Backend local caches and logs
 Backend/.gradle-user-home/
@@ -28,6 +35,13 @@ Frontend/app/assets/
 .env
 .env.*
 !.env.example
+
+# Logs and temporary files
+*.log
+*.tmp
+test.json
+test.txt
+demo-shot*.png
 
 # Temporary commit message file
 COMMIT_MSG.txt
