@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -149,8 +150,61 @@ public class ApplicationController {
     }
 
     @Data
-    public static class QuestionEntry {
+    public static class ImportJasoseolRequest {
+        @com.fasterxml.jackson.annotation.JsonProperty("id")
+        private Long jasoseolId;
+        private String name;
         private String title;
+        @com.fasterxml.jackson.annotation.JsonProperty("end_time")
+        private String endTime;
+        @com.fasterxml.jackson.annotation.JsonProperty("image_file_name")
+        private String imageFileName;
+        private List<QuestionEntry> questions;
+    }
+
+    @Transactional
+    @PostMapping("/import-jasoseol")
+    public Application importFromJasoseol(@RequestBody ImportJasoseolRequest request) {
+        LocalDateTime deadline = null;
+        if (request.getEndTime() != null && !request.getEndTime().isBlank()) {
+            try {
+                deadline = java.time.OffsetDateTime.parse(request.getEndTime())
+                        .atZoneSameInstant(java.time.ZoneId.systemDefault())
+                        .toLocalDateTime();
+            } catch (Exception e) {
+                log.error("Failed to parse deadline for import: {}", request.getEndTime(), e);
+            }
+        }
+
+        Application application = Application.builder()
+                .companyName(request.getName() != null ? request.getName() : "이름 없음")
+                .position(request.getTitle() != null ? request.getTitle() : "포지션명 없음")
+                .logoUrl(request.getImageFileName())
+                .deadline(deadline)
+                .status(ApplicationStatus.DOCUMENT)
+                .build();
+
+        if (request.getQuestions() != null) {
+            request.getQuestions().stream()
+                    .filter(q -> q.getTitle() != null && !q.getTitle().isBlank())
+                    .forEach(q -> {
+                        WorkspaceQuestion wq = WorkspaceQuestion.builder()
+                                .title(q.getTitle())
+                                .maxLength(q.getMaxLength() != null ? q.getMaxLength() : 1000)
+                                .build();
+                        application.addQuestion(wq);
+                    });
+        }
+
+        return applicationRepository.save(application);
+    }
+
+    @Data
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    public static class QuestionEntry {
+        @com.fasterxml.jackson.annotation.JsonAlias({"question", "title"})
+        private String title;
+        @com.fasterxml.jackson.annotation.JsonAlias({"word_limit", "maxLength", "total_count"})
         private Integer maxLength;
     }
 
