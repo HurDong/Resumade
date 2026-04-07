@@ -1,11 +1,12 @@
 "use client"
 
+import { Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { WorkspaceEditor } from "@/components/workspace-editor"
 
-export default function WorkspacePage() {
+function WorkspacePageContent() {
   const searchParams = useSearchParams()
   const applicationId = searchParams.get("applicationId") ?? undefined
 
@@ -28,5 +29,17 @@ export default function WorkspacePage() {
         </div>
       </SidebarInset>
     </SidebarProvider>
+  )
+}
+
+export default function WorkspacePage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    }>
+      <WorkspacePageContent />
+    </Suspense>
   )
 }
