@@ -7,8 +7,9 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { KanbanBoard } from "@/components/kanban-board"
 import { RecruitmentCalendar } from "@/components/recruitment-calendar"
+import { GlobalRecruitmentCalendar } from "@/components/global-recruitment-calendar"
 
-type DashboardView = "kanban" | "calendar"
+type DashboardView = "kanban" | "calendar" | "global"
 
 export default function DashboardPage() {
   const [view, setView] = useState<DashboardView>("kanban")
@@ -20,15 +21,16 @@ export default function DashboardPage() {
         <div className="flex h-screen min-h-0 flex-col">
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6">
             <h1 className="text-lg font-semibold tracking-tight">
-              {view === "kanban" ? "채용 파이프라인" : "지원 일정 캘린더"}
+              {view === "kanban" ? "내 파이프라인 (Kanban)" : view === "calendar" ? "내 지원 달력" : "전체 채용 공고 탐색"}
             </h1>
 
             {/* 뷰 토글 */}
             <div className="relative flex items-center rounded-lg bg-muted p-[3px]">
               {(
                 [
-                  { key: "kanban", label: "칸반", icon: LayoutGrid },
-                  { key: "calendar", label: "캘린더", icon: CalendarDays },
+                  { key: "kanban", label: "내 칸반", icon: LayoutGrid },
+                  { key: "calendar", label: "내 스케줄", icon: CalendarDays },
+                  { key: "global", label: "전체 공고 탐색", icon: CalendarDays },
                 ] as const
               ).map(({ key, label, icon: Icon }) => (
                 <button
@@ -55,7 +57,7 @@ export default function DashboardPage() {
           </header>
 
           <main className="flex-1 min-h-0 overflow-hidden bg-muted/30 p-4">
-            {view === "kanban" ? <KanbanBoard /> : <RecruitmentCalendar />}
+            {view === "kanban" ? <KanbanBoard /> : view === "calendar" ? <RecruitmentCalendar /> : <GlobalRecruitmentCalendar onImportSuccess={() => setView("kanban")} />}
           </main>
         </div>
       </SidebarInset>

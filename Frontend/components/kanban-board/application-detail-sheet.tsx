@@ -92,7 +92,7 @@ export function ApplicationDetailSheet({
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-2">
               <Button
-                onClick={() => router.push(`/workspace/${application.id}`)}
+                onClick={() => router.push(`/workspace?applicationId=${application.id}`)}
                 className="hidden gap-2 rounded-full bg-primary shadow-sm hover:bg-primary/90 sm:flex"
               >
                 <Wand2 className="size-4" />

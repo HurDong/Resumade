@@ -1,10 +1,14 @@
 "use client"
 
+import { useSearchParams } from "next/navigation"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { WorkspaceEditor } from "@/components/workspace-editor"
 
 export default function WorkspacePage() {
+  const searchParams = useSearchParams()
+  const applicationId = searchParams.get("applicationId") ?? undefined
+
   return (
     <SidebarProvider>
       <AppSidebar />
@@ -19,7 +23,7 @@ export default function WorkspacePage() {
             </div>
           </header>
           <main className="flex-1 overflow-hidden">
-            <WorkspaceEditor />
+            <WorkspaceEditor applicationId={applicationId} />
           </main>
         </div>
       </SidebarInset>
