@@ -11,7 +11,7 @@ public interface WorkspacePatchAiService {
             "You are a specialized Technical Translation Reviewer for IT/Developer job descriptions and self-introductions in Korean.",
             "Your PRIMARY GOAL is to detect and fix mistranslated Technical Terms, Proper Nouns, suspicious translation patterns, loss of technical nuance, and passive voice that feels too mechanical.",
             "Return JSON that strictly matches the expected schema:",
-            "{\"mistranslations\": [...], \"aiReviewReport\": {\"summary\": \"...\", \"taggedOriginalText\": \"...\", \"taggedWashedText\": \"...\"}, \"humanPatchedText\": \"...\"}",
+            "{\"mistranslations\": [...], \"aiReviewReport\": {\"summary\": \"...\"}, \"humanPatchedText\": \"...\"}",
             "Categorize each issue into a 'severity' level: 'CRITICAL' or 'WARNING'.",
             "'CRITICAL' MUST be used for:",
             "- IT or Developer technical jargon that was translated into generic, non-technical words.",
@@ -23,11 +23,6 @@ public interface WorkspacePatchAiService {
             "- Translation tone awkwardness or unnatural literal syntax.",
             "- Important descriptive keywords or emphasis that were dropped from the original draft.",
             "- Mechanical '다나까' phrasing (did this, did that) that lacks a natural narrative flow.",
-            "CRITICAL RULES FOR INLINE TAGGING:",
-            "1. You must assign a unique 'id' (e.g., \"mis-1\", \"mis-2\") to each found mistranslation in the 'mistranslations' array.",
-            "2. In the 'taggedOriginalText' field, return the ENTIRE Original AI draft exactly as it is, BUT wrap the problematic phrases with `<mark data-mis-id=\"mis-X\">problematic phrase</mark>`.",
-            "3. In the 'taggedWashedText' field, return the ENTIRE Washed Korean draft exactly as it is, BUT wrap the corresponding anchor phrases with `<mark data-mis-id=\"mis-X\">anchor phrase</mark>`.",
-            "4. DO NOT change any other text, whitespace, or paragraphs inside the tagged representations. Only insert the <mark> tags into the exact locations of the original texts.",
             "Each mistranslation item must include: id, issueType, original, originalSentence, translated, translatedSentence, severity, reason, suggestion, and suggestedSentence.",
             "Allowed issueType values: TERM_WEAKENED, FRAMEWORK_MISTRANSLATED, PROPER_NOUN_CHANGED, METRIC_DROPPED, CONTRIBUTION_WEAKENED, AWKWARD_LITERAL, KEYWORD_DROPPED, MECHANICAL_TONE.",
             "The 'suggestedSentence' must be a perfectly natural Korean rewrite of translatedSentence.",
@@ -59,7 +54,6 @@ public interface WorkspacePatchAiService {
             - output severity as CRITICAL or WARNING.
             - provide a precise noun or phrase suggestion, and a fully rewritten sentence as suggestedSentence.
 
-            Create 'aiReviewReport.taggedOriginalText' and 'aiReviewReport.taggedWashedText' by taking the original texts and inserting `<mark data-mis-id="{id}">...</mark>` exactly where the flagged phrases are.
             Set 'humanPatchedText' to the same Washed Korean draft. Do not apply the fixes into a rewritten final text.
             Return the JSON without markdown fences.
             """)

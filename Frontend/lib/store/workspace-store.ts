@@ -92,7 +92,7 @@ interface WorkspaceState {
   setHoveredMistranslationId: (id: string | null) => void;
   addQuestion: () => void;
   updateActiveQuestion: (updates: Partial<WorkspaceQuestion>) => void;
-  applySuggestion: (mistranslationId: string) => void;
+  applySuggestion: (mistranslationId: string, replaceFullSentence?: boolean) => void;
   updateMistranslationSuggestion: (mistranslationId: string, suggestion: string) => void;
   dismissMistranslation: (mistranslationId: string) => void;
 
@@ -311,11 +311,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
   
-  applySuggestion: (mistranslationId) => {
+  applySuggestion: (mistranslationId, replaceFullSentence = true) => {
     const state = get();
     const activeQ = findActiveQuestion(state);
     if (!activeQ) return;
-    const nextQuestionState = applySuggestionToQuestion(activeQ, mistranslationId);
+    const nextQuestionState = applySuggestionToQuestion(activeQ, mistranslationId, replaceFullSentence);
     if (!nextQuestionState) return;
 
     state.updateActiveQuestion(nextQuestionState);

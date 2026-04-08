@@ -34,7 +34,5 @@ public class DraftAnalysisResult {
     @Builder
     public static class AiReviewReport {
         private String summary;
-        private String taggedOriginalText;
-        private String taggedWashedText;
     }
 }

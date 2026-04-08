@@ -364,6 +364,7 @@ public class WorkspaceService {
             question.setUserDirective(directive);
             questionRepository.save(question);
             sendSse(emitter, "draft_intermediate", refinedDraft);
+            questionSnapshotService.saveSnapshot(questionId, SnapshotType.DRAFT_GENERATED, refinedDraft);
 
             paceProcessing();
             sendProgress(emitter, STAGE_WASH, "기계적인 말투를 줄이기 위해 1차 번역(한->영)을 진행 중입니다. 🌐");
@@ -573,6 +574,7 @@ public class WorkspaceService {
             question.setContent(draft);
             questionRepository.save(question);
             sendSse(emitter, "draft_intermediate", draft);
+            questionSnapshotService.saveSnapshot(questionId, SnapshotType.DRAFT_GENERATED, draft);
 
             paceProcessing();
             sendProgress(emitter, STAGE_WASH, "기계적인 말투를 줄이기 위해 1차 번역 공정을 진행하고 있습니다. 🌐");
@@ -699,6 +701,7 @@ public class WorkspaceService {
             sendComment(emitter, "flush buffer");
             sendProgress(emitter, STAGE_DRAFT, "현재 초안을 바탕으로 세탁 파이프라인을 다시 시작합니다. 🌊");
             sendSse(emitter, "draft_intermediate", draft);
+            questionSnapshotService.saveSnapshot(questionId, SnapshotType.DRAFT_GENERATED, draft);
 
             paceProcessing();
             sendProgress(emitter, STAGE_WASH, "초안 고도화를 위해 중간 번역 과정을 거치고 있습니다. 🌐");

@@ -38,8 +38,6 @@ export interface Mistranslation {
 
 export interface AiReviewReport {
   summary: string;
-  taggedOriginalText?: string;
-  taggedWashedText?: string;
   overallScore?: number;
   technicalAccuracy?: number;
   readability?: number;

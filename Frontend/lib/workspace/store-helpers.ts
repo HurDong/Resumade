@@ -73,7 +73,8 @@ export function normalizeLengthTarget(
 
 export function applySuggestionToQuestion(
   question: WorkspaceQuestion,
-  mistranslationId: string
+  mistranslationId: string,
+  replaceFullSentence: boolean = true
 ) {
   const mistranslation = question.mistranslations.find((item) => item.id === mistranslationId);
   if (!mistranslation) {
@@ -85,14 +86,20 @@ export function applySuggestionToQuestion(
   const isReverting = normalizedSuggestion === normalizedTranslated;
   const finalSuggestion = isReverting ? mistranslation.original : normalizedSuggestion;
 
-  const sentenceReplacement = buildSentenceReplacementText(
-    question.washedKr,
-    mistranslation,
-    isReverting
-  );
-  const updatedText =
-    sentenceReplacement ??
-    replaceTranslatedPhrase(question.washedKr, mistranslation.translated, finalSuggestion);
+  let updatedText: string | null = null;
+  
+  if (replaceFullSentence) {
+    updatedText = buildSentenceReplacementText(
+      question.washedKr,
+      mistranslation,
+      isReverting
+    );
+  }
+
+  // Fallback to phrase replacement if sentence failed or was not requested
+  if (updatedText === null) {
+    updatedText = replaceTranslatedPhrase(question.washedKr, mistranslation.translated, finalSuggestion);
+  }
 
   if (updatedText === null) {
     return null;

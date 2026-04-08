@@ -23,76 +23,90 @@ export function getTranslationProcessingMeta(
   };
 }
 
-export function injectHighlightTags(
-  html: string,
+/**
+ * mistranslations 배열의 original/translated 필드를 텍스트에서 직접 검색하여 하이라이팅.
+ * AI의 taggedText에 의존하지 않는 안정적인 방식.
+ */
+export function highlightByPhraseMatching(
+  text: string,
   mistranslations: Mistranslation[],
   hoveredMistranslationId: string | null,
   isOriginal: boolean
-) {
-  if (!html || !mistranslations.length) {
-    return html;
+): string {
+  if (!text || !mistranslations.length) return escapeHtml(text || "")
+
+  const hasAnyHover = hoveredMistranslationId !== null
+
+  // 긴 문구부터 먼저 교체 (겹침 방지)
+  const sorted = [...mistranslations].sort((a, b) => {
+    const aPhrase = isOriginal ? (a.original || "") : (a.translated || "")
+    const bPhrase = isOriginal ? (b.original || "") : (b.translated || "")
+    return bPhrase.length - aPhrase.length
+  })
+
+  // 매칭 위치 수집 (겹침 방지용)
+  type MatchInfo = { start: number; end: number; mis: Mistranslation }
+  const matches: MatchInfo[] = []
+
+  for (const mis of sorted) {
+    const phrase = isOriginal ? (mis.original || "") : (mis.translated || "")
+    if (!phrase.trim()) continue
+
+    const idx = findNonOverlappingIndex(text, phrase, matches)
+    if (idx !== -1) {
+      matches.push({ start: idx, end: idx + phrase.length, mis })
+    }
   }
 
-  const hasAnyHover = hoveredMistranslationId !== null;
-  const mistranslationMap = new Map(
-    mistranslations.map((mistranslation) => [mistranslation.id, mistranslation])
-  );
+  if (matches.length === 0) return escapeHtml(text)
 
-  return html.replace(/<mark data-mis-id="([^"]+)">([\s\S]*?)<\/mark>/g, (match, misId, content) => {
-    const mistranslation = mistranslationMap.get(misId);
-    if (!mistranslation) {
-      return match;
-    }
+  // 위치 순으로 정렬 후 HTML 조립
+  matches.sort((a, b) => a.start - b.start)
 
-    const isHovered = hoveredMistranslationId === misId;
-    const isCritical = mistranslation.severity === "CRITICAL";
+  let result = ""
+  let cursor = 0
+
+  for (const m of matches) {
+    result += escapeHtml(text.slice(cursor, m.start))
+
+    const isHovered = hoveredMistranslationId === m.mis.id
+    const isCritical = m.mis.severity === "CRITICAL"
+
     const severityClass = isOriginal
-      ? "text-primary hover:text-primary ring-1 ring-primary/50"
+      ? "text-primary ring-1 ring-primary/50"
       : isCritical
         ? "bg-red-500/15 text-red-600 dark:text-red-400 ring-1 ring-red-500/40"
-        : "bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/40";
+        : "bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/40"
 
-    return `<mark data-mis-id="${misId}" title="${buildHighlightTitle(
-      mistranslation,
-      isOriginal
-    )}" class="${severityClass} ${buildHoverClasses(
-      isOriginal,
-      isHovered,
-      hasAnyHover
-    )} px-0.5 rounded cursor-help transition-all duration-300 inline-block origin-center font-semibold">${content}</mark>`;
-  });
+    const hoverClass = isHovered
+      ? "ring-2 ring-primary scale-105 shadow-lg z-[50] opacity-100 " + (isOriginal ? "bg-primary/30" : (isCritical ? "bg-red-500/30" : "bg-amber-500/30"))
+      : hasAnyHover
+        ? "opacity-30 grayscale scale-95"
+        : ""
+
+    const title = buildHighlightTitle(m.mis, isOriginal)
+
+    result += `<mark data-mis-id="${escapeAttr(m.mis.id)}" title="${escapeAttr(title)}" class="${severityClass} ${hoverClass} px-0.5 rounded cursor-help transition-all duration-300 inline-block origin-center font-semibold">${escapeHtml(text.slice(m.start, m.end))}</mark>`
+    cursor = m.end
+  }
+
+  result += escapeHtml(text.slice(cursor))
+  return result
 }
 
-export function ensureTaggedTitle(sourceText: string, taggedHtml: string) {
-  if (!sourceText || !taggedHtml) {
-    return taggedHtml;
+function findNonOverlappingIndex(text: string, phrase: string, existing: { start: number; end: number }[]): number {
+  let searchFrom = 0
+  while (searchFrom < text.length) {
+    const idx = text.indexOf(phrase, searchFrom)
+    if (idx === -1) return -1
+
+    const end = idx + phrase.length
+    const overlaps = existing.some(e => idx < e.end && end > e.start)
+    if (!overlaps) return idx
+
+    searchFrom = idx + 1
   }
-
-  const sourceTitle = getLeadingBracketTitle(sourceText);
-  if (!sourceTitle) {
-    return taggedHtml;
-  }
-
-  const plainTagged = taggedHtml.replace(/<mark\b[^>]*>/g, "").replace(/<\/mark>/g, "");
-  const plainTaggedTrimmed = plainTagged.trimStart();
-  const leadingPlainOffset = plainTagged.length - plainTaggedTrimmed.length;
-  const taggedTitle = getLeadingBracketTitle(plainTaggedTrimmed);
-  const escapedTitle = escapeHtml(sourceTitle.title);
-
-  if (plainTaggedTrimmed.startsWith(sourceTitle.title)) {
-    return taggedHtml;
-  }
-
-  if (taggedTitle) {
-    return replacePlainTextRangeWithHtml(
-      taggedHtml,
-      leadingPlainOffset + taggedTitle.start,
-      leadingPlainOffset + taggedTitle.end,
-      escapedTitle
-    );
-  }
-
-  return `${escapedTitle}\n\n${taggedHtml.trimStart()}`;
+  return -1
 }
 
 export function htmlToPlainText(html: string) {
@@ -109,20 +123,8 @@ export function htmlToPlainText(html: string) {
   return container.textContent ?? container.innerText ?? "";
 }
 
-export function getDisplayedWashedText(
-  washedKr: string,
-  taggedWashedText?: string
-) {
-  const sanitizedWashed = sanitizeWashedText(washedKr);
-  if (sanitizedWashed) {
-    return sanitizedWashed;
-  }
-
-  if (!taggedWashedText) {
-    return "";
-  }
-
-  return htmlToPlainText(ensureTaggedTitle(washedKr || "", taggedWashedText));
+export function getDisplayedWashedText(washedKr: string) {
+  return sanitizeWashedText(washedKr);
 }
 
 export function sanitizeWashedText(text: string) {
@@ -145,108 +147,19 @@ export function sanitizeWashedText(text: string) {
   return normalized;
 }
 
-function getLeadingBracketTitle(text: string) {
-  const titleMatch = text.match(/^\s*(\[[^\]\n]+\])/);
-  if (!titleMatch) {
-    return null;
-  }
-
-  const title = titleMatch[1];
-  const fullMatch = titleMatch[0];
-  const start = fullMatch.length - title.length;
-
-  return {
-    title,
-    start,
-    end: start + title.length,
-  };
+export function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
-function replacePlainTextRangeWithHtml(
-  html: string,
-  start: number,
-  end: number,
-  replacementHtml: string
-) {
-  let plainIndex = 0;
-  let htmlStart = -1;
-  let htmlEnd = -1;
-  let insideTag = false;
-
-  for (let index = 0; index < html.length; index++) {
-    const char = html[index];
-
-    if (char === "<") {
-      insideTag = true;
-      continue;
-    }
-
-    if (insideTag) {
-      if (char === ">") {
-        insideTag = false;
-      }
-      continue;
-    }
-
-    if (plainIndex === start && htmlStart === -1) {
-      htmlStart = index;
-    }
-
-    plainIndex += 1;
-    if (plainIndex === end) {
-      htmlEnd = index + 1;
-      break;
-    }
-  }
-
-  if (htmlStart < 0 || htmlEnd < 0) {
-    return html;
-  }
-
-  htmlStart = expandRangeStartToMarkBoundary(html, htmlStart);
-  htmlEnd = expandRangeEndToMarkBoundary(html, htmlEnd);
-
-  return `${html.slice(0, htmlStart)}${replacementHtml}${html.slice(htmlEnd)}`;
-}
-
-function expandRangeStartToMarkBoundary(html: string, start: number) {
-  let cursor = start;
-
-  while (cursor > 0 && html[cursor - 1] === ">") {
-    const tagStart = html.lastIndexOf("<", cursor - 1);
-    if (tagStart < 0) {
-      break;
-    }
-
-    const tag = html.slice(tagStart, cursor);
-    if (!/^<\/?mark\b/i.test(tag)) {
-      break;
-    }
-
-    cursor = tagStart;
-  }
-
-  return cursor;
-}
-
-function expandRangeEndToMarkBoundary(html: string, end: number) {
-  let cursor = end;
-
-  while (cursor < html.length && html[cursor] === "<") {
-    const tagEnd = html.indexOf(">", cursor);
-    if (tagEnd < 0) {
-      break;
-    }
-
-    const tag = html.slice(cursor, tagEnd + 1);
-    if (!/^<\/?mark\b/i.test(tag)) {
-      break;
-    }
-
-    cursor = tagEnd + 1;
-  }
-
-  return cursor;
+function escapeAttr(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function getPipelineLabel(pipelineStage: PipelineStage) {
@@ -263,44 +176,5 @@ function buildHighlightTitle(mistranslation: Mistranslation, isOriginal: boolean
   }
 
   const prefix = mistranslation.severity === "CRITICAL" ? "필수 교정" : "검토 권장";
-  return escapeHtmlAttribute(
-    `${prefix}${mistranslation.reason ? `: ${mistranslation.reason}` : ""}`
-  );
-}
-
-function buildHoverClasses(
-  isOriginal: boolean,
-  isHovered: boolean,
-  hasAnyHover: boolean
-) {
-  if (isOriginal) {
-    if (isHovered) {
-      return "ring-2 ring-primary scale-110 shadow-2xl z-[50] opacity-100 bg-primary/30";
-    }
-
-    return hasAnyHover
-      ? "opacity-20 grayscale scale-95 blur-[0.5px] bg-primary/10"
-      : "opacity-100 bg-primary/20 text-primary";
-  }
-
-  if (isHovered) {
-    return "ring-2 ring-primary scale-110 shadow-2xl z-[50] opacity-100";
-  }
-
-  return hasAnyHover ? "opacity-20 grayscale scale-95 blur-[0.5px]" : "opacity-100";
-}
-
-function escapeHtmlAttribute(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return `${prefix}${mistranslation.reason ? `: ${mistranslation.reason}` : ""}`;
 }

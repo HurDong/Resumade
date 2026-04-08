@@ -21,10 +21,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
-  ensureTaggedTitle,
-  getDisplayedWashedText,
+  highlightByPhraseMatching,
   getTranslationProcessingMeta,
-  injectHighlightTags,
   sanitizeWashedText,
 } from "@/lib/workspace/translation-panel-helpers"
 import { useWorkspaceStore } from "@/lib/store/workspace-store"
@@ -164,30 +162,21 @@ export function TranslationPanel() {
     pipelineStage
   )
 
-  const originalContent = aiReviewReport?.taggedOriginalText
-    ? injectHighlightTags(
-        ensureTaggedTitle(draft || "", aiReviewReport.taggedOriginalText),
-        mistranslations,
-        hoveredMistranslationId,
-        true
-      )
-    : draft || ""
-
-  const washedContent = normalizedWashedText
-    ? aiReviewReport?.taggedWashedText
-    ? injectHighlightTags(
-        ensureTaggedTitle(normalizedWashedText, aiReviewReport.taggedWashedText),
-        mistranslations,
-        hoveredMistranslationId,
-        false
-      )
-    : normalizedWashedText
-    : ""
-
-  const displayedWashedText = getDisplayedWashedText(
-    normalizedWashedText,
-    aiReviewReport?.taggedWashedText
+  const originalContent = highlightByPhraseMatching(
+    draft || "",
+    mistranslations,
+    hoveredMistranslationId,
+    true
   )
+
+  const washedContent = highlightByPhraseMatching(
+    normalizedWashedText,
+    mistranslations,
+    hoveredMistranslationId,
+    false
+  )
+
+  const displayedWashedText = normalizedWashedText
 
   const handleHighlightMouseOver = (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target instanceof Element ? event.target : null
@@ -309,7 +298,7 @@ export function TranslationPanel() {
 
               icon={<FileText className="size-3.5" />}
               content={originalContent}
-              renderHtml={Boolean(aiReviewReport?.taggedOriginalText)}
+              renderHtml={true}
               className="border-none bg-background/80 shadow-sm"
               contentClassName={`min-h-[200px] whitespace-pre-wrap text-sm font-medium italic leading-relaxed text-muted-foreground transition-all duration-300 ${
                 hoveredMistranslationId ? "opacity-100" : "opacity-70"
@@ -333,7 +322,7 @@ export function TranslationPanel() {
               }
               icon={<CheckCircle className="size-3.5 text-primary" />}
               content={washedContent}
-              renderHtml={Boolean(normalizedWashedText && aiReviewReport?.taggedWashedText)}
+              renderHtml={true}
               onCopy={handleWashedDraftCopy}
               className="border-primary/20 bg-background shadow-lg ring-1 ring-primary/5"
               titleClassName="text-primary"
