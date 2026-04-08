@@ -2998,7 +2998,7 @@ public class WorkspaceService {
             mistranslation.setTranslated(translated);
             mistranslation.setSuggestion(normalizeTitleSpacing(safeTrim(mistranslation.getSuggestion())));
             mistranslation.setReason(safeTrim(mistranslation.getReason()));
-            // (Note: startIndex/endIndex manual calculation is removed as AI now provides tagged text)
+            // (Note: startIndex/endIndex manual calculation is removed as we now use client-side phrase matching)
 
 
             normalized.add(mistranslation);
