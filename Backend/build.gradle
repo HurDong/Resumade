@@ -64,7 +64,14 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 bootRun {
-	jvmArgs = ['-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8']
+	jvmArgs = [
+		'-Dfile.encoding=UTF-8',
+		'-Dstdout.encoding=UTF-8',
+		'-Dstderr.encoding=UTF-8',
+		'-XX:TieredStopAtLevel=1',
+		'-Xverify:none',
+		'-Dspring.profiles.active=local'
+	]
 
 	if (file("../.env").exists()) {
 		file("../.env").readLines().each { line ->
