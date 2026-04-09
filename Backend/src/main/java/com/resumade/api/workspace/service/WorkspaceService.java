@@ -1137,24 +1137,22 @@ public class WorkspaceService {
         String safeQuestionTitle = safeTrim(questionTitle);
         QuestionCategory effectiveCategory = category != null ? category : QuestionCategory.DEFAULT;
 
-        String intentLine = "Make the title expose the question's main evaluation intent through the strongest evidence in the body.";
+        // 카테고리별 제목 형태(shape) 및 패턴 가이드 — Intent는 문항 원문에서 AI가 직접 추론
         String requiredShape = "Use a concrete evidence-first headline instead of a generic slogan.";
         String preferredPatterns = "- [core evidence] + [strongest role-fit signal]\n- [problem or action] + [result or value created]";
         String avoidLine = "Avoid titles that only paraphrase the question or sound like a project retrospective label.";
 
         switch (effectiveCategory) {
             case MOTIVATION -> {
-                intentLine = "This is a motivation / why-this-role / post-join-plan question.";
-                requiredShape = "The title must show BOTH a proven past capability and the contribution direction or reason-for-applying that capability makes credible now.";
+                requiredShape = "Show BOTH a proven past capability and the forward contribution direction that makes the application credible.";
                 preferredPatterns = """
                         - [past evidence] + [target value or operating value]
                         - [past capability] + [initial execution or improvement direction]
                         - [past improvement experience] + [role-fit contribution logic]
                         """;
-                avoidLine = "Avoid pure metric-summary titles that stop at the past achievement alone. Also avoid forcing awkward bridge wording if it makes the title read like a report sentence rather than a headline.";
+                avoidLine = "Avoid pure metric-summary titles that stop at the past achievement alone. Also avoid forced bridge wording that reads like a report sentence.";
             }
             case EXPERIENCE -> {
-                intentLine = "This is a technical experience question.";
                 requiredShape = "Lead with concrete action or result first, then let the technical value or role-fit signal follow naturally.";
                 preferredPatterns = """
                         - [technical action] + [measurable result]
@@ -1163,7 +1161,6 @@ public class WorkspaceService {
                 avoidLine = "Avoid vague competence slogans that hide the actual role, decision, or measurable outcome.";
             }
             case PROBLEM_SOLVING -> {
-                intentLine = "This is a problem-solving question.";
                 requiredShape = "Name the problem pressure and the way it was resolved, not just the final achievement.";
                 preferredPatterns = """
                         - [problem pressure] + [resolution]
@@ -1172,7 +1169,6 @@ public class WorkspaceService {
                 avoidLine = "Avoid titles that sound like a generic success story without the challenge or diagnosis layer.";
             }
             case COLLABORATION -> {
-                intentLine = "This is a collaboration question.";
                 requiredShape = "Expose a collaboration trait through a concrete interface, conflict, or team outcome.";
                 preferredPatterns = """
                         - [collaboration trait] + [team outcome]
@@ -1181,7 +1177,6 @@ public class WorkspaceService {
                 avoidLine = "Avoid titles that only name an individual achievement without the team context.";
             }
             case PERSONAL_GROWTH -> {
-                intentLine = "This is a personal growth or values question.";
                 requiredShape = "Show the formed value or work principle through one lived behavior signal.";
                 preferredPatterns = """
                         - [formed value] + [current behavior]
@@ -1190,7 +1185,6 @@ public class WorkspaceService {
                 avoidLine = "Avoid technical metric headlines that erase the human story or value formation.";
             }
             case CULTURE_FIT -> {
-                intentLine = "This is a culture-fit or working-style question.";
                 requiredShape = "Show the working style through one bounded execution signal and its value.";
                 preferredPatterns = """
                         - [working style] + [execution signal]
@@ -1199,7 +1193,6 @@ public class WorkspaceService {
                 avoidLine = "Avoid abstract praise of culture without a concrete execution trace.";
             }
             case TREND_INSIGHT -> {
-                intentLine = "This is a trend-insight question.";
                 requiredShape = "Name the issue and the practical implication instead of turning it into a generic opinion label.";
                 preferredPatterns = """
                         - [issue or trend] + [practical implication]
@@ -1213,16 +1206,18 @@ public class WorkspaceService {
 
         return """
                 [Title Framing Guide]
-                Question: %s
-                Intent: %s
+                Question (raw): %s
+                Evaluation intent: Read the Question above and identify what the recruiter is specifically testing \
+                (e.g., self-awareness of strength/weakness, growth mindset, technical depth, motivation fit, \
+                collaboration style). The title must directly address that intent — not just highlight the most \
+                impressive content regardless of what was asked.
                 Mandatory shape: %s
                 Preferred patterns:
                 %s
                 Avoid:
                 %s
                 """.formatted(
-                safeQuestionTitle.isBlank() ? "No question title provided." : safeQuestionTitle,
-                intentLine,
+                safeQuestionTitle.isBlank() ? "No question text provided." : safeQuestionTitle,
                 requiredShape,
                 preferredPatterns.stripTrailing(),
                 avoidLine);

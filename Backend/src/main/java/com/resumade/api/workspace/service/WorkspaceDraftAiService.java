@@ -351,30 +351,43 @@ public interface WorkspaceDraftAiService {
             "Do not use first-person pronouns.",
             "Do not turn titles into report labels or meta categories such as [역할], [결정], [결과 요약], [성장 경험], [문제 해결], [협업 역량], or similar.",
             "Avoid vague buzzwords or bare nouns unless anchored by a specific action or outcome.",
-            "Score should be an integer from 0 to 100 reflecting fitness for this exact question and current draft.",
-            "Reason must be one concise Korean sentence explaining why the title fits."
+            "Score: an integer 0-100. Primary criterion is how well the title addresses the Question's evaluation intent. Secondary criterion is how well it is grounded in the body content. A title that ignores the question angle must score below 60 regardless of how strong the body content is.",
+            "Reason: one concise Korean sentence that MUST explain (1) what the Question is evaluating and (2) how this title directly addresses that evaluation angle through the body's evidence. Do NOT write a reason that only describes why the title matches the body content.",
+            "CRITICAL: The Question field is the primary constraint. Read it first. A title that showcases impressive content but misses what the question is asking is always wrong."
     })
     @UserMessage("""
             Company: {{company}}
             Position: {{position}}
-            Question: {{question}}
+            Question (primary constraint — read this first): {{question}}
             Company context:
             {{companyContext}}
 
             Current text:
             {{input}}
 
-            Experience context:
+            Title strategy context:
             {{context}}
 
-            Goal:
-            Propose title candidates for this self-introduction answer.
+            Step 1 — Analyze the Question (do this before anything else):
+            - What is the recruiter specifically testing through this question?
+              (e.g., self-awareness of strengths AND weaknesses, growth mindset with a concrete plan,
+               technical depth, motivation fit, collaboration style, problem-solving process)
+            - If the question asks for multiple aspects (e.g., strength + weakness + improvement plan),
+              identify which aspect should lead the title and which should be implied.
+            - Write this evaluation intent down internally before proposing any title.
+
+            Step 2 — Find the matching evidence:
+            - Locate the part of Current text that most directly addresses the evaluation intent from Step 1.
+            - This evidence — not the most technically impressive part — must anchor the title.
+
+            Step 3 — Propose titles:
+            - Each title must connect Step 1 (question's evaluation angle) with Step 2 (matching evidence).
+            - A title that ignores what the question is asking is always wrong, even if it sounds impressive.
 
             Requirements:
             - Generate 4 to 5 candidates
-            - Rank by fitness for this question and current draft
+            - Rank by fitness for this question's evaluation intent first, body evidence second
             - Keep the body unchanged; only propose title lines
-            - Favor titles that are concrete, interview-verifiable, and non-generic
             - Return only the required JSON shape
             """)
     TitleCandidatesResponse suggestTitles(
