@@ -108,6 +108,61 @@ public class WorkspaceService {
             "\uD655\uC7A5",
             "\uC804\uD658",
             "\uAC1C\uBC1C");
+    private static final List<String> MOTIVATION_TITLE_BRIDGE_SIGNALS = List.of(
+            "\uBC14\uD0D5\uC73C\uB85C",
+            "\uAE30\uBC18\uC73C\uB85C",
+            "\uD1A0\uB300\uB85C",
+            "\uD1B5\uD574",
+            "\uC5F0\uACB0",
+            "\uC0B4\uB824",
+            "\uAE30\uC5EC",
+            "\uD5A5\uC0C1",
+            "\uAC1C\uC120",
+            "\uAC00\uCE58",
+            "\uD6A8\uC728",
+            "\uC811\uADFC\uC131",
+            "\uACE0\uB3C4\uD654",
+            "\uC548\uC815\uD654",
+            "\uC2E4\uD589");
+    private static final List<String> MOTIVATION_TITLE_VALUE_SIGNALS = List.of(
+            "\uAE30\uC5EC",
+            "\uD5A5\uC0C1",
+            "\uAC1C\uC120",
+            "\uD6A8\uC728",
+            "\uC811\uADFC\uC131",
+            "\uC548\uC815\uC131",
+            "\uACE0\uB3C4\uD654",
+            "\uC0AC\uC6A9\uC131",
+            "\uC6B4\uC601",
+            "\uD65C\uC6A9",
+            "\uAC00\uCE58",
+            "\uC815\uC791",
+            "\uC758\uC0AC\uACB0\uC815");
+    private static final List<String> MOTIVATION_TITLE_PLAN_SIGNALS = List.of(
+            "\uACC4\uD68D",
+            "\uC2E4\uD589",
+            "\uC815\uCC29",
+            "\uACE0\uB3C4\uD654",
+            "\uC548\uC815\uD654",
+            "\uAC1C\uC120",
+            "\uD5A5\uC0C1",
+            "\uC6B4\uC601");
+    private static final List<String> TITLE_ACHIEVEMENT_SUMMARY_SIGNALS = List.of(
+            "\uB2E8\uCD95",
+            "\uCD5C\uC801\uD654",
+            "\uD29C\uB2DD",
+            "\uAD6C\uCD95",
+            "\uC124\uACC4",
+            "\uAD6C\uD604",
+            "\uBD84\uC11D",
+            "\uB2EC\uC131",
+            "\uC751\uB2F5\uC2DC\uAC04",
+            "\uBCD1\uBAA9",
+            "\uC131\uB2A5",
+            "\uC9C0\uC5F0",
+            "\uCFFC\uB9AC",
+            "\uC778\uB371\uC2F1",
+            "\uAC80\uC0C9");
 
     private static class SseConnectionClosedException extends RuntimeException {
         private SseConnectionClosedException(Throwable cause) {
@@ -170,6 +225,7 @@ public class WorkspaceService {
                 company,
                 position,
                 question.getTitle(),
+                category,
                 companyContext,
                 context,
                 others);
@@ -211,13 +267,14 @@ public class WorkspaceService {
 
         String company = question.getApplication().getCompanyName();
         String position = question.getApplication().getPosition();
+        QuestionCategory category = resolveQuestionCategory(question);
         String improvedTitleLine = normalizeTitleLine(requestedTitleLine);
 
         if (!isBracketTitleLine(improvedTitleLine)) {
             throw new IllegalArgumentException("Title must be a single bracketed line");
         }
 
-        if (!isAcceptedTitleLine(improvedTitleLine, company, position, question.getTitle())) {
+        if (!isAcceptedTitleLine(improvedTitleLine, company, position, question.getTitle(), category)) {
             throw new IllegalArgumentException("Title does not meet title quality rules");
         }
 
@@ -295,10 +352,18 @@ public class WorkspaceService {
                     DEFAULT_TARGET_MAX_RATIO);
             int minTargetChars = targetRange[0];
             int maxTargetChars = targetRange[1];
+            String batchStrategy = safeTrim(initialQuestion.getBatchStrategyDirective());
             String directiveForPrompt = augmentDirectiveForPrompt(
-                    mergeDirectiveLayers(initialQuestion.getBatchStrategyDirective(), directive),
+                    mergeDirectiveLayers(batchStrategy, directive),
                     maxLength,
                     targetChars);
+            log.info(
+                    "Refine directives questionId={} hasBatchStrategy={} hasUserDirective={} batchStrategySnippet={} userDirectiveSnippet={}",
+                    questionId,
+                    !batchStrategy.isBlank(),
+                    directive != null && !directive.isBlank(),
+                    safeSnippet(batchStrategy, 220),
+                    safeSnippet(safeTrim(directive), 220));
 
             DraftParams refineParams = buildDraftParams(
                     company,
@@ -342,6 +407,7 @@ public class WorkspaceService {
                             company,
                             position,
                             questionTitle,
+                            category,
                             companyContext,
                             context,
                             others,
@@ -551,6 +617,7 @@ public class WorkspaceService {
                             company,
                             position,
                             questionTitle,
+                            category,
                             companyContext,
                             context,
                             others,
@@ -689,6 +756,7 @@ public class WorkspaceService {
                             company,
                             position,
                             questionTitle,
+                            category,
                             companyContext,
                             context,
                             others,
@@ -986,6 +1054,7 @@ public class WorkspaceService {
             String company,
             String position,
             String questionTitle,
+            QuestionCategory category,
             String companyContext,
             String context,
             String others,
@@ -996,7 +1065,7 @@ public class WorkspaceService {
         }
 
         String currentTitleLine = normalizeTitleLine(extractActualTitleLine(normalizedDraft));
-        if (!forceRewrite && isAcceptedTitleLine(currentTitleLine, company, position, questionTitle)) {
+        if (!forceRewrite && isAcceptedTitleLine(currentTitleLine, company, position, questionTitle, category)) {
             return currentTitleLine;
         }
 
@@ -1007,14 +1076,14 @@ public class WorkspaceService {
                     safeTrim(questionTitle),
                     safeTrim(companyContext),
                     normalizedDraft.trim(),
-                    buildTitleRewriteContext(context, others));
+                    buildTitleRewriteContext(category, questionTitle, context, others));
 
             if (rewritten == null || rewritten.text == null || rewritten.text.isBlank()) {
                 return currentTitleLine;
             }
 
             String candidateTitleLine = normalizeTitleLine(extractActualTitleLine(rewritten.text));
-            if (isAcceptedTitleLine(candidateTitleLine, company, position, questionTitle)) {
+            if (isAcceptedTitleLine(candidateTitleLine, company, position, questionTitle, category)) {
                 return candidateTitleLine;
             }
         } catch (Exception e) {
@@ -1028,11 +1097,23 @@ public class WorkspaceService {
         return currentTitleLine;
     }
 
-    private String buildTitleRewriteContext(String context, String others) {
+    private String buildTitleRewriteContext(
+            QuestionCategory category,
+            String questionTitle,
+            String context,
+            String others) {
         StringBuilder builder = new StringBuilder();
+
+        String titleFramingGuide = buildTitleFramingGuide(category, questionTitle);
+        if (!titleFramingGuide.isBlank()) {
+            builder.append(titleFramingGuide);
+        }
 
         String normalizedContext = safeTrim(context);
         if (!normalizedContext.isBlank()) {
+            if (builder.length() > 0) {
+                builder.append("\n---\n");
+            }
             builder.append(normalizedContext);
         }
 
@@ -1052,11 +1133,107 @@ public class WorkspaceService {
         return builder.toString();
     }
 
+    private String buildTitleFramingGuide(QuestionCategory category, String questionTitle) {
+        String safeQuestionTitle = safeTrim(questionTitle);
+        QuestionCategory effectiveCategory = category != null ? category : QuestionCategory.DEFAULT;
+
+        String intentLine = "Make the title expose the question's main evaluation intent through the strongest evidence in the body.";
+        String requiredShape = "Use a concrete evidence-first headline instead of a generic slogan.";
+        String preferredPatterns = "- [core evidence] + [strongest role-fit signal]\n- [problem or action] + [result or value created]";
+        String avoidLine = "Avoid titles that only paraphrase the question or sound like a project retrospective label.";
+
+        switch (effectiveCategory) {
+            case MOTIVATION -> {
+                intentLine = "This is a motivation / why-this-role / post-join-plan question.";
+                requiredShape = "The title must show BOTH a proven past capability and the contribution direction or reason-for-applying that capability makes credible now.";
+                preferredPatterns = """
+                        - [past evidence] + [target value or operating value]
+                        - [past capability] + [initial execution or improvement direction]
+                        - [past improvement experience] + [role-fit contribution logic]
+                        """;
+                avoidLine = "Avoid pure metric-summary titles that stop at the past achievement alone. Also avoid forcing awkward bridge wording if it makes the title read like a report sentence rather than a headline.";
+            }
+            case EXPERIENCE -> {
+                intentLine = "This is a technical experience question.";
+                requiredShape = "Lead with concrete action or result first, then let the technical value or role-fit signal follow naturally.";
+                preferredPatterns = """
+                        - [technical action] + [measurable result]
+                        - [problem] + [solution or architecture choice]
+                        """;
+                avoidLine = "Avoid vague competence slogans that hide the actual role, decision, or measurable outcome.";
+            }
+            case PROBLEM_SOLVING -> {
+                intentLine = "This is a problem-solving question.";
+                requiredShape = "Name the problem pressure and the way it was resolved, not just the final achievement.";
+                preferredPatterns = """
+                        - [problem pressure] + [resolution]
+                        - [failure or bottleneck] + [turnaround result]
+                        """;
+                avoidLine = "Avoid titles that sound like a generic success story without the challenge or diagnosis layer.";
+            }
+            case COLLABORATION -> {
+                intentLine = "This is a collaboration question.";
+                requiredShape = "Expose a collaboration trait through a concrete interface, conflict, or team outcome.";
+                preferredPatterns = """
+                        - [collaboration trait] + [team outcome]
+                        - [coordination action] + [delivery result]
+                        """;
+                avoidLine = "Avoid titles that only name an individual achievement without the team context.";
+            }
+            case PERSONAL_GROWTH -> {
+                intentLine = "This is a personal growth or values question.";
+                requiredShape = "Show the formed value or work principle through one lived behavior signal.";
+                preferredPatterns = """
+                        - [formed value] + [current behavior]
+                        - [turning-point lesson] + [work principle]
+                        """;
+                avoidLine = "Avoid technical metric headlines that erase the human story or value formation.";
+            }
+            case CULTURE_FIT -> {
+                intentLine = "This is a culture-fit or working-style question.";
+                requiredShape = "Show the working style through one bounded execution signal and its value.";
+                preferredPatterns = """
+                        - [working style] + [execution signal]
+                        - [ownership or speed] + [validated value]
+                        """;
+                avoidLine = "Avoid abstract praise of culture without a concrete execution trace.";
+            }
+            case TREND_INSIGHT -> {
+                intentLine = "This is a trend-insight question.";
+                requiredShape = "Name the issue and the practical implication instead of turning it into a generic opinion label.";
+                preferredPatterns = """
+                        - [issue or trend] + [practical implication]
+                        - [viewpoint] + [business or product relevance]
+                        """;
+                avoidLine = "Avoid broad theme labels that never show the applicant's actual angle or judgment.";
+            }
+            default -> {
+            }
+        }
+
+        return """
+                [Title Framing Guide]
+                Question: %s
+                Intent: %s
+                Mandatory shape: %s
+                Preferred patterns:
+                %s
+                Avoid:
+                %s
+                """.formatted(
+                safeQuestionTitle.isBlank() ? "No question title provided." : safeQuestionTitle,
+                intentLine,
+                requiredShape,
+                preferredPatterns.stripTrailing(),
+                avoidLine);
+    }
+
     private List<TitleSuggestionResponse.TitleCandidate> buildTitleSuggestionCandidates(
             String draft,
             String company,
             String position,
             String questionTitle,
+            QuestionCategory category,
             String companyContext,
             String context,
             String others) {
@@ -1070,7 +1247,7 @@ public class WorkspaceService {
                     safeTrim(questionTitle),
                     safeTrim(companyContext),
                     normalizeLengthText(normalizeTitleSpacing(draft)).trim(),
-                    buildTitleRewriteContext(context, others));
+                    buildTitleRewriteContext(category, questionTitle, context, others));
 
             if (response != null && response.candidates != null) {
                 for (WorkspaceDraftAiService.TitleCandidate candidate : response.candidates) {
@@ -1079,7 +1256,7 @@ public class WorkspaceService {
                     }
 
                     String titleLine = normalizeTitleLine(candidate.title);
-                    String rejectionReason = findTitleRejectionReason(titleLine, company, position, questionTitle);
+                    String rejectionReason = findTitleRejectionReason(titleLine, company, position, questionTitle, category);
                     if (rejectionReason != null) {
                         filteredOutCount++;
                         log.info("Title candidate rejected source=ai title={} reason={}",
@@ -1095,7 +1272,10 @@ public class WorkspaceService {
 
                     deduped.put(dedupeKey, TitleSuggestionResponse.TitleCandidate.builder()
                             .title(titleLine)
-                            .score(Math.max(0, Math.min(100, candidate.score == null ? 0 : candidate.score)))
+                            .score(adjustTitleCandidateScore(
+                                    candidate.score == null ? 0 : candidate.score,
+                                    titleLine,
+                                    category))
                             .reason(safeTrim(candidate.reason))
                             .recommended(false)
                             .build());
@@ -1114,14 +1294,15 @@ public class WorkspaceService {
                 company,
                 position,
                 questionTitle,
+                category,
                 companyContext,
                 context,
                 others,
                 true);
-        addTitleSuggestionIfEligible(deduped, improvedTitleLine, company, position, questionTitle, 96,
+        addTitleSuggestionIfEligible(deduped, improvedTitleLine, company, position, questionTitle, category, 96,
                 "\uD604\uC7AC \uBB38\uD56D\uACFC \uCD08\uC548 \uD750\uB984\uC5D0 \uAC00\uC7A5 \uC548\uC815\uC801\uC73C\uB85C \uB9DE\uB294 \uCD94\uCC9C \uC81C\uBAA9\uC785\uB2C8\uB2E4.");
         addTitleSuggestionIfEligible(deduped, normalizeTitleLine(extractActualTitleLine(draft)), company, position,
-                questionTitle, 72, "\uD604\uC7AC \uCD08\uC548\uC758 \uB9E5\uB77D\uC744 \uADF8\uB300\uB85C \uC720\uC9C0\uD558\uB294 \uC81C\uBAA9\uC785\uB2C8\uB2E4.");
+                questionTitle, category, 72, "\uD604\uC7AC \uCD08\uC548\uC758 \uB9E5\uB77D\uC744 \uADF8\uB300\uB85C \uC720\uC9C0\uD558\uB294 \uC81C\uBAA9\uC785\uB2C8\uB2E4.");
 
         List<TitleSuggestionResponse.TitleCandidate> ranked = deduped.values().stream()
                 .sorted(Comparator.comparingInt(TitleSuggestionResponse.TitleCandidate::getScore).reversed())
@@ -1150,10 +1331,11 @@ public class WorkspaceService {
             String company,
             String position,
             String questionTitle,
+            QuestionCategory category,
             int score,
             String reason) {
         String normalizedTitleLine = normalizeTitleLine(titleLine);
-        String rejectionReason = findTitleRejectionReason(normalizedTitleLine, company, position, questionTitle);
+        String rejectionReason = findTitleRejectionReason(normalizedTitleLine, company, position, questionTitle, category);
         if (rejectionReason != null) {
             log.info("Title candidate rejected source=fallback title={} reason={}",
                     safeSnippet(normalizedTitleLine, 120),
@@ -1168,7 +1350,7 @@ public class WorkspaceService {
 
         deduped.put(dedupeKey, TitleSuggestionResponse.TitleCandidate.builder()
                 .title(normalizedTitleLine)
-                .score(score)
+                .score(adjustTitleCandidateScore(score, normalizedTitleLine, category))
                 .reason(reason)
                 .recommended(false)
                 .build());
@@ -1178,15 +1360,17 @@ public class WorkspaceService {
             String titleLine,
             String company,
             String position,
-            String questionTitle) {
-        return findTitleRejectionReason(titleLine, company, position, questionTitle) == null;
+            String questionTitle,
+            QuestionCategory category) {
+        return findTitleRejectionReason(titleLine, company, position, questionTitle, category) == null;
     }
 
     private String findTitleRejectionReason(
             String titleLine,
             String company,
             String position,
-            String questionTitle) {
+            String questionTitle,
+            QuestionCategory category) {
         if (!isBracketTitleLine(titleLine)) {
             return "not_bracket_title";
         }
@@ -1225,6 +1409,11 @@ public class WorkspaceService {
 
         if (!hasConcreteTitleShape(core, normalizedCore)) {
             return "not_concrete_enough";
+        }
+
+        String intentSpecificRejection = findIntentSpecificTitleRejectionReason(category, core, normalizedCore);
+        if (intentSpecificRejection != null) {
+            return intentSpecificRejection;
         }
 
         return null;
@@ -1307,6 +1496,83 @@ public class WorkspaceService {
 
         String[] tokens = titleCore.trim().split("\\s+");
         return tokens.length >= 3;
+    }
+
+    private String findIntentSpecificTitleRejectionReason(
+            QuestionCategory category,
+            String titleCore,
+            String normalizedTitle) {
+        return null;
+    }
+
+    private boolean hasMotivationTitleBridge(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, MOTIVATION_TITLE_BRIDGE_SIGNALS)
+                || containsAny(normalizedTitle, MOTIVATION_TITLE_BRIDGE_SIGNALS);
+    }
+
+    private boolean hasMotivationValueSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, MOTIVATION_TITLE_VALUE_SIGNALS)
+                || containsAny(normalizedTitle, MOTIVATION_TITLE_VALUE_SIGNALS);
+    }
+
+    private boolean hasMotivationPlanSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, MOTIVATION_TITLE_PLAN_SIGNALS)
+                || containsAny(normalizedTitle, MOTIVATION_TITLE_PLAN_SIGNALS);
+    }
+
+    private boolean looksLikeAchievementSummaryTitle(String titleCore, String normalizedTitle) {
+        return titleCore.chars().anyMatch(Character::isDigit)
+                || containsAny(titleCore, TITLE_ACTION_SIGNALS)
+                || containsAny(normalizedTitle, TITLE_ACHIEVEMENT_SUMMARY_SIGNALS);
+    }
+
+    private int adjustTitleCandidateScore(int baseScore, String titleLine, QuestionCategory category) {
+        int adjusted = Math.max(0, Math.min(100, baseScore));
+        QuestionCategory effectiveCategory = category != null ? category : QuestionCategory.DEFAULT;
+        if (effectiveCategory != QuestionCategory.MOTIVATION) {
+            return adjusted;
+        }
+
+        String core = extractBracketTitleCore(titleLine);
+        String normalizedCore = normalizeTitleComparison(core);
+        if (core.isBlank() || normalizedCore.isBlank()) {
+            return adjusted;
+        }
+
+        boolean hasBridge = hasMotivationTitleBridge(core, normalizedCore);
+        boolean hasValue = hasMotivationValueSignal(core, normalizedCore);
+        boolean hasPlan = hasMotivationPlanSignal(core, normalizedCore);
+        boolean looksLikeAchievementSummary = looksLikeAchievementSummaryTitle(core, normalizedCore);
+
+        if (hasValue) {
+            adjusted += 8;
+        }
+
+        if (hasPlan) {
+            adjusted += 6;
+        }
+
+        if (hasBridge) {
+            adjusted += 4;
+        }
+
+        if (hasValue || hasPlan) {
+            adjusted += 4;
+        }
+
+        if (!hasValue && !hasPlan && looksLikeAchievementSummary) {
+            adjusted -= 12;
+        }
+
+        if (hasMotivationTitleBridge(core, normalizedCore)) {
+            adjusted += 2;
+        }
+
+        if (containsAny(core, "\uC9C0\uC6D0", "\uC785\uC0AC") && !hasValue && !hasPlan) {
+            adjusted -= 4;
+        }
+
+        return Math.max(0, Math.min(100, adjusted));
     }
 
     private boolean isQuestionParaphraseTitle(String normalizedCore, String normalizedQuestion) {
@@ -1702,19 +1968,32 @@ public class WorkspaceService {
                         others,
                         directive,
                         family);
-                logLengthMetrics("regenerate", maxLength, minTargetChars, preferredTargetChars, familyCandidate, family - 1);
-                if (isBetterLengthCandidate(
+                int regenLength = countResumeCharacters(familyCandidate);
+                boolean regenAccepted = isBetterLengthCandidate(
                         familyCandidate,
                         bestCandidate,
                         minTargetChars,
                         preferredTargetChars,
-                        maxLength)) {
+                        maxLength);
+                if (regenAccepted) {
                     bestCandidate = familyCandidate;
                 }
+                log.warn("[RUN] REGEN F{} │ 결과:{}자{} / 전체최고:{}자{} │ (목표:{}-{}) │ {}",
+                        family,
+                        regenLength, resolveLengthStatus(regenLength, minTargetChars, preferredTargetChars, maxLength),
+                        countResumeCharacters(bestCandidate), resolveLengthStatus(countResumeCharacters(bestCandidate), minTargetChars, preferredTargetChars, maxLength),
+                        minTargetChars, preferredTargetChars,
+                        regenAccepted ? "✓ 최고 갱신" : "- 이전 최고 유지");
                 if (isWithinTargetWindow(familyCandidate, minTargetChars, preferredTargetChars)) {
                     return familyCandidate;
                 }
             }
+
+            log.warn("[RUN] EXPAND F{} 시작 │ 시드:{}자{} / 전체최고:{}자{} │ (목표:{}-{} / 상한:{})",
+                    family,
+                    countResumeCharacters(familyCandidate), resolveLengthStatus(countResumeCharacters(familyCandidate), minTargetChars, preferredTargetChars, maxLength),
+                    countResumeCharacters(bestCandidate), resolveLengthStatus(countResumeCharacters(bestCandidate), minTargetChars, preferredTargetChars, maxLength),
+                    minTargetChars, preferredTargetChars, maxLength);
 
             String expandedFamilyCandidate = expandDraftFamily(
                     familyCandidate,
@@ -1730,14 +2009,23 @@ public class WorkspaceService {
                     others,
                     directive,
                     family);
-            if (isBetterLengthCandidate(
+            int expandedLength = countResumeCharacters(expandedFamilyCandidate);
+            boolean expandAccepted = isBetterLengthCandidate(
                     expandedFamilyCandidate,
                     bestCandidate,
                     minTargetChars,
                     preferredTargetChars,
-                    maxLength)) {
+                    maxLength);
+            if (expandAccepted) {
                 bestCandidate = expandedFamilyCandidate;
             }
+            log.warn("[{}] EXPAND F{} 종료 │ F{}최고:{}자{} / 전체최고:{}자{} │ (목표:{}-{}) │ {}",
+                    expandAccepted ? "OK" : "WARN",
+                    family, family,
+                    expandedLength, resolveLengthStatus(expandedLength, minTargetChars, preferredTargetChars, maxLength),
+                    countResumeCharacters(bestCandidate), resolveLengthStatus(countResumeCharacters(bestCandidate), minTargetChars, preferredTargetChars, maxLength),
+                    minTargetChars, preferredTargetChars,
+                    expandAccepted ? "✓ 전체최고 갱신" : "- 이전 최고 유지");
             if (isWithinTargetWindow(expandedFamilyCandidate, minTargetChars, preferredTargetChars)) {
                 return expandedFamilyCandidate;
             }
@@ -1770,26 +2058,18 @@ public class WorkspaceService {
         String candidate = normalizeLengthText(normalizeTitleSpacing(seedCandidate)).trim();
 
         for (int attempt = 1; attempt <= MINIMUM_LENGTH_EXPANSION_ATTEMPTS; attempt++) {
-            int candidateLength = countResumeCharacters(candidate);
-            if (candidateLength >= minTargetChars && candidateLength <= preferredTargetChars) {
+            int bestLengthBefore = countResumeCharacters(candidate);
+            if (bestLengthBefore >= minTargetChars && bestLengthBefore <= preferredTargetChars) {
                 return candidate;
             }
 
-            boolean underMin = candidateLength < minTargetChars;
-            String stage = underMin ? "EXPAND" : "SHORTEN";
-            String status = underMin ? "UNDER_MIN" : "OVER_LIMIT";
-            log.warn("{} {} F{}#{} │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {}",
-                    resolveStageIcon(stage, status),
-                    stage.toUpperCase(), family, attempt,
-                    candidateLength, resolveStatusIndicator(status),
-                    minTargetChars, preferredTargetChars, maxLength,
-                    toKoreanNextAction(underMin ? "EXPAND_RETRY" : "SHORTEN_RETRY"));
+            boolean underMin = bestLengthBefore < minTargetChars;
             try {
                 String adjustedCandidate = underMin
                         ? expandDraftCandidate(
                                 candidate,
                                 category,
-                                candidateLength,
+                                bestLengthBefore,
                                 minTargetChars,
                                 preferredTargetChars,
                                 maxLength,
@@ -1812,36 +2092,44 @@ public class WorkspaceService {
                                 companyContext,
                                 context,
                                 others);
-                if (isBetterLengthCandidate(
+
+                int resultLength = countResumeCharacters(adjustedCandidate);
+                boolean accepted = isBetterLengthCandidate(
                         adjustedCandidate,
                         candidate,
                         minTargetChars,
                         preferredTargetChars,
-                        maxLength)) {
+                        maxLength);
+                if (accepted) {
                     candidate = adjustedCandidate;
                 }
-                logLengthMetrics("expand", maxLength, minTargetChars, preferredTargetChars, candidate, attempt);
+
+                int bestLengthAfter = countResumeCharacters(candidate);
+                String resultStatus = resolveLengthStatus(resultLength, minTargetChars, preferredTargetChars, maxLength);
+                String bestStatus   = resolveLengthStatus(bestLengthAfter, minTargetChars, preferredTargetChars, maxLength);
+                String acceptedMark = accepted ? "✓ 갱신" : "- 유지";
+                log.warn("[WARN] {} F{} #{}/{} │ 결과:{}자{} / 최고:{}자{} │ (목표:{}-{}) │ {}",
+                        underMin ? "EXPAND" : "SHORTEN",
+                        family, attempt, MINIMUM_LENGTH_EXPANSION_ATTEMPTS,
+                        resultLength, resultStatus,
+                        bestLengthAfter, bestStatus,
+                        minTargetChars, preferredTargetChars,
+                        acceptedMark);
 
                 if (isWithinTargetWindow(candidate, minTargetChars, preferredTargetChars)) {
                     return candidate;
                 }
             } catch (Exception e) {
-                log.warn("{} EXPAND F{}#{} │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {} [이유=확장 호출 실패]",
-                        resolveStageIcon("EXPAND", "ERROR"),
-                        family, attempt,
-                        countResumeCharacters(candidate), resolveStatusIndicator("ERROR"),
-                        minTargetChars, preferredTargetChars, maxLength,
-                        toKoreanNextAction("EXPAND_RETRY"), e);
+                log.warn("[ERROR] EXPAND F{} #{}/{} │ 최고:{}자 │ (목표:{}-{}) │ 확장 호출 실패",
+                        family, attempt, MINIMUM_LENGTH_EXPANSION_ATTEMPTS,
+                        bestLengthBefore,
+                        minTargetChars, preferredTargetChars, e);
             }
         }
 
         int finalLength = countResumeCharacters(candidate);
-        log.warn("{} EXPAND F{}#{} │ {}자 {} │ (목표:{}-{} / 상한:{}) │ → {}",
-                resolveStageIcon("EXPAND", "FAMILY_FAILED"),
-                family, MINIMUM_LENGTH_EXPANSION_ATTEMPTS,
-                finalLength, resolveStatusIndicator("FAMILY_FAILED"),
-                minTargetChars, preferredTargetChars, maxLength,
-                toKoreanNextAction("NEW_FAMILY"));
+        log.warn("[ERROR] EXPAND F{} 계열실패 │ 최고:{}자↓ │ (목표:{}-{}) │ → F{} 재생성",
+                family, finalLength, minTargetChars, preferredTargetChars, family + 1);
         return candidate;
     }
 
@@ -1867,6 +2155,14 @@ public class WorkspaceService {
                 toKoreanNextAction("GENERATE_FRESH_FAMILY"));
 
         try {
+            String regenerationDirective = buildMinimumLengthRegenerationDirective(
+                    directive,
+                    previousBestDraft,
+                    previousLength,
+                    minTargetChars,
+                    preferredTargetChars,
+                    maxLength,
+                    family);
             DraftParams draftParams = buildDraftParams(
                     company,
                     position,
@@ -1877,7 +2173,7 @@ public class WorkspaceService {
                     preferredTargetChars,
                     context,
                     others,
-                    directive);
+                    regenerationDirective);
             WorkspaceDraftAiService.DraftResponse regenerated = generateDraftWithStrategy(category, draftParams);
 
             String regeneratedText = assembleDraftText(regenerated);
@@ -1922,6 +2218,7 @@ public class WorkspaceService {
             int family,
             int attempt) {
         String expansionDirective = buildMinimumLengthDirective(
+                candidate,
                 directive,
                 candidateLength,
                 minTargetChars,
@@ -1990,6 +2287,7 @@ public class WorkspaceService {
     }
 
     private String buildMinimumLengthDirective(
+            String candidate,
             String directive,
             int previousLength,
             int minTargetChars,
@@ -2032,13 +2330,35 @@ public class WorkspaceService {
         builder.append("Expansion goal for this retry: add roughly ")
                 .append(preferredGap)
                 .append(" visible characters so the final answer lands inside the target window.\n");
-        builder.append("Preserve all strong facts from the current draft.\n");
-        builder.append("Expand only missing depth. Do not summarize, compress, or delete existing strong evidence.\n");
-        builder.append(
-                "Expansion order: background -> role -> judgment -> execution detail -> measurable result -> job connection.\n");
+        builder.append("Floor constraint: your output MUST be strictly longer than the current draft (")
+                .append(previousLength)
+                .append(" chars). If your rewrite comes out shorter, discard it and try again with more detail.\n");
+        builder.append("Do not summarize, compress, or delete any existing content from the current draft.\n");
+        builder.append(buildEpisodeExpansionHints(candidate, minGap, preferredTargetChars));
         builder.append(buildDynamicExpansionTactic(minGap, attempt)).append("\n");
         builder.append("Count spaces and line breaks as 1 character each. Generic filler is forbidden.");
         return builder.toString();
+    }
+
+    private String buildEpisodeExpansionHints(String candidate, int minGap, int preferredTargetChars) {
+        if (candidate == null || candidate.isBlank() || minGap <= 0) return "";
+
+        StringBuilder sb = new StringBuilder();
+
+        // Critical framing: directive defines scope, not depth
+        sb.append("Important: the directive above defines CONTENT SCOPE (which topics are allowed), NOT depth or detail level. ");
+        sb.append("The draft is ").append(minGap).append("+ characters short — deepen the EXISTING content; do NOT add off-scope topics.\n");
+
+        // Episode checklist: all present elements must be deepened
+        int perElementBudget = minGap / 4 + 1;
+        sb.append("Episode depth mandate — expand EVERY element already present in the draft, not just the thinnest one.\n");
+        sb.append("For each element below that appears in the current draft, add at least ").append(perElementBudget).append(" more characters of concrete detail:\n");
+        sb.append("  • background/context: why this problem existed, what constraint triggered it\n");
+        sb.append("  • judgment: what alternative you considered and why you chose this specific path\n");
+        sb.append("  • execution: a concrete step, method, or tool and exactly how it was applied\n");
+        sb.append("  • result: a specific metric, timeline, or observable change that proved success\n");
+
+        return sb.toString();
     }
 
     private String buildMinimumLengthRegenerationDirective(
@@ -2322,6 +2642,13 @@ public class WorkspaceService {
             }
         }
         return false;
+    }
+
+    private boolean containsAny(String source, List<String> needles) {
+        if (needles == null || needles.isEmpty()) {
+            return false;
+        }
+        return containsAny(source, needles.toArray(String[]::new));
     }
 
     private List<String> buildSupportingQueries(WorkspaceQuestion question, String primaryQuery) {
@@ -2731,6 +3058,13 @@ public class WorkspaceService {
         } else {
             log.info(message, args);
         }
+    }
+
+    private String resolveLengthStatus(int length, int minTarget, int preferredTarget, int maxLength) {
+        if (maxLength > 0 && length > maxLength) return "↑초과";
+        if (minTarget > 0 && length < minTarget)  return "↓";
+        if (preferredTarget > 0 && length <= preferredTarget) return "✓";
+        return "~";
     }
 
     private String resolvePipelineLengthStatus(int actualChars, int minimumTarget, int preferredTarget, int hardLimit) {
