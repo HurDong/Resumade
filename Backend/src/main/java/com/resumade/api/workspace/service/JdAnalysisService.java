@@ -7,11 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import javax.imageio.ImageIO;
-import java.awt.*;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
@@ -29,8 +24,7 @@ public class JdAnalysisService {
     private static final long HEARTBEAT_INTERVAL_SECONDS = 8L;
 
     private final JdTextAiService jdTextAiService;
-    private final JdVisionAiService jdVisionAiService;
-    private final TesseractService tesseractService;
+    private final JdVisionGeminiService jdVisionGeminiService;
     private final Map<String, String> jdCache = new ConcurrentHashMap<>();
     private final Map<String, byte[]> imageCache = new ConcurrentHashMap<>();
 
@@ -83,19 +77,9 @@ public class JdAnalysisService {
         HeartbeatHandle heartbeat = startHeartbeat(emitter);
         try {
             sendEvent(emitter, "START", "공고 이미지 분석을 시작합니다. 🖼️");
-            sendEvent(emitter, "ANALYZING", "텍스트를 정밀하게 추출하고 있어요. 🤖");
+            sendEvent(emitter, "ANALYZING", "AI가 이미지에서 공고 내용을 추출하고 있어요. 🤖");
 
-            String ocrText = tesseractService.extractText(imageBytes);
-            log.info("Specialized OCR extracted {} characters", ocrText.length());
-
-            sendEvent(emitter, "ANALYZING", "추출된 정보가 정확한지 AI가 꼼꼼하게 검토 중입니다. ✅");
-
-            byte[] processedImage = resizeImageIfNeeded(imageBytes);
-            String base64Image = java.util.Base64.getEncoder().encodeToString(processedImage);
-            dev.langchain4j.data.message.ImageContent imageContent =
-                    dev.langchain4j.data.message.ImageContent.from(base64Image, "image/png");
-
-            JdAnalysisResponse response = jdVisionAiService.analyzeJdWithOcr(ocrText, imageContent);
+            JdAnalysisResponse response = jdVisionGeminiService.analyzeFromImage(imageBytes, "image/png");
 
             sendEvent(emitter, "COMPLETE", response);
             emitter.complete();
@@ -120,48 +104,6 @@ public class JdAnalysisService {
         }, HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_INTERVAL_SECONDS, TimeUnit.SECONDS);
 
         return new HeartbeatHandle(scheduler, future);
-    }
-
-    private byte[] resizeImageIfNeeded(byte[] imageBytes) {
-        try {
-            BufferedImage originalImage = ImageIO.read(new ByteArrayInputStream(imageBytes));
-            if (originalImage == null) return imageBytes;
-
-            int maxWidth = 2048;
-            int maxHeight = 2048;
-            int width = originalImage.getWidth();
-            int height = originalImage.getHeight();
-
-            if (width <= maxWidth && height <= maxHeight) {
-                log.info("Image is within limits ({}x{}). Skipping resize.", width, height);
-                return imageBytes;
-            }
-
-            log.info("Resizing image from {}x{} to fit {}x{}", width, height, maxWidth, maxHeight);
-
-            double ratio = Math.min((double) maxWidth / width, (double) maxHeight / height);
-            int targetWidth = (int) (width * ratio);
-            int targetHeight = (int) (height * ratio);
-
-            BufferedImage outputImage = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_ARGB);
-            Graphics2D g2d = outputImage.createGraphics();
-
-            g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-            g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-            g2d.drawImage(originalImage, 0, 0, targetWidth, targetHeight, null);
-            g2d.dispose();
-
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            ImageIO.write(outputImage, "png", baos);
-            byte[] result = baos.toByteArray();
-            log.info("Image resized successfully. Final size: {} bytes", result.length);
-            return result;
-        } catch (IOException e) {
-            log.error("Failed to resize image, using original", e);
-            return imageBytes;
-        }
     }
 
     private void sendEvent(SseEmitter emitter, String name, Object data) {
