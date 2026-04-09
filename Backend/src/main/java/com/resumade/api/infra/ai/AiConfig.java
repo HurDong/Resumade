@@ -50,6 +50,9 @@ public class AiConfig {
     @Value("${openai.models.final-editor:gpt-4o-mini}")
     private String finalEditorModelName;
 
+    @Value("${openai.models.spell-check:gpt-5-nano}")
+    private String spellCheckModelName;
+
     @PostConstruct
     public void logSelectedModels() {
         log.info("OpenAI models - experience: {}, workspace-draft: {}, workspace-patch: {}, jd-text: {}, jd-vision: {}",
@@ -168,20 +171,20 @@ public class AiConfig {
 
     /**
      * 맞춤법 검사 전용 AI 서비스.
-     * temperature=0.0 — 맞춤법은 창의성이 아닌 정확성이 기준이므로 결정론적으로 실행한다.
-     * finalEditorModelName(gpt-4o-mini) 을 공유하여 별도 모델 설정 없이 재사용한다.
+     * gpt-5-nano 전용 모델 사용 — 단어·조사·어미 수준의 규칙 기반 검사에 최적화.
+     * temperature=1.0 고정 — gpt-5-nano는 1.0만 지원 (기본값 0.7 자동 전송 방지).
      */
     @Bean
     public SpellCheckAiService spellCheckAiService() {
         OpenAiChatModel spellCheckModel = OpenAiChatModel.builder()
                 .apiKey(openAiApiKey)
-                .modelName(finalEditorModelName)   // gpt-4o-mini
-                .temperature(0.0)                  // 맞춤법 교정은 결정론적으로
+                .modelName(spellCheckModelName)
+                .temperature(1.0)                  // gpt-5-nano는 1.0만 지원
                 .maxRetries(1)
                 .timeout(openAiTimeout)
-                .responseFormat("json_object")     // Structured Output 강제
-                .logRequests(true)   // 디버그: 실제 전송 프롬프트 확인
-                .logResponses(true)  // 디버그: LLM 원문 응답 확인
+                .responseFormat("json_object")
+                .logRequests(true)
+                .logResponses(true)
                 .build();
         return AiServices.builder(SpellCheckAiService.class)
                 .chatLanguageModel(spellCheckModel)

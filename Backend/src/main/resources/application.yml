@@ -43,6 +43,7 @@ openai:
     jd-text: ${OPENAI_JD_TEXT_MODEL:gpt-4o-mini}
     jd-vision: ${OPENAI_JD_VISION_MODEL:gpt-5.4-mini}
     final-editor: ${OPENAI_FINAL_EDITOR_MODEL:gpt-4o-mini}
+    spell-check: ${OPENAI_SPELL_CHECK_MODEL:gpt-5-nano}
 
 gemini:
   api:
@@ -50,6 +51,7 @@ gemini:
     url: ${GEMINI_API_URL:https://generativelanguage.googleapis.com/v1beta}
   models:
     company-research: ${GEMINI_COMPANY_RESEARCH_MODEL:gemini-2.5-flash-lite}
+    jd-vision: ${GEMINI_JD_VISION_MODEL:gemini-2.5-flash-lite}
 
 translation:
   provider: ${TRANSLATION_PROVIDER:google-cloud}
