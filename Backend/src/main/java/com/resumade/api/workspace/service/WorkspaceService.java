@@ -462,7 +462,7 @@ public class WorkspaceService {
                     context);
 
             paceProcessing();
-            normalizeAnalysis(analysis);
+            normalizeAnalysis(analysis, washedKr);
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
@@ -675,7 +675,7 @@ public class WorkspaceService {
                     context);
 
             paceProcessing();
-            normalizeAnalysis(analysis);
+            normalizeAnalysis(analysis, washedKr);
             if (analysis != null) {
                 logTraceLength("humanPatch.patch.humanPatchedText", analysis.getHumanPatchedText(), maxLengthFinal, minTargetChars, preferredTargetChars);
             }
@@ -912,7 +912,7 @@ public class WorkspaceService {
                 context);
 
         paceProcessing();
-        normalizeAnalysis(analysis);
+        normalizeAnalysis(analysis, washedKr);
 
         WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
         question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
@@ -3310,7 +3310,7 @@ public class WorkspaceService {
         return false;
     }
 
-    private void normalizeAnalysis(DraftAnalysisResult analysis) {
+    private void normalizeAnalysis(DraftAnalysisResult analysis, String washedKr) {
         if (analysis == null) {
             return;
         }
@@ -3324,7 +3324,8 @@ public class WorkspaceService {
 
         List<DraftAnalysisResult.Mistranslation> normalized = new ArrayList<>();
         for (DraftAnalysisResult.Mistranslation mistranslation : mistranslations) {
-            String translated = safeTrim(mistranslation.getTranslated());
+            // 1단계: 내부 공백도 정규화 (LLM이 생성한 문구와 실제 텍스트의 공백 차이 완화)
+            String translated = safeTrim(mistranslation.getTranslated()).replaceAll("\\s+", " ");
             if (translated.isEmpty()) {
                 continue;
             }
@@ -3332,8 +3333,30 @@ public class WorkspaceService {
             mistranslation.setTranslated(translated);
             mistranslation.setSuggestion(normalizeTitleSpacing(safeTrim(mistranslation.getSuggestion())));
             mistranslation.setReason(safeTrim(mistranslation.getReason()));
-            // (Note: startIndex/endIndex manual calculation is removed as we now use client-side phrase matching)
 
+            // 2단계: washedKr에서 translated 문구의 실제 위치 계산 (공백 유연 매칭)
+            if (washedKr != null && !washedKr.isBlank()) {
+                try {
+                    String[] tokens = translated.split("\\s+");
+                    StringBuilder patternSb = new StringBuilder();
+                    for (String token : tokens) {
+                        if (patternSb.length() > 0) patternSb.append("\\s+");
+                        patternSb.append(Pattern.quote(token));
+                    }
+                    Matcher m = Pattern.compile(patternSb.toString()).matcher(washedKr);
+                    if (m.find()) {
+                        mistranslation.setStartIndex(m.start());
+                        mistranslation.setEndIndex(m.end());
+                        mistranslation.setMatchConfidence(1.0);
+                    } else {
+                        log.warn("[HumanPatch] translated phrase not found in washedKr: '{}'", translated);
+                        mistranslation.setMatchConfidence(0.0);
+                    }
+                } catch (Exception e) {
+                    log.warn("[HumanPatch] Failed to compute phrase position for: '{}'", translated, e);
+                    mistranslation.setMatchConfidence(0.0);
+                }
+            }
 
             normalized.add(mistranslation);
         }

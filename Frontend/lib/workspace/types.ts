@@ -34,6 +34,8 @@ export interface Mistranslation {
   originalEndIndex?: number | null;
   startIndex?: number | null;
   endIndex?: number | null;
+  /** 백엔드에서 washedKr 내 translated 문구를 찾았으면 1.0, 못 찾았으면 0.0 */
+  matchConfidence?: number | null;
 }
 
 export interface AiReviewReport {

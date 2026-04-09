@@ -52,9 +52,16 @@ export function highlightByPhraseMatching(
     const phrase = isOriginal ? (mis.original || "") : (mis.translated || "")
     if (!phrase.trim()) continue
 
-    const idx = findNonOverlappingIndex(text, phrase, matches)
-    if (idx !== -1) {
-      matches.push({ start: idx, end: idx + phrase.length, mis })
+    // 2단계: 백엔드가 세탁본에서 문구를 찾지 못했다고 명시한 경우 하이라이팅 스킵
+    if (!isOriginal && mis.matchConfidence === 0) continue
+
+    const match = findNonOverlappingMatch(
+      text, phrase, matches,
+      !isOriginal ? mis.startIndex : null,
+      !isOriginal ? mis.endIndex : null
+    )
+    if (match) {
+      matches.push({ start: match.start, end: match.end, mis })
     }
   }
 
@@ -94,19 +101,60 @@ export function highlightByPhraseMatching(
   return result
 }
 
-function findNonOverlappingIndex(text: string, phrase: string, existing: { start: number; end: number }[]): number {
-  let searchFrom = 0
-  while (searchFrom < text.length) {
-    const idx = text.indexOf(phrase, searchFrom)
-    if (idx === -1) return -1
-
-    const end = idx + phrase.length
-    const overlaps = existing.some(e => idx < e.end && end > e.start)
-    if (!overlaps) return idx
-
-    searchFrom = idx + 1
+/**
+ * 공백 정규화(연속 공백→단일 공백) 후 phrase를 text에서 검색해 겹치지 않는 첫 위치를 반환.
+ * hintStart/hintEnd가 있으면 백엔드가 계산한 오프셋을 우선 시도.
+ * 실제 하이라이트 범위는 원본 text 기준으로 계산한다.
+ */
+function findNonOverlappingMatch(
+  text: string,
+  phrase: string,
+  existing: { start: number; end: number }[],
+  hintStart?: number | null,
+  hintEnd?: number | null
+): { start: number; end: number } | null {
+  // 2단계: 백엔드 오프셋 힌트가 있으면 먼저 시도 (원본 텍스트 기준 위치)
+  if (hintStart != null && hintEnd != null && hintEnd <= text.length && hintStart >= 0) {
+    const sliceNorm = text.slice(hintStart, hintEnd).replace(/\s+/g, ' ').trim()
+    const phraseNorm = phrase.replace(/\s+/g, ' ').trim()
+    if (sliceNorm === phraseNorm) {
+      const overlaps = existing.some(e => hintStart < e.end && hintEnd > e.start)
+      if (!overlaps) return { start: hintStart, end: hintEnd }
+    }
   }
-  return -1
+
+  // 1단계: 공백 정규화 후 indexOf로 검색, 원본 인덱스로 역매핑
+  const normalizedText = text.replace(/\s+/g, ' ')
+  const normalizedPhrase = phrase.replace(/\s+/g, ' ').trim()
+  if (!normalizedPhrase) return null
+
+  // normToOrig[i] = normalized text의 i번째 문자가 original text의 몇 번째 문자인지
+  const normToOrig: number[] = []
+  let lastWasSpace = false
+  for (let i = 0; i < text.length; i++) {
+    const isSpace = /\s/.test(text[i])
+    if (isSpace && lastWasSpace) continue
+    normToOrig.push(i)
+    lastWasSpace = isSpace
+  }
+
+  let searchFrom = 0
+  while (searchFrom < normalizedText.length) {
+    const normIdx = normalizedText.indexOf(normalizedPhrase, searchFrom)
+    if (normIdx === -1) return null
+
+    const origStart = normToOrig[normIdx] ?? -1
+    if (origStart === -1) return null
+
+    const normEnd = normIdx + normalizedPhrase.length
+    const origEnd = normEnd < normToOrig.length ? normToOrig[normEnd] : text.length
+
+    const overlaps = existing.some(e => origStart < e.end && origEnd > e.start)
+    if (!overlaps) return { start: origStart, end: origEnd }
+
+    searchFrom = normIdx + 1
+  }
+  return null
 }
 
 export function htmlToPlainText(html: string) {
