@@ -11,11 +11,15 @@ RESUMADE는 구직자를 위한 AI 기반 자기소개서 작성 어시스턴트
 - 서류, 인적성/코딩테스트, 1차 면접, 2차 면접, 최종 합격 단계 추적
 - 카드 클릭 시 상세 패널에서 JD, AI 인사이트, 자소서 문항 확인
 
+![채용 대시보드](docs/images/dashboard.png)
+
 ### 2. 경험 보관소
 
 - `.md`, `.json` 기반 경험 데이터 업로드
 - 업로드한 경험을 카드 단위로 분류하고 관리
 - 자소서 문항과 관련 높은 경험을 검색해 RAG 컨텍스트로 활용
+
+![경험 보관소](docs/images/vault.png)
 
 ### 3. 자소서 작업실
 
@@ -23,6 +27,23 @@ RESUMADE는 구직자를 위한 AI 기반 자기소개서 작성 어시스턴트
 - 번역 기반 wash 단계와 patch 검수 단계 수행
 - 오역, 표현 부자연스러움, 수정 제안을 비교하면서 최종 문장 다듬기
 - SSE 기반 진행 상태 스트리밍 지원
+
+![작업 공고 선택](docs/images/workspace-list.png)
+
+![자소서 작업실](docs/images/workspace-editor.png)
+
+### 4. 스펙 라이브러리
+
+- 자격증, 어학, 수상, 교육 이력 등 스펙 항목을 한 곳에서 관리
+- 항목 클릭 시 필요한 필드만 바로 복사해 자소서에 붙여넣기
+
+![스펙 라이브러리](docs/images/settings.png)
+
+### 5. 온보딩
+
+- 최초 실행 시 경험 등록 → 공고 등록 → 초안 생성 → 세팅 → 하이라이팅 → 최종 수령의 6단계 안내
+
+![온보딩](docs/images/onboarding.png)
 
 ## 제품 방향
 
@@ -59,16 +80,22 @@ RESUMADE는 구직자를 위한 AI 기반 자기소개서 작성 어시스턴트
 
 ## 현재 구현 화면
 
-- `/`
+- `/`  
   채용 파이프라인 칸반 보드
-- `/vault`
+- `/vault`  
   경험 업로드 및 경험 카드 관리 화면
-- `/workspace`
+- `/workspace`  
   작업할 공고를 고르는 작업실 진입 화면
-- `/workspace/[id]`
+- `/workspace/[id]`  
   컨텍스트 패널과 번역/검수 패널이 나뉜 작업 화면
-- `/settings`
-  사용자 설정 화면
+- `/workspace/edit/[questionId]`  
+  문항 단위 상세 편집 화면
+- `/vault/wiki/[id]/edit`  
+  경험 상세 편집 화면
+- `/settings`  
+  스펙 라이브러리 (자격증, 어학, 수상, 교육 이력 관리)
+- `/onboarding`  
+  최초 사용자 온보딩 플로우
 
 ## Human Patch 파이프라인
 
@@ -91,9 +118,11 @@ RESUMADE는 구직자를 위한 AI 기반 자기소개서 작성 어시스턴트
 ```text
 Resumade/
 |-- Backend/      # Spring Boot API, AI 파이프라인, DB, SSE
+|-- Crawler/      # 채용 공고 크롤러
 |-- Frontend/     # Next.js App Router UI
 |-- Infra/        # 인프라 관련 리소스
 |-- TestData/     # 테스트용 데이터 및 샘플 자산
+|-- docs/         # 문서 및 이미지
 `-- .env.example
 ```
 
@@ -127,8 +156,8 @@ cd Backend
 
 ```powershell
 cd Frontend
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 ## 빌드 검증
@@ -144,7 +173,7 @@ cd Backend
 
 ```powershell
 cd Frontend
-npm run build
+pnpm run build
 ```
 
 ## 주요 API 영역
@@ -152,29 +181,15 @@ npm run build
 현재 백엔드는 다음 컨트롤러를 중심으로 구성되어 있습니다.
 
 - `HealthCheckController`
-- `ExperienceController`
 - `ApplicationController`
+- `ApplicationScheduleController`
+- `CalendarController`
+- `CodingArchiveController`
+- `ExperienceController`
+- `FinalEditorController`
+- `PersonalStoryController`
+- `ProfileLibraryController`
+- `RecruitController`
+- `TechNoteController`
+- `VersionHistoryController`
 - `WorkspaceController`
-
-## README에 스크린샷 넣기
-
-가능합니다. README에는 실제 서비스 화면 이미지를 바로 넣을 수 있고, 이 채팅에서도 같은 이미지를 따로 보여드릴 수 있습니다.
-
-추천 방식:
-
-1. 대시보드, 경험 보관소, 작업실 화면을 캡처
-2. `docs/images/` 폴더에 저장
-3. `README.md`에서 Markdown 이미지로 삽입
-
-예시:
-
-```md
-![Dashboard](docs/images/dashboard.png)
-![Experience Vault](docs/images/vault.png)
-![Workspace](docs/images/workspace.png)
-```
-
-## 현재 상태
-
-이 저장소에는 이미 대시보드, 경험 보관소, 작업실의 핵심 UI 골격과 human patch용 SSE 백엔드 기반이 들어가 있습니다.  
-다음 단계에서는 실제 서비스 스크린샷, 아키텍처 다이어그램, 배포 방법, API 예시를 붙여 README를 더 완성도 있게 확장할 수 있습니다.
