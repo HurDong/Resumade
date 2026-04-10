@@ -52,7 +52,11 @@ export function highlightByPhraseMatching(
     const phrase = isOriginal ? (mis.original || "") : (mis.translated || "")
     if (!phrase.trim()) continue
 
-    // 2단계: 백엔드가 세탁본에서 문구를 찾지 못했다고 명시한 경우 하이라이팅 스킵
+    // 원본 초안 측: 25글자 초과 phrase는 하이라이트 스킵.
+    // LLM이 문장 전체를 original로 반환하면 해당 범위가 짧은 term 하이라이트를 overlap으로 막기 때문.
+    if (isOriginal && phrase.length > 25) continue
+
+    // 세탁본 측: 백엔드가 문구를 찾지 못했다고 명시한 경우 하이라이팅 스킵
     if (!isOriginal && mis.matchConfidence === 0) continue
 
     const match = findNonOverlappingMatch(
