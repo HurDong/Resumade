@@ -57,8 +57,8 @@ export function highlightByPhraseMatching(
 
     const match = findNonOverlappingMatch(
       text, phrase, matches,
-      !isOriginal ? mis.startIndex : null,
-      !isOriginal ? mis.endIndex : null
+      isOriginal ? mis.originalStartIndex : mis.startIndex,
+      isOriginal ? mis.originalEndIndex : mis.endIndex
     )
     if (match) {
       matches.push({ start: match.start, end: match.end, mis })

@@ -463,7 +463,7 @@ public class WorkspaceService {
                     context);
 
             paceProcessing();
-            normalizeAnalysis(analysis, washedKr);
+            normalizeAnalysis(analysis, refinedDraft, washedKr);
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
@@ -676,7 +676,7 @@ public class WorkspaceService {
                     context);
 
             paceProcessing();
-            normalizeAnalysis(analysis, washedKr);
+            normalizeAnalysis(analysis, draft, washedKr);
             if (analysis != null) {
                 logTraceLength("humanPatch.patch.humanPatchedText", analysis.getHumanPatchedText(), maxLengthFinal, minTargetChars, preferredTargetChars);
             }
@@ -913,7 +913,7 @@ public class WorkspaceService {
                 context);
 
         paceProcessing();
-        normalizeAnalysis(analysis, washedKr);
+        normalizeAnalysis(analysis, originalDraft, washedKr);
 
         WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
         question.setMistranslations(objectMapper.writeValueAsString(analysis.getMistranslations()));
@@ -3344,7 +3344,13 @@ public class WorkspaceService {
         return false;
     }
 
-    private void normalizeAnalysis(DraftAnalysisResult analysis, String washedKr) {
+    /**
+     * LLM이 반환한 인덱스를 1순위로 신뢰하고, 실패 시 regex로 fallback.
+     *
+     * @param originalDraft AI 초안 텍스트 (original 측 인덱스 검증용)
+     * @param washedKr      세탁본 텍스트 (translated 측 인덱스 검증용)
+     */
+    private void normalizeAnalysis(DraftAnalysisResult analysis, String originalDraft, String washedKr) {
         if (analysis == null) {
             return;
         }
@@ -3357,72 +3363,108 @@ public class WorkspaceService {
         }
 
         List<DraftAnalysisResult.Mistranslation> normalized = new ArrayList<>();
-        for (DraftAnalysisResult.Mistranslation mistranslation : mistranslations) {
-            // 1단계: 내부 공백도 정규화 (LLM이 생성한 문구와 실제 텍스트의 공백 차이 완화)
-            String translated = safeTrim(mistranslation.getTranslated()).replaceAll("\\s+", " ");
+        for (DraftAnalysisResult.Mistranslation mis : mistranslations) {
+            String translated = safeTrim(mis.getTranslated()).replaceAll("\\s+", " ");
             if (translated.isEmpty()) {
                 continue;
             }
+            mis.setSuggestion(normalizeTitleSpacing(safeTrim(mis.getSuggestion())));
+            mis.setReason(safeTrim(mis.getReason()));
 
-            mistranslation.setTranslated(translated);
-            mistranslation.setSuggestion(normalizeTitleSpacing(safeTrim(mistranslation.getSuggestion())));
-            mistranslation.setReason(safeTrim(mistranslation.getReason()));
-
-            // 2단계: washedKr에서 translated 문구의 실제 위치 계산 (공백 유연 매칭 + fallback)
+            // ── washed 측: LLM 인덱스 검증 → fallback regex ──
             if (washedKr != null && !washedKr.isBlank()) {
                 try {
-                    boolean matched = tryMatchPhrase(mistranslation, translated, washedKr);
-                    if (!matched) {
-                        // Fallback 1: 한국어 조사 제거 후 재시도 (은/는/이/가/을/를/의/에/로/으로/와/과/도)
-                        String stripped = translated.replaceAll("[은는이가을를의에와과도]$|로$|으로$", "").trim();
-                        if (!stripped.equals(translated) && !stripped.isBlank()) {
-                            matched = tryMatchPhrase(mistranslation, stripped, washedKr);
+                    if (validateAndApplyIndex(mis, translated, washedKr, false)) {
+                        // LLM 인덱스 유효 → 실제 텍스트로 translated 교정
+                        mis.setTranslated(washedKr.substring(mis.getStartIndex(), mis.getEndIndex()));
+                    } else {
+                        // fallback: regex로 구문 탐색
+                        if (!tryMatchPhrase(mis, translated, washedKr, false)) {
+                            log.warn("[HumanPatch] washed: phrase not found → '{}'", translated);
+                            mis.setMatchConfidence(0.0);
                         }
-                    }
-                    if (!matched) {
-                        // Fallback 2: 마지막 단어 제거 후 재시도 (AI가 translated를 너무 넓게 잡은 경우)
-                        String[] parts = translated.split("\\s+");
-                        if (parts.length > 1) {
-                            String withoutLast = String.join(" ", Arrays.copyOf(parts, parts.length - 1)).trim();
-                            if (!withoutLast.isBlank()) {
-                                matched = tryMatchPhrase(mistranslation, withoutLast, washedKr);
-                            }
-                        }
-                    }
-                    if (!matched) {
-                        log.warn("[HumanPatch] translated phrase not found in washedKr: '{}'", translated);
-                        mistranslation.setMatchConfidence(0.0);
                     }
                 } catch (Exception e) {
-                    log.warn("[HumanPatch] Failed to compute phrase position for: '{}'", translated, e);
-                    mistranslation.setMatchConfidence(0.0);
+                    log.warn("[HumanPatch] washed index error for '{}'", translated, e);
+                    mis.setMatchConfidence(0.0);
                 }
             }
 
-            normalized.add(mistranslation);
+            // ── original 측: LLM 인덱스 검증 (하이라이트 힌트용, 실패해도 무방) ──
+            if (originalDraft != null && !originalDraft.isBlank()) {
+                String original = safeTrim(mis.getOriginal()).replaceAll("\\s+", " ");
+                if (!original.isEmpty()) {
+                    try {
+                        if (!validateAndApplyIndex(mis, original, originalDraft, true)) {
+                            tryMatchPhrase(mis, original, originalDraft, true);
+                        }
+                    } catch (Exception e) {
+                        log.debug("[HumanPatch] original index error for '{}'", original, e);
+                    }
+                }
+            }
+
+            normalized.add(mis);
         }
 
         analysis.setMistranslations(normalized);
     }
 
     /**
-     * phrase를 washedKr에서 공백 유연 매칭으로 찾아 mistranslation의 start/end를 설정.
-     * 찾으면 matchConfidence=1.0 설정 후 true 반환, 못 찾으면 false 반환.
+     * LLM이 반환한 인덱스 범위를 텍스트에서 검증하고, 유효하면 mis에 적용 후 true 반환.
+     * isOriginal=true 이면 originalStartIndex/originalEndIndex 사용, false 이면 startIndex/endIndex 사용.
      */
-    private boolean tryMatchPhrase(DraftAnalysisResult.Mistranslation mistranslation, String phrase, String washedKr) {
+    private boolean validateAndApplyIndex(
+            DraftAnalysisResult.Mistranslation mis,
+            String expectedPhrase,
+            String text,
+            boolean isOriginal) {
+        Integer start = isOriginal ? mis.getOriginalStartIndex() : mis.getStartIndex();
+        Integer end   = isOriginal ? mis.getOriginalEndIndex()   : mis.getEndIndex();
+
+        if (start == null || end == null || start < 0 || end > text.length() || start >= end) {
+            return false;
+        }
+
+        String slice = text.substring(start, end);
+        // 슬라이스가 expected phrase와 일치하거나, expected phrase를 포함/포함됨 → 신뢰
+        boolean reasonable = slice.equals(expectedPhrase)
+                || slice.contains(expectedPhrase)
+                || expectedPhrase.contains(slice);
+        if (!reasonable) {
+            log.warn("[HumanPatch] {} index mismatch: expected='{}' got='{}' [{},{}]",
+                    isOriginal ? "original" : "washed", expectedPhrase, slice, start, end);
+            return false;
+        }
+
+        if (!isOriginal) {
+            mis.setMatchConfidence(1.0);
+        }
+        return true;
+    }
+
+    /**
+     * phrase를 text에서 공백 유연 regex로 찾아 mis의 인덱스를 설정하는 fallback.
+     * isOriginal=true 면 originalStartIndex/originalEndIndex 세팅, false 면 startIndex/endIndex + matchConfidence.
+     */
+    private boolean tryMatchPhrase(DraftAnalysisResult.Mistranslation mis, String phrase, String text, boolean isOriginal) {
         String[] tokens = phrase.split("\\s+");
         StringBuilder patternSb = new StringBuilder();
         for (String token : tokens) {
             if (patternSb.length() > 0) patternSb.append("\\s+");
             patternSb.append(Pattern.quote(token));
         }
-        Matcher m = Pattern.compile(patternSb.toString()).matcher(washedKr);
+        Matcher m = Pattern.compile(patternSb.toString()).matcher(text);
         if (m.find()) {
-            mistranslation.setStartIndex(m.start());
-            mistranslation.setEndIndex(m.end());
-            mistranslation.setMatchConfidence(1.0);
-            // AI가 너무 넓은 translated를 반환한 경우, 실제 매칭 텍스트로 교정
-            mistranslation.setTranslated(washedKr.substring(m.start(), m.end()));
+            if (isOriginal) {
+                mis.setOriginalStartIndex(m.start());
+                mis.setOriginalEndIndex(m.end());
+            } else {
+                mis.setStartIndex(m.start());
+                mis.setEndIndex(m.end());
+                mis.setMatchConfidence(1.0);
+                mis.setTranslated(text.substring(m.start(), m.end()));
+            }
             return true;
         }
         return false;

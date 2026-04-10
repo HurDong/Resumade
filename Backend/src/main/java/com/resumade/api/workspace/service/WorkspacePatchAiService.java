@@ -60,6 +60,15 @@ public interface WorkspacePatchAiService {
             - explain briefly why this is a mistranslation, omission, weakening, or awkward phrasing in an IT context.
             - output severity as CRITICAL or WARNING.
             - provide a precise noun or phrase suggestion, and a fully rewritten sentence as suggestedSentence.
+            - Set 'translated' to the EXACT verbatim substring from the Washed Korean draft (minimal phrase, 1-5 words).
+            - Set 'original' to the EXACT verbatim substring from the Original AI draft.
+            - Set 'startIndex' to the 0-based character index where 'translated' begins in the Washed Korean draft (inclusive).
+            - Set 'endIndex' to the 0-based character index where 'translated' ends in the Washed Korean draft (exclusive).
+            - Set 'originalStartIndex' to the 0-based character index where 'original' begins in the Original AI draft (inclusive).
+            - Set 'originalEndIndex' to the 0-based character index where 'original' ends in the Original AI draft (exclusive).
+            - Count every character (Korean, English, space, punctuation) as exactly 1. Use 0-based indexing.
+            - Verify: washedDraft.substring(startIndex, endIndex) must equal 'translated' exactly.
+            - Verify: originalDraft.substring(originalStartIndex, originalEndIndex) must equal 'original' exactly.
 
             Set 'humanPatchedText' to the same Washed Korean draft. Do not apply the fixes into a rewritten final text.
             Return the JSON without markdown fences.
