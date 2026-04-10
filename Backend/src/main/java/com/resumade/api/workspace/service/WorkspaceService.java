@@ -2725,7 +2725,10 @@ public class WorkspaceService {
             List<Experience> allExperiences, QuestionCategory category) {
         Set<Long> excludedExperienceIds = shouldRelaxExperienceExclusion(initialQuestion)
                 ? Set.of()
-                : extractUsedExperienceIds(initialQuestion, questionId, allExperiences);
+                : removeDirectiveMentionedExperiences(
+                        extractUsedExperienceIds(initialQuestion, questionId, allExperiences),
+                        initialQuestion,
+                        allExperiences);
         List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> selectedContext = experienceVectorRetrievalService
                 .search(
                         initialQuestion.getTitle(),
@@ -2779,6 +2782,40 @@ public class WorkspaceService {
 
     private boolean shouldRelaxExperienceExclusion(WorkspaceQuestion question) {
         return !extractFacetHintsFromDirective(question == null ? null : question.getBatchStrategyDirective()).isBlank();
+    }
+
+    /**
+     * 유저 디렉티브에 이미 사용된 경험의 제목이 명시적으로 언급된 경우,
+     * 해당 경험을 excluded 목록에서 제거하여 사용 허용.
+     * 예: "A프로젝트로 주제 작성해줘" → A프로젝트 exclusion 해제
+     */
+    private Set<Long> removeDirectiveMentionedExperiences(
+            Set<Long> excludedIds,
+            WorkspaceQuestion question,
+            List<Experience> allExperiences) {
+        if (excludedIds.isEmpty()) {
+            return excludedIds;
+        }
+        String directive = question == null ? null : question.getBatchStrategyDirective();
+        if (directive == null || directive.isBlank()) {
+            return excludedIds;
+        }
+
+        Set<Long> unlocked = allExperiences.stream()
+                .filter(exp -> exp.getTitle() != null && !exp.getTitle().isBlank()
+                        && excludedIds.contains(exp.getId())
+                        && directive.contains(exp.getTitle()))
+                .map(Experience::getId)
+                .collect(Collectors.toSet());
+
+        if (unlocked.isEmpty()) {
+            return excludedIds;
+        }
+
+        Set<Long> relaxed = new LinkedHashSet<>(excludedIds);
+        relaxed.removeAll(unlocked);
+        log.info("[RAG] Directive mentions {} previously-excluded experience(s) → unlocked for reuse", unlocked.size());
+        return relaxed;
     }
 
     private String extractFacetHintsFromDirective(String directive) {
