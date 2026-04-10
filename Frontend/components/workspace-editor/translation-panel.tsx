@@ -22,7 +22,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   highlightByPhraseMatching,
-  escapeHtml,
   getTranslationProcessingMeta,
   sanitizeWashedText,
 } from "@/lib/workspace/translation-panel-helpers"
@@ -163,10 +162,20 @@ export function TranslationPanel() {
     pipelineStage
   )
 
-  // 원문은 plain text — 하이라이팅 없음 (카드에 original 단어가 표시됨)
-  const originalContent = escapeHtml(draft || "")
+  // 원본 초안: mistranslation의 original 필드 기준으로 하이라이팅
+  // highlightByPhraseMatching은 내부적으로 mis.translated를 탐색하므로,
+  // original 필드를 translated에 매핑해 재활용
+  const originalMirroredMistranslations = mistranslations.map((m) => ({
+    ...m,
+    translated: m.original,
+  }))
+  const originalContent = highlightByPhraseMatching(
+    draft || "",
+    originalMirroredMistranslations,
+    hoveredMistranslationId,
+  )
 
-  // 세탁본만 하이라이팅
+  // 세탁본: mistranslation의 translated 필드 기준으로 하이라이팅
   const washedContent = highlightByPhraseMatching(
     normalizedWashedText,
     mistranslations,
