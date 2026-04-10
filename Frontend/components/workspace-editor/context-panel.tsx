@@ -61,8 +61,47 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { getDisplayedWashedText } from "@/lib/workspace/translation-panel-helpers"
+import { cn } from "@/lib/utils"
 import { type PersonalStory, STORY_TYPE_LABELS } from "@/lib/workspace/types"
 import { Checkbox } from "@/components/ui/checkbox"
+
+/** 세탁본 문장에서 오역 단어를 인라인 강조하는 헬퍼 컴포넌트 */
+function SentenceContext({
+  sentence,
+  highlight,
+  isCritical,
+}: {
+  sentence: string
+  highlight: string
+  isCritical: boolean
+}) {
+  const accentClass = isCritical
+    ? "font-black text-red-600 dark:text-red-400"
+    : "font-black text-amber-600 dark:text-amber-400"
+  const borderClass = isCritical
+    ? "border-red-400/50 bg-red-500/5"
+    : "border-amber-400/50 bg-amber-500/5"
+
+  if (!highlight) {
+    return (
+      <p className={`text-[11px] leading-relaxed rounded-lg px-2.5 py-1.5 border-l-2 text-foreground/60 ${borderClass}`}>
+        {sentence}
+      </p>
+    )
+  }
+
+  const parts = sentence.split(highlight)
+  return (
+    <p className={`text-[11px] leading-relaxed rounded-lg px-2.5 py-1.5 border-l-2 text-foreground/60 ${borderClass}`}>
+      {parts.map((part, i) => (
+        <span key={i}>
+          {part}
+          {i < parts.length - 1 && <span className={accentClass}>{highlight}</span>}
+        </span>
+      ))}
+    </p>
+  )
+}
 
 // Helper for standard character length (including spaces)
 const getLength = (str: string) => {
@@ -1625,155 +1664,148 @@ export function ContextPanel() {
             </CardContent>
           </Card>
 
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className="size-4 text-destructive" />
-              <h5 className="text-xs font-black uppercase tracking-tighter">감지된 주요 오역 ({mistranslations.length})</h5>
-            </div>
-            
-            <div className="space-y-4">
-              {mistranslations.map((mis, idx) => {
-                const isHovered = hoveredMistranslationId === mis.id
-                const isCritical = mis.severity === "CRITICAL"
-                
-                return (
-                  <div
-                    key={`${mis.id}-${idx}`}
-                    onMouseEnter={() => setHoveredMistranslationId(mis.id)}
-                    onMouseLeave={() => setHoveredMistranslationId(null)}
-                    className={`p-6 rounded-[2rem] border-l-[10px] transition-all duration-300 relative overflow-hidden group ${
-                      isHovered 
-                        ? (isCritical ? "bg-red-500/10 border-red-500 ring-1 ring-red-500/20 shadow-2xl translate-x-1" : "bg-amber-500/10 border-amber-500 ring-1 ring-amber-500/20 shadow-2xl translate-x-1")
-                        : "bg-muted/10 border-transparent hover:bg-muted/20"
-                    }`}
-                  >
-                    <div className="relative z-10 space-y-4">
-                      {/* Header with Badges & Dismiss */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge 
-                            variant="default" 
-                            className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 border-none ${
-                              isCritical ? "bg-red-500 text-white" : "bg-amber-500 text-white"
-                            }`}
-                          >
-                            {mis.severity || (isCritical ? "CRITICAL" : "WARNING")}
-                          </Badge>
-                          {mis.issueType && (
-                            <Badge variant="outline" className="text-[9px] font-black border-foreground/10 bg-background/50 text-foreground/60 uppercase">
-                              #{mis.issueType}
-                            </Badge>
-                          )}
-                          <span className="text-[10px] font-bold text-muted-foreground/30 italic">#{idx + 1}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
+            {/* ── 오역 카드 섹션 ──────────────────────────────────────── */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="size-3.5 text-destructive" />
+                  <h5 className="text-xs font-black uppercase tracking-tighter">
+                    감지된 오역
+                  </h5>
+                </div>
+                <span className={`text-[10px] font-bold tabular-nums px-2 py-0.5 rounded-full ${
+                  mistranslations.length > 0
+                    ? "bg-destructive/10 text-destructive"
+                    : "bg-muted text-muted-foreground"
+                }`}>
+                  {mistranslations.length}건
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {mistranslations.map((mis, idx) => {
+                  const isHovered = hoveredMistranslationId === mis.id
+                  const isCritical = mis.severity !== "WARNING"
+
+                  const cardCls = cn(
+                    "relative rounded-2xl border overflow-hidden transition-colors duration-200",
+                    isHovered && isCritical && "bg-red-500/10 border-red-400/40 shadow-sm",
+                    isHovered && !isCritical && "bg-amber-500/10 border-amber-400/40 shadow-sm",
+                    !isHovered && "bg-muted/20 border-border/40 hover:bg-muted/30"
+                  )
+                  const barCls = cn(
+                    "absolute inset-y-0 left-0 w-[3px] rounded-l-2xl transition-colors duration-200",
+                    isCritical ? "bg-red-500" : "bg-amber-500"
+                  )
+                  const badgeCls = cn(
+                    "text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md",
+                    isCritical ? "bg-red-500/15 text-red-600 dark:text-red-400" : "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                  )
+                  const errLabelCls = isCritical ? "text-red-500/50" : "text-amber-500/50"
+                  const errTextCls = isCritical ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"
+                  const applyBtnCls = cn(
+                    "h-8 px-3 gap-1.5 rounded-lg text-[11px] font-bold shrink-0",
+                    isCritical ? "bg-red-600 hover:bg-red-700 text-white shadow-sm" : "bg-amber-500 hover:bg-amber-600 text-white shadow-sm"
+                  )
+
+                  return (
+                    <motion.div
+                      key={`${mis.id}-${idx}`}
+                      layout
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.97 }}
+                      transition={{ duration: 0.18, delay: idx * 0.04 }}
+                      onMouseEnter={() => setHoveredMistranslationId(mis.id)}
+                      onMouseLeave={() => setHoveredMistranslationId(null)}
+                      className={cardCls}
+                    >
+                      {/* 좌측 컬러 바 */}
+                      <div className={barCls} />
+
+                      <div className="pl-4 pr-3 py-3 space-y-2.5">
+                        {/* 헤더: issueType 뱃지 + 번호 + dismiss */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className={badgeCls}>
+                              {mis.issueType?.replaceAll("_", " ") ?? "CRITICAL"}
+                            </span>
+                            <span className="text-[9px] text-muted-foreground/30 font-bold">#{idx + 1}</span>
+                          </div>
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="size-7 p-0 rounded-full hover:bg-destructive/10 hover:text-destructive group/dismiss"
+                            className="size-6 p-0 rounded-full opacity-40 hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-opacity duration-150"
                             onClick={(e) => {
-                              e.stopPropagation();
-                              dismissMistranslation(mis.id);
+                              e.stopPropagation()
+                              dismissMistranslation(mis.id)
                             }}
                           >
-                            <X className="size-3.5 opacity-40 group-hover/dismiss:opacity-100 transition-opacity" />
+                            <X className="size-3" />
                           </Button>
                         </div>
-                      </div>
 
-                      {/* Comparison Box (Diff Style) */}
-                      <div className="grid grid-cols-[1fr_24px_1fr] items-center gap-3 bg-background/80 p-3 rounded-2xl border border-border/50 shadow-sm transition-all group-hover:bg-background">
-                        <div className="space-y-1">
-                          <p className="text-[9px] font-black uppercase tracking-tighter text-muted-foreground/40">원본 초안</p>
-                          <p className="text-sm font-bold text-foreground/70 truncate" title={mis.original}>
-                            {mis.original}
-                          </p>
+                        {/* 핵심 diff: original → translated */}
+                        <div className="flex items-center gap-2 bg-background/70 rounded-xl px-3 py-2 border border-border/30">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[9px] font-bold uppercase tracking-tighter text-muted-foreground/40 mb-0.5">원본</p>
+                            <p className="text-sm font-black text-foreground/80 truncate" title={mis.original}>
+                              {mis.original}
+                            </p>
+                          </div>
+                          <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30" />
+                          <div className="flex-1 min-w-0">
+                            <p className={cn("text-[9px] font-bold uppercase tracking-tighter mb-0.5", errLabelCls)}>오역</p>
+                            <p className={cn("text-sm font-black truncate", errTextCls)} title={mis.translated}>
+                              {mis.translated}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex justify-center translate-y-2">
-                          <ArrowRight className="size-3.5 text-muted-foreground/30" />
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-[9px] font-black uppercase tracking-tighter text-primary/40">세탁본 오역</p>
-                          <p className="text-sm font-bold text-destructive/80 truncate" title={mis.translated}>
-                            {mis.translated}
-                          </p>
-                        </div>
-                      </div>
 
-                      {/* Reason / Rationale */}
-                      {mis.reason && (
-                        <div className="flex gap-2.5">
-                          <MessageSquare className={`size-4 shrink-0 mt-0.5 ${isCritical ? "text-red-500/60" : "text-amber-500/60"}`} />
-                          <p className="text-[13px] leading-relaxed font-medium text-foreground/80 break-words italic">
+                        {/* 이유 */}
+                        {mis.reason && (
+                          <p className="text-[11px] leading-relaxed text-muted-foreground/70 italic pl-0.5">
                             {mis.reason}
                           </p>
-                        </div>
-                      )}
+                        )}
 
-                      {/* AI Suggested Sentence Section */}
-                      {mis.suggestedSentence && (
-                        <div className="bg-primary/5 rounded-2xl border border-primary/10 overflow-hidden">
-                          <div className="px-4 py-2 bg-primary/10 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Sparkles className="size-3 text-primary" />
-                              <span className="text-[10px] font-black uppercase tracking-tighter text-primary">AI 제안 문장</span>
-                            </div>
-                          </div>
-                          <div className="p-4 space-y-3">
-                            <p className="text-[13px] leading-relaxed font-bold text-primary/90">
-                              "{mis.suggestedSentence}"
-                            </p>
-                            <Button 
-                              size="sm"
-                              className="w-full h-8 gap-2 rounded-xl bg-primary text-primary-foreground font-black text-[11px] shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                applySuggestion(mis.id, true); // true: replace full sentence
-                              }}
-                            >
-                              <CheckCircle2 className="size-3.5" />
-                              이 문장으로 교체하기
-                            </Button>
-                          </div>
-                        </div>
-                      )}
+                        {/* 세탁본 문장 컨텍스트 (오역 단어 인라인 강조) */}
+                        {mis.translatedSentence && (
+                          <SentenceContext
+                            sentence={mis.translatedSentence}
+                            highlight={mis.translated}
+                            isCritical={isCritical}
+                          />
+                        )}
 
-                      {/* Manual Edit / Word Replacement */}
-                      <div className="space-y-2.5">
-                        <div className="flex items-center gap-2 px-1">
-                          <PenLine className="size-3.5 text-muted-foreground/60" />
-                          <span className="text-[10px] font-black uppercase tracking-tighter text-muted-foreground/60">단어만 제안 또는 직접 수정</span>
-                        </div>
-                        <div className="flex gap-2">
+                        {/* 교정 입력 */}
+                        <div className="flex gap-1.5">
                           <Input
                             value={mis.suggestion}
                             onChange={(e) => updateMistranslationSuggestion(mis.id, e.target.value)}
                             onClick={(e) => e.stopPropagation()}
                             onMouseEnter={(e) => e.stopPropagation()}
-                            className="flex-1 h-9 bg-background/50 border-border/50 rounded-xl text-sm font-semibold focus-visible:ring-primary/20 placeholder:italic placeholder:text-muted-foreground/30"
-                            placeholder="수정할 단어를 입력하세요"
+                            className="flex-1 h-8 bg-background/60 border-border/40 rounded-lg text-sm font-semibold focus-visible:ring-1 focus-visible:ring-primary/30 placeholder:text-muted-foreground/25 placeholder:italic"
+                            placeholder={mis.suggestion ? `권장: ${mis.suggestion}` : "교정 단어 입력"}
                           />
-                          <Button 
+                          <Button
                             size="sm"
-                            variant="secondary"
-                            className="h-9 px-4 gap-2 rounded-xl border border-primary/20 bg-background text-primary hover:bg-primary/5 text-[11px] font-bold"
+                            className={applyBtnCls}
                             onClick={(e) => {
-                              e.stopPropagation();
-                              applySuggestion(mis.id, false); // false: apply word only
+                              e.stopPropagation()
+                              applySuggestion(mis.id, false)
                             }}
                           >
-                            <Check className="size-3.5" />
-                            단어 적용
+                            <Check className="size-3" />
+                            적용
                           </Button>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                )
-              })}
+                    </motion.div>
+                  )
+                })}
+              </div>
             </div>
-
-          </div>
         </div>
       )}
         </div>

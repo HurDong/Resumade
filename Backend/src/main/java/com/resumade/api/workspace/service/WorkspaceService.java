@@ -10,7 +10,9 @@ import com.resumade.api.workspace.domain.SnapshotType;
 import com.resumade.api.workspace.domain.WorkspaceQuestion;
 import com.resumade.api.workspace.domain.WorkspaceQuestionRepository;
 import com.resumade.api.workspace.dto.DraftAnalysisResult;
+import com.resumade.api.workspace.dto.SentencePairAnalysisResult;
 import com.resumade.api.workspace.dto.TitleSuggestionResponse;
+import com.resumade.api.workspace.util.SentencePairExtractor;
 import com.resumade.api.workspace.prompt.DraftParams;
 import com.resumade.api.workspace.prompt.PromptFactory;
 import com.resumade.api.workspace.prompt.QuestionCategory;
@@ -30,11 +32,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -452,15 +457,7 @@ public class WorkspaceService {
 
             paceProcessing();
             sendProgress(emitter, STAGE_PATCH, "세탁본 문장에서 의미 손실과 어색한 표현을 휴먼 패치로 분석 중입니다. 🔎");
-            int maxLengthPatch = initialQuestion.getMaxLength();
-            int findingTarget = calculateFindingTarget(washedKr);
-            DraftAnalysisResult analysis = analyzePatchSafely(
-                    emitter,
-                    refinedDraft,
-                    washedKr,
-                    maxLengthPatch,
-                    findingTarget,
-                    context);
+            DraftAnalysisResult analysis = analyzeBySentencePairsWithFallback(emitter, refinedDraft, washedKr);
 
             paceProcessing();
             normalizeAnalysis(analysis, refinedDraft, washedKr);
@@ -666,14 +663,7 @@ public class WorkspaceService {
             paceProcessing();
             sendProgress(emitter, STAGE_PATCH, "더 사람 냄새 나는 문장을 위해 휴먼 패치 분석을 진행하고 있어요. 🔎");
             int maxLengthFinal = initialQuestion.getMaxLength();
-            int findingTarget = calculateFindingTarget(washedKr);
-            DraftAnalysisResult analysis = analyzePatchSafely(
-                    emitter,
-                    draft,
-                    washedKr,
-                    maxLengthFinal,
-                    findingTarget,
-                    context);
+            DraftAnalysisResult analysis = analyzeBySentencePairsWithFallback(emitter, draft, washedKr);
 
             paceProcessing();
             normalizeAnalysis(analysis, draft, washedKr);
@@ -903,14 +893,7 @@ public class WorkspaceService {
             String position,
             String companyContext,
             String others) throws Exception {
-        int findingTarget = calculateFindingTarget(washedKr);
-        DraftAnalysisResult analysis = analyzePatchSafely(
-                emitter,
-                originalDraft,
-                washedKr,
-                maxLength,
-                findingTarget,
-                context);
+        DraftAnalysisResult analysis = analyzeBySentencePairsWithFallback(emitter, originalDraft, washedKr);
 
         paceProcessing();
         normalizeAnalysis(analysis, originalDraft, washedKr);
@@ -3226,6 +3209,105 @@ public class WorkspaceService {
         return normalized.substring(0, endIndex);
     }
 
+    // ── 문장 단위 병렬 Human Patch 분석 ─────────────────────────────────────────
+
+    /**
+     * 원본 초안/세탁본을 문장 단위로 쪼개 LLM에 병렬 전송하고 결과를 합산.
+     * 전체 실패 시 빈 결과 반환(fallback).
+     */
+    private DraftAnalysisResult analyzeBySentencePairsWithFallback(SseEmitter emitter,
+                                                                    String originalDraft,
+                                                                    String washedKr) {
+        try {
+            return analyzeBySentencePairs(originalDraft, washedKr);
+        } catch (Exception e) {
+            log.warn("[HumanPatch] Sentence-pair analysis failed globally: {}", e.getMessage(), e);
+            sendProgress(emitter, STAGE_PATCH, "휴먼 패치 분석 응답이 불안정해 세탁본만 반환합니다. ⚠️");
+            return DraftAnalysisResult.builder()
+                    .mistranslations(new ArrayList<>())
+                    .humanPatchedText(washedKr)
+                    .aiReviewReport(null)
+                    .build();
+        }
+    }
+
+    private DraftAnalysisResult analyzeBySentencePairs(String originalDraft, String washedKr) {
+        List<SentencePairExtractor.SentencePair> pairs = SentencePairExtractor.extract(originalDraft, washedKr);
+
+        if (pairs.isEmpty()) {
+            log.warn("[HumanPatch] No sentence pairs extracted — returning empty analysis");
+            return DraftAnalysisResult.builder()
+                    .mistranslations(new ArrayList<>())
+                    .humanPatchedText(washedKr)
+                    .aiReviewReport(null)
+                    .build();
+        }
+
+        log.info("[HumanPatch] Launching {} parallel sentence-pair analyses", pairs.size());
+
+        List<CompletableFuture<List<DraftAnalysisResult.Mistranslation>>> futures = pairs.stream()
+                .map(pair -> CompletableFuture.<List<DraftAnalysisResult.Mistranslation>>supplyAsync(() -> {
+                    try {
+                        SentencePairAnalysisResult result = workspacePatchAiService.analyzeSentencePair(
+                                sanitizeOpenAiPromptText(pair.original()),
+                                sanitizeOpenAiPromptText(pair.washed())
+                        );
+                        if (result == null || result.getMistranslations() == null) return List.of();
+
+                        return result.getMistranslations().stream()
+                                .filter(m -> m.getTranslated() != null && !m.getTranslated().isBlank())
+                                .map(m -> DraftAnalysisResult.Mistranslation.builder()
+                                        .original(safeTrim(m.getOriginal()))
+                                        .translated(safeTrim(m.getTranslated()))
+                                        .issueType(m.getIssueType())
+                                        .reason(safeTrim(m.getReason()))
+                                        .suggestion(normalizeTitleSpacing(safeTrim(m.getSuggestion())))
+                                        .originalSentence(pair.original())
+                                        .translatedSentence(pair.washed())
+                                        .severity(resolveSeverity(m.getIssueType()))
+                                        .build())
+                                .collect(Collectors.toList());
+                    } catch (Exception e) {
+                        log.warn("[HumanPatch] Sentence pair analysis failed — pair skipped: {}", e.getMessage());
+                        return List.<DraftAnalysisResult.Mistranslation>of();
+                    }
+                }))
+                .collect(Collectors.toList());
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        AtomicInteger idCounter = new AtomicInteger(1);
+        List<DraftAnalysisResult.Mistranslation> allMistranslations = futures.stream()
+                .flatMap(f -> {
+                    try {
+                        return f.join().stream();
+                    } catch (Exception e) {
+                        return Stream.empty();
+                    }
+                })
+                .peek(mis -> mis.setId("mis-" + idCounter.getAndIncrement()))
+                .collect(Collectors.toList());
+
+        log.info("[HumanPatch] Collected {} mistranslations from {} sentence pairs",
+                allMistranslations.size(), pairs.size());
+
+        return DraftAnalysisResult.builder()
+                .mistranslations(allMistranslations)
+                .humanPatchedText(washedKr)
+                .aiReviewReport(null)
+                .build();
+    }
+
+    private String resolveSeverity(String issueType) {
+        if (issueType == null) return "CRITICAL";
+        return switch (issueType) {
+            case "TERM_WEAKENED", "PROPER_NOUN_CHANGED", "METRIC_DROPPED" -> "CRITICAL";
+            default -> "WARNING";
+        };
+    }
+
+    // ── (legacy) 전문 분석 — 현재 미사용, 추후 필요 시 참고용 보존 ──────────────
+
     private DraftAnalysisResult analyzePatchSafely(
             SseEmitter emitter,
             String originalDraft,
@@ -3368,106 +3450,13 @@ public class WorkspaceService {
             if (translated.isEmpty()) {
                 continue;
             }
+            mis.setTranslated(translated);
             mis.setSuggestion(normalizeTitleSpacing(safeTrim(mis.getSuggestion())));
             mis.setReason(safeTrim(mis.getReason()));
-
-            // ── washed 측: LLM 인덱스 검증 → fallback regex ──
-            if (washedKr != null && !washedKr.isBlank()) {
-                try {
-                    if (validateAndApplyIndex(mis, translated, washedKr, false)) {
-                        // LLM 인덱스 유효 → 실제 텍스트로 translated 교정
-                        mis.setTranslated(washedKr.substring(mis.getStartIndex(), mis.getEndIndex()));
-                    } else {
-                        // fallback: regex로 구문 탐색
-                        if (!tryMatchPhrase(mis, translated, washedKr, false)) {
-                            log.warn("[HumanPatch] washed: phrase not found → '{}'", translated);
-                            mis.setMatchConfidence(0.0);
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn("[HumanPatch] washed index error for '{}'", translated, e);
-                    mis.setMatchConfidence(0.0);
-                }
-            }
-
-            // ── original 측: LLM 인덱스 검증 (하이라이트 힌트용, 실패해도 무방) ──
-            if (originalDraft != null && !originalDraft.isBlank()) {
-                String original = safeTrim(mis.getOriginal()).replaceAll("\\s+", " ");
-                if (!original.isEmpty()) {
-                    try {
-                        if (!validateAndApplyIndex(mis, original, originalDraft, true)) {
-                            tryMatchPhrase(mis, original, originalDraft, true);
-                        }
-                    } catch (Exception e) {
-                        log.debug("[HumanPatch] original index error for '{}'", original, e);
-                    }
-                }
-            }
-
             normalized.add(mis);
         }
 
         analysis.setMistranslations(normalized);
-    }
-
-    /**
-     * LLM이 반환한 인덱스 범위를 텍스트에서 검증하고, 유효하면 mis에 적용 후 true 반환.
-     * isOriginal=true 이면 originalStartIndex/originalEndIndex 사용, false 이면 startIndex/endIndex 사용.
-     */
-    private boolean validateAndApplyIndex(
-            DraftAnalysisResult.Mistranslation mis,
-            String expectedPhrase,
-            String text,
-            boolean isOriginal) {
-        Integer start = isOriginal ? mis.getOriginalStartIndex() : mis.getStartIndex();
-        Integer end   = isOriginal ? mis.getOriginalEndIndex()   : mis.getEndIndex();
-
-        if (start == null || end == null || start < 0 || end > text.length() || start >= end) {
-            return false;
-        }
-
-        String slice = text.substring(start, end);
-        // 슬라이스가 expected phrase와 일치하거나, expected phrase를 포함/포함됨 → 신뢰
-        boolean reasonable = slice.equals(expectedPhrase)
-                || slice.contains(expectedPhrase)
-                || expectedPhrase.contains(slice);
-        if (!reasonable) {
-            log.warn("[HumanPatch] {} index mismatch: expected='{}' got='{}' [{},{}]",
-                    isOriginal ? "original" : "washed", expectedPhrase, slice, start, end);
-            return false;
-        }
-
-        if (!isOriginal) {
-            mis.setMatchConfidence(1.0);
-        }
-        return true;
-    }
-
-    /**
-     * phrase를 text에서 공백 유연 regex로 찾아 mis의 인덱스를 설정하는 fallback.
-     * isOriginal=true 면 originalStartIndex/originalEndIndex 세팅, false 면 startIndex/endIndex + matchConfidence.
-     */
-    private boolean tryMatchPhrase(DraftAnalysisResult.Mistranslation mis, String phrase, String text, boolean isOriginal) {
-        String[] tokens = phrase.split("\\s+");
-        StringBuilder patternSb = new StringBuilder();
-        for (String token : tokens) {
-            if (patternSb.length() > 0) patternSb.append("\\s+");
-            patternSb.append(Pattern.quote(token));
-        }
-        Matcher m = Pattern.compile(patternSb.toString()).matcher(text);
-        if (m.find()) {
-            if (isOriginal) {
-                mis.setOriginalStartIndex(m.start());
-                mis.setOriginalEndIndex(m.end());
-            } else {
-                mis.setStartIndex(m.start());
-                mis.setEndIndex(m.end());
-                mis.setMatchConfidence(1.0);
-                mis.setTranslated(text.substring(m.start(), m.end()));
-            }
-            return true;
-        }
-        return false;
     }
 
     private int calculateFindingTarget(String washedKr) {

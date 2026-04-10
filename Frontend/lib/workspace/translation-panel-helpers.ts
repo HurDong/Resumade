@@ -24,46 +24,26 @@ export function getTranslationProcessingMeta(
 }
 
 /**
- * mistranslations 배열의 original/translated 필드를 텍스트에서 직접 검색하여 하이라이팅.
- * AI의 taggedText에 의존하지 않는 안정적인 방식.
+ * 세탁본(washedKr) 텍스트에서 mistranslations의 translated 단어를 찾아 <mark> 하이라이팅.
+ * 같은 단어가 여러 번 등장하면 first-unused-occurrence 선택.
  */
 export function highlightByPhraseMatching(
   text: string,
   mistranslations: Mistranslation[],
   hoveredMistranslationId: string | null,
-  isOriginal: boolean
 ): string {
   if (!text || !mistranslations.length) return escapeHtml(text || "")
 
   const hasAnyHover = hoveredMistranslationId !== null
 
-  // 긴 문구부터 먼저 교체 (겹침 방지)
-  const sorted = [...mistranslations].sort((a, b) => {
-    const aPhrase = isOriginal ? (a.original || "") : (a.translated || "")
-    const bPhrase = isOriginal ? (b.original || "") : (b.translated || "")
-    return bPhrase.length - aPhrase.length
-  })
-
-  // 매칭 위치 수집 (겹침 방지용)
   type MatchInfo = { start: number; end: number; mis: Mistranslation }
   const matches: MatchInfo[] = []
 
-  for (const mis of sorted) {
-    const phrase = isOriginal ? (mis.original || "") : (mis.translated || "")
+  for (const mis of mistranslations) {
+    const phrase = mis.translated || ""
     if (!phrase.trim()) continue
 
-    // 원본 초안 측: 25글자 초과 phrase는 하이라이트 스킵.
-    // LLM이 문장 전체를 original로 반환하면 해당 범위가 짧은 term 하이라이트를 overlap으로 막기 때문.
-    if (isOriginal && phrase.length > 25) continue
-
-    // 세탁본 측: 백엔드가 문구를 찾지 못했다고 명시한 경우 하이라이팅 스킵
-    if (!isOriginal && mis.matchConfidence === 0) continue
-
-    const match = findNonOverlappingMatch(
-      text, phrase, matches,
-      isOriginal ? mis.originalStartIndex : mis.startIndex,
-      isOriginal ? mis.originalEndIndex : mis.endIndex
-    )
+    const match = findPhraseMatch(text, phrase, matches)
     if (match) {
       matches.push({ start: match.start, end: match.end, mis })
     }
@@ -71,7 +51,6 @@ export function highlightByPhraseMatching(
 
   if (matches.length === 0) return escapeHtml(text)
 
-  // 위치 순으로 정렬 후 HTML 조립
   matches.sort((a, b) => a.start - b.start)
 
   let result = ""
@@ -83,21 +62,19 @@ export function highlightByPhraseMatching(
     const isHovered = hoveredMistranslationId === m.mis.id
     const isCritical = m.mis.severity === "CRITICAL"
 
-    const severityClass = isOriginal
-      ? "text-primary ring-1 ring-primary/50"
-      : isCritical
-        ? "bg-red-500/15 text-red-600 dark:text-red-400 ring-1 ring-red-500/40"
-        : "bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/40"
+    const baseClass = isCritical
+      ? "bg-red-500/15 text-red-600 dark:text-red-400 ring-1 ring-red-500/40"
+      : "bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/40"
 
     const hoverClass = isHovered
-      ? "ring-2 ring-primary scale-105 shadow-lg z-[50] opacity-100 " + (isOriginal ? "bg-primary/30" : (isCritical ? "bg-red-500/30" : "bg-amber-500/30"))
+      ? `ring-2 scale-105 shadow-md z-[50] opacity-100 ${isCritical ? "ring-red-500 bg-red-500/25" : "ring-amber-500 bg-amber-500/25"}`
       : hasAnyHover
-        ? "opacity-30 grayscale scale-95"
+        ? "opacity-25 saturate-0 scale-95"
         : ""
 
-    const title = buildHighlightTitle(m.mis, isOriginal)
+    const title = buildHighlightTitle(m.mis)
 
-    result += `<mark data-mis-id="${escapeAttr(m.mis.id)}" title="${escapeAttr(title)}" class="${severityClass} ${hoverClass} px-0.5 rounded cursor-help transition-all duration-300 inline-block origin-center font-semibold">${escapeHtml(text.slice(m.start, m.end))}</mark>`
+    result += `<mark data-mis-id="${escapeAttr(m.mis.id)}" title="${escapeAttr(title)}" class="${baseClass} ${hoverClass} px-0.5 rounded cursor-help transition-colors transition-transform transition-opacity duration-200 inline-block origin-center font-semibold">${escapeHtml(text.slice(m.start, m.end))}</mark>`
     cursor = m.end
   }
 
@@ -106,57 +83,26 @@ export function highlightByPhraseMatching(
 }
 
 /**
- * 공백 정규화(연속 공백→단일 공백) 후 phrase를 text에서 검색해 겹치지 않는 첫 위치를 반환.
- * hintStart/hintEnd가 있으면 백엔드가 계산한 오프셋을 우선 시도.
- * 실제 하이라이트 범위는 원본 text 기준으로 계산한다.
+ * phrase를 text에서 찾아 겹치지 않는 첫 번째 occurrence를 반환.
+ * 같은 단어가 여러 번 등장할 때 이미 사용된 위치를 건너뛰고 다음 위치를 반환.
  */
-function findNonOverlappingMatch(
+function findPhraseMatch(
   text: string,
   phrase: string,
-  existing: { start: number; end: number }[],
-  hintStart?: number | null,
-  hintEnd?: number | null
+  existing: { start: number; end: number }[]
 ): { start: number; end: number } | null {
-  // 2단계: 백엔드 오프셋 힌트가 있으면 먼저 시도 (원본 텍스트 기준 위치)
-  if (hintStart != null && hintEnd != null && hintEnd <= text.length && hintStart >= 0) {
-    const sliceNorm = text.slice(hintStart, hintEnd).replace(/\s+/g, ' ').trim()
-    const phraseNorm = phrase.replace(/\s+/g, ' ').trim()
-    if (sliceNorm === phraseNorm) {
-      const overlaps = existing.some(e => hintStart < e.end && hintEnd > e.start)
-      if (!overlaps) return { start: hintStart, end: hintEnd }
-    }
-  }
-
-  // 1단계: 공백 정규화 후 indexOf로 검색, 원본 인덱스로 역매핑
-  const normalizedText = text.replace(/\s+/g, ' ')
-  const normalizedPhrase = phrase.replace(/\s+/g, ' ').trim()
-  if (!normalizedPhrase) return null
-
-  // normToOrig[i] = normalized text의 i번째 문자가 original text의 몇 번째 문자인지
-  const normToOrig: number[] = []
-  let lastWasSpace = false
-  for (let i = 0; i < text.length; i++) {
-    const isSpace = /\s/.test(text[i])
-    if (isSpace && lastWasSpace) continue
-    normToOrig.push(i)
-    lastWasSpace = isSpace
-  }
+  if (!phrase) return null
 
   let searchFrom = 0
-  while (searchFrom < normalizedText.length) {
-    const normIdx = normalizedText.indexOf(normalizedPhrase, searchFrom)
-    if (normIdx === -1) return null
+  while (searchFrom <= text.length - phrase.length) {
+    const idx = text.indexOf(phrase, searchFrom)
+    if (idx === -1) return null
 
-    const origStart = normToOrig[normIdx] ?? -1
-    if (origStart === -1) return null
+    const end = idx + phrase.length
+    const overlaps = existing.some(e => idx < e.end && end > e.start)
+    if (!overlaps) return { start: idx, end }
 
-    const normEnd = normIdx + normalizedPhrase.length
-    const origEnd = normEnd < normToOrig.length ? normToOrig[normEnd] : text.length
-
-    const overlaps = existing.some(e => origStart < e.end && origEnd > e.start)
-    if (!overlaps) return { start: origStart, end: origEnd }
-
-    searchFrom = normIdx + 1
+    searchFrom = idx + 1
   }
   return null
 }
@@ -222,11 +168,7 @@ function getPipelineLabel(pipelineStage: PipelineStage) {
   return "파이프라인 실행 중";
 }
 
-function buildHighlightTitle(mistranslation: Mistranslation, isOriginal: boolean) {
-  if (isOriginal) {
-    return "";
-  }
-
+function buildHighlightTitle(mistranslation: Mistranslation) {
   const prefix = mistranslation.severity === "CRITICAL" ? "필수 교정" : "검토 권장";
   return `${prefix}${mistranslation.reason ? `: ${mistranslation.reason}` : ""}`;
 }

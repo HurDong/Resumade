@@ -1,11 +1,43 @@
 package com.resumade.api.workspace.service;
 
 import com.resumade.api.workspace.dto.DraftAnalysisResult;
+import com.resumade.api.workspace.dto.SentencePairAnalysisResult;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
 
 public interface WorkspacePatchAiService {
+
+    // ── 문장 단위 단일 용어 오역 탐지 ──────────────────────────────────────────
+    @SystemMessage({
+            "You are a precise Korean technical translation checker.",
+            "You receive ONE sentence pair: an original Korean AI draft sentence and its translation-washed Korean counterpart.",
+            "Your ONLY job is to find single-term mistranslations of these types:",
+            "  1. TERM_WEAKENED   — IT/developer technical terms replaced by generic words.",
+            "     Examples: '트랜잭션'→'거래', 'Redis'→'캐시 서버', 'API'→'인터페이스'",
+            "  2. PROPER_NOUN_CHANGED — Company names, project names, or product names altered.",
+            "     Examples: 'KB라이프'→'KB생명', 'SK하이닉스'→'SK', '리주마드'→'리주매드'",
+            "  3. METRIC_DROPPED  — Specific numbers or metrics dropped or generalized.",
+            "     Examples: '99.9% 가용성'→'높은 가용성', '3초'→'빠른 속도'",
+            "Do NOT flag tone changes, style issues, passive voice, or multi-word rephrasing.",
+            "Do NOT flag if the term difference is cosmetic (e.g., spacing, honorifics).",
+            "If there are NO issues of the above types, return {\"mistranslations\": []}.",
+            "Each item must have: original (exact verbatim term from original sentence), translated (exact verbatim term from washed sentence), issueType, reason (1 sentence), suggestion (corrected single term).",
+            "Return ONLY valid JSON. No markdown, no explanation outside JSON."
+    })
+    @UserMessage("""
+            Original sentence: {{original}}
+            Washed sentence: {{washed}}
+
+            Return JSON only:
+            {"mistranslations": [{"original": "...", "translated": "...", "issueType": "...", "reason": "...", "suggestion": "..."}]}
+            """)
+    SentencePairAnalysisResult analyzeSentencePair(
+            @V("original") String original,
+            @V("washed") String washed
+    );
+
+
 
     @SystemMessage({
             "You are a specialized Technical Translation Reviewer for IT/Developer job descriptions and self-introductions in Korean.",
@@ -27,7 +59,7 @@ public interface WorkspacePatchAiService {
             "- Translation tone awkwardness or unnatural literal syntax.",
             "- Important descriptive keywords or emphasis that were dropped from the original draft.",
             "- Mechanical '다나까' phrasing (did this, did that) that lacks a natural narrative flow.",
-            "Each mistranslation item must include: id, issueType, original, originalSentence, translated, translatedSentence, severity, reason, suggestion, and suggestedSentence.",
+            "Each mistranslation item must include: id, issueType, original, originalSentence, translated, translatedSentence, severity, reason, suggestion, suggestedSentence.",
             "Allowed issueType values: TERM_WEAKENED, FRAMEWORK_MISTRANSLATED, PROPER_NOUN_CHANGED, METRIC_DROPPED, CONTRIBUTION_WEAKENED, AWKWARD_LITERAL, KEYWORD_DROPPED, MECHANICAL_TONE.",
             "CRITICAL FIELD RULE for 'translated': This field MUST be the MINIMUM verbatim substring found in the Washed Korean draft — prefer a single term or at most 3–5 words. NEVER put an entire sentence or clause in 'translated'. The 'translatedSentence' field is for the full sentence context.",
             "CRITICAL FIELD RULE for 'original': Similarly, use the minimal problematic term from the Original AI draft, not a full sentence.",
@@ -62,13 +94,6 @@ public interface WorkspacePatchAiService {
             - provide a precise noun or phrase suggestion, and a fully rewritten sentence as suggestedSentence.
             - Set 'translated' to the EXACT verbatim substring from the Washed Korean draft (minimal phrase, 1-5 words).
             - Set 'original' to the EXACT verbatim substring from the Original AI draft.
-            - Set 'startIndex' to the 0-based character index where 'translated' begins in the Washed Korean draft (inclusive).
-            - Set 'endIndex' to the 0-based character index where 'translated' ends in the Washed Korean draft (exclusive).
-            - Set 'originalStartIndex' to the 0-based character index where 'original' begins in the Original AI draft (inclusive).
-            - Set 'originalEndIndex' to the 0-based character index where 'original' ends in the Original AI draft (exclusive).
-            - Count every character (Korean, English, space, punctuation) as exactly 1. Use 0-based indexing.
-            - Verify: washedDraft.substring(startIndex, endIndex) must equal 'translated' exactly.
-            - Verify: originalDraft.substring(originalStartIndex, originalEndIndex) must equal 'original' exactly.
 
             Set 'humanPatchedText' to the same Washed Korean draft. Do not apply the fixes into a rewritten final text.
             Return the JSON without markdown fences.

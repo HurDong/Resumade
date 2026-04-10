@@ -27,16 +27,6 @@ public class DraftAnalysisResult {
         private String translatedSentence;
         private String suggestedSentence;
         private String reason;
-        /** originalDraft 내 original 문구의 시작 위치 (LLM 반환, 0-based inclusive) */
-        private Integer originalStartIndex;
-        /** originalDraft 내 original 문구의 종료 위치 (LLM 반환, 0-based exclusive) */
-        private Integer originalEndIndex;
-        /** washedKr 내 translated 문구의 시작 위치 (LLM 반환, 0-based inclusive) */
-        private Integer startIndex;
-        /** washedKr 내 translated 문구의 종료 위치 (LLM 반환, 0-based exclusive) */
-        private Integer endIndex;
-        /** 1.0 = 문구 발견됨(인덱스 검증 통과), 0.0 = 발견 안됨 */
-        private Double matchConfidence;
     }
 
     @Getter

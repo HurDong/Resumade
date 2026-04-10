@@ -22,6 +22,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   highlightByPhraseMatching,
+  escapeHtml,
   getTranslationProcessingMeta,
   sanitizeWashedText,
 } from "@/lib/workspace/translation-panel-helpers"
@@ -162,18 +163,14 @@ export function TranslationPanel() {
     pipelineStage
   )
 
-  const originalContent = highlightByPhraseMatching(
-    draft || "",
-    mistranslations,
-    hoveredMistranslationId,
-    true
-  )
+  // 원문은 plain text — 하이라이팅 없음 (카드에 original 단어가 표시됨)
+  const originalContent = escapeHtml(draft || "")
 
+  // 세탁본만 하이라이팅
   const washedContent = highlightByPhraseMatching(
     normalizedWashedText,
     mistranslations,
     hoveredMistranslationId,
-    false
   )
 
   const displayedWashedText = normalizedWashedText
@@ -295,14 +292,12 @@ export function TranslationPanel() {
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <DraftCard
               title="원본 초안"
-
+              description="AI가 생성한 초안입니다. 좌측 패널에서 오역 단어를 확인하세요."
               icon={<FileText className="size-3.5" />}
               content={originalContent}
               renderHtml={true}
-              className="border-none bg-background/80 shadow-sm"
-              contentClassName={`min-h-[200px] whitespace-pre-wrap text-sm font-medium italic leading-relaxed text-muted-foreground transition-all duration-300 ${
-                hoveredMistranslationId ? "opacity-100" : "opacity-70"
-              }`}
+              className="border-none bg-muted/5 shadow-none"
+              contentClassName="min-h-[200px] whitespace-pre-wrap text-sm font-medium italic leading-relaxed text-muted-foreground/70"
               overlay={
                 processingTarget === "draft"
                   ? {
@@ -317,8 +312,8 @@ export function TranslationPanel() {
               title="세탁본"
               description={
                 hasHighlights
-                  ? "강조 표시된 부분은 의미 손실이 의심되어 검토가 필요한 영역입니다."
-                  : "선택된 하이라이트가 없으면 전체 세탁본이 표시됩니다."
+                  ? `${mistranslations.length}개 오역 감지 — 강조된 단어를 좌측 패널에서 교정하세요.`
+                  : "번역 세탁 완료. 오역이 감지되지 않았습니다."
               }
               icon={<CheckCircle className="size-3.5 text-primary" />}
               content={washedContent}
@@ -326,11 +321,7 @@ export function TranslationPanel() {
               onCopy={handleWashedDraftCopy}
               className="border-primary/20 bg-background shadow-lg ring-1 ring-primary/5"
               titleClassName="text-primary"
-              contentClassName={
-                hasHighlights
-                  ? "min-h-[200px] whitespace-pre-wrap text-sm font-medium leading-relaxed text-foreground"
-                  : "min-h-[200px] whitespace-pre-wrap text-[15px] font-medium leading-8 text-foreground"
-              }
+              contentClassName="min-h-[200px] whitespace-pre-wrap text-[15px] font-medium leading-8 text-foreground"
               overlay={
                 processingTarget === "washed"
                   ? {
