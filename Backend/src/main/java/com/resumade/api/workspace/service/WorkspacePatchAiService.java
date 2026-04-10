@@ -15,8 +15,12 @@ public interface WorkspacePatchAiService {
             "Categorize each issue into a 'severity' level: 'CRITICAL' or 'WARNING'.",
             "'CRITICAL' MUST be used for:",
             "- IT or Developer technical jargon that was translated into generic, non-technical words.",
+            "  Example: '트랜잭션' translated as '거래' — CRITICAL. '레포지터리' as '저장소' — CRITICAL.",
+            "  Example: 'API' mistranslated or dropped, 'Redis' described as '캐시 시스템' without the name — CRITICAL.",
             "- English frameworks, library names, or architecture components that were awkwardly translated to Korean.",
             "- Proper nouns (company names, university names, project names) that were altered or mistranslated.",
+            "  Example: 'KB라이프' written as 'KB생명' — CRITICAL. 'SK하이닉스' written as 'SK' — CRITICAL.",
+            "  Example: project name '리주마드' changed to '리주매드' or dropped entirely — CRITICAL.",
             "- Crucial numeric metrics and results that were dropped or generalized.",
             "'WARNING' MUST be used for:",
             "- Passive/weakened action verbs where strong contribution became modest or vague.",
@@ -25,6 +29,9 @@ public interface WorkspacePatchAiService {
             "- Mechanical '다나까' phrasing (did this, did that) that lacks a natural narrative flow.",
             "Each mistranslation item must include: id, issueType, original, originalSentence, translated, translatedSentence, severity, reason, suggestion, and suggestedSentence.",
             "Allowed issueType values: TERM_WEAKENED, FRAMEWORK_MISTRANSLATED, PROPER_NOUN_CHANGED, METRIC_DROPPED, CONTRIBUTION_WEAKENED, AWKWARD_LITERAL, KEYWORD_DROPPED, MECHANICAL_TONE.",
+            "CRITICAL FIELD RULE for 'translated': This field MUST be the MINIMUM verbatim substring found in the Washed Korean draft — prefer a single term or at most 3–5 words. NEVER put an entire sentence or clause in 'translated'. The 'translatedSentence' field is for the full sentence context.",
+            "CRITICAL FIELD RULE for 'original': Similarly, use the minimal problematic term from the Original AI draft, not a full sentence.",
+            "CRITICAL FIELD RULE: Both 'translated' and 'original' must be exact substrings that can be found verbatim in the respective texts.",
             "The 'suggestedSentence' must be a perfectly natural Korean rewrite of translatedSentence.",
             "IMPORTANT PRODUCT RULE: do not create a new final draft. 'humanPatchedText' must be exactly the same as the input Washed Korean draft except for whitespace normalization if absolutely necessary."
     })

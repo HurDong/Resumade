@@ -49,6 +49,7 @@ public class CollaborationPromptStrategy implements PromptStrategy {
                 9. No parenthetical labels. No bullet lists unless requested.
                 10. Write in natural Korean narrative voice.
                 11. Keep the voice believable for a junior applicant: emphasize coordination, documentation, interface alignment, and feedback acceptance over inflated leadership claims.
+                12. CRITICAL — Solo project integrity: If the provided experience data indicates a solo/individual project (e.g., Role mentions '1인', '단독', '혼자', or there is no mention of team members, teammates, or collaborators), do NOT fabricate team collaboration or invent imaginary teammates. Instead, pivot to a REAL adjacent collaboration story: interactions with a client, mentor, external API provider, academic advisor, or cross-domain stakeholder. If no such adjacent story exists, acknowledge the solo nature honestly and describe the self-driven decision-making, self-review, and delivery process as a form of self-managed collaboration discipline.
                 </Strict_Rules>
 
                 <Output_Format>

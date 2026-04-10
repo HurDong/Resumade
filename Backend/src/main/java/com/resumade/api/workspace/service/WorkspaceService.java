@@ -23,6 +23,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -2759,17 +2760,18 @@ public class WorkspaceService {
 
     private Set<Long> extractUsedExperienceIds(WorkspaceQuestion initialQuestion, Long questionId,
             List<Experience> allExperiences) {
+        // 다른 문항들에서 제목이 언급된 경험을 모두(findFirst 아닌 전체) 수집.
+        // 한 문항에 여러 경험이 언급될 수 있어 flatMap으로 처리.
         return initialQuestion.getApplication().getQuestions().stream()
                 .filter(q -> !q.getId().equals(questionId))
-                .map(q -> {
+                .flatMap(q -> {
                     String searchableContent = String.join("\n",
                             q.getContent() == null ? "" : q.getContent(),
                             q.getWashedKr() == null ? "" : q.getWashedKr());
                     return allExperiences.stream()
-                            .filter(exp -> searchableContent.contains(exp.getTitle()))
-                            .map(Experience::getId)
-                            .findFirst()
-                            .orElse(null);
+                            .filter(exp -> exp.getTitle() != null && !exp.getTitle().isBlank()
+                                    && searchableContent.contains(exp.getTitle()))
+                            .map(Experience::getId);
                 })
                 .filter(id -> id != null)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
@@ -3329,21 +3331,28 @@ public class WorkspaceService {
             mistranslation.setSuggestion(normalizeTitleSpacing(safeTrim(mistranslation.getSuggestion())));
             mistranslation.setReason(safeTrim(mistranslation.getReason()));
 
-            // 2단계: washedKr에서 translated 문구의 실제 위치 계산 (공백 유연 매칭)
+            // 2단계: washedKr에서 translated 문구의 실제 위치 계산 (공백 유연 매칭 + fallback)
             if (washedKr != null && !washedKr.isBlank()) {
                 try {
-                    String[] tokens = translated.split("\\s+");
-                    StringBuilder patternSb = new StringBuilder();
-                    for (String token : tokens) {
-                        if (patternSb.length() > 0) patternSb.append("\\s+");
-                        patternSb.append(Pattern.quote(token));
+                    boolean matched = tryMatchPhrase(mistranslation, translated, washedKr);
+                    if (!matched) {
+                        // Fallback 1: 한국어 조사 제거 후 재시도 (은/는/이/가/을/를/의/에/로/으로/와/과/도)
+                        String stripped = translated.replaceAll("[은는이가을를의에와과도]$|로$|으로$", "").trim();
+                        if (!stripped.equals(translated) && !stripped.isBlank()) {
+                            matched = tryMatchPhrase(mistranslation, stripped, washedKr);
+                        }
                     }
-                    Matcher m = Pattern.compile(patternSb.toString()).matcher(washedKr);
-                    if (m.find()) {
-                        mistranslation.setStartIndex(m.start());
-                        mistranslation.setEndIndex(m.end());
-                        mistranslation.setMatchConfidence(1.0);
-                    } else {
+                    if (!matched) {
+                        // Fallback 2: 마지막 단어 제거 후 재시도 (AI가 translated를 너무 넓게 잡은 경우)
+                        String[] parts = translated.split("\\s+");
+                        if (parts.length > 1) {
+                            String withoutLast = String.join(" ", Arrays.copyOf(parts, parts.length - 1)).trim();
+                            if (!withoutLast.isBlank()) {
+                                matched = tryMatchPhrase(mistranslation, withoutLast, washedKr);
+                            }
+                        }
+                    }
+                    if (!matched) {
                         log.warn("[HumanPatch] translated phrase not found in washedKr: '{}'", translated);
                         mistranslation.setMatchConfidence(0.0);
                     }
@@ -3357,6 +3366,29 @@ public class WorkspaceService {
         }
 
         analysis.setMistranslations(normalized);
+    }
+
+    /**
+     * phrase를 washedKr에서 공백 유연 매칭으로 찾아 mistranslation의 start/end를 설정.
+     * 찾으면 matchConfidence=1.0 설정 후 true 반환, 못 찾으면 false 반환.
+     */
+    private boolean tryMatchPhrase(DraftAnalysisResult.Mistranslation mistranslation, String phrase, String washedKr) {
+        String[] tokens = phrase.split("\\s+");
+        StringBuilder patternSb = new StringBuilder();
+        for (String token : tokens) {
+            if (patternSb.length() > 0) patternSb.append("\\s+");
+            patternSb.append(Pattern.quote(token));
+        }
+        Matcher m = Pattern.compile(patternSb.toString()).matcher(washedKr);
+        if (m.find()) {
+            mistranslation.setStartIndex(m.start());
+            mistranslation.setEndIndex(m.end());
+            mistranslation.setMatchConfidence(1.0);
+            // AI가 너무 넓은 translated를 반환한 경우, 실제 매칭 텍스트로 교정
+            mistranslation.setTranslated(washedKr.substring(m.start(), m.end()));
+            return true;
+        }
+        return false;
     }
 
     private int calculateFindingTarget(String washedKr) {
