@@ -12,7 +12,6 @@ import com.resumade.api.workspace.domain.WorkspaceQuestionRepository;
 import com.resumade.api.workspace.dto.DraftAnalysisResult;
 import com.resumade.api.workspace.dto.SentencePairAnalysisResult;
 import com.resumade.api.workspace.dto.TitleSuggestionResponse;
-import com.resumade.api.workspace.util.SentencePairExtractor;
 import com.resumade.api.workspace.prompt.DraftParams;
 import com.resumade.api.workspace.prompt.PromptFactory;
 import com.resumade.api.workspace.prompt.QuestionCategory;
@@ -39,7 +38,6 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -3231,11 +3229,21 @@ public class WorkspaceService {
         }
     }
 
+    /**
+     * 전체 원본+세탁본을 LLM 한 번 호출로 분석.
+     * 이전의 문장 인덱스 페어링 방식은 번역 세탁 시 문장 수/구조가 변해 인덱스가 어긋나는
+     * 근본적 결함이 있었음. 전체 텍스트를 한 번에 주면 LLM이 맥락 전체를 보고 정확히 판단함.
+     */
     private DraftAnalysisResult analyzeBySentencePairs(String originalDraft, String washedKr) {
-        List<SentencePairExtractor.SentencePair> pairs = SentencePairExtractor.extract(originalDraft, washedKr);
+        log.info("[HumanPatch] Full-text single-call analysis starting");
 
-        if (pairs.isEmpty()) {
-            log.warn("[HumanPatch] No sentence pairs extracted — returning empty analysis");
+        SentencePairAnalysisResult result = workspacePatchAiService.analyzeSentencePair(
+                sanitizeOpenAiPromptText(originalDraft),
+                sanitizeOpenAiPromptText(washedKr)
+        );
+
+        if (result == null || result.getMistranslations() == null || result.getMistranslations().isEmpty()) {
+            log.info("[HumanPatch] No mistranslations detected");
             return DraftAnalysisResult.builder()
                     .mistranslations(new ArrayList<>())
                     .humanPatchedText(washedKr)
@@ -3243,59 +3251,53 @@ public class WorkspaceService {
                     .build();
         }
 
-        log.info("[HumanPatch] Launching {} parallel sentence-pair analyses", pairs.size());
-
-        List<CompletableFuture<List<DraftAnalysisResult.Mistranslation>>> futures = pairs.stream()
-                .map(pair -> CompletableFuture.<List<DraftAnalysisResult.Mistranslation>>supplyAsync(() -> {
-                    try {
-                        SentencePairAnalysisResult result = workspacePatchAiService.analyzeSentencePair(
-                                sanitizeOpenAiPromptText(pair.original()),
-                                sanitizeOpenAiPromptText(pair.washed())
-                        );
-                        if (result == null || result.getMistranslations() == null) return List.of();
-
-                        return result.getMistranslations().stream()
-                                .filter(m -> m.getTranslated() != null && !m.getTranslated().isBlank())
-                                .map(m -> DraftAnalysisResult.Mistranslation.builder()
-                                        .original(safeTrim(m.getOriginal()))
-                                        .translated(safeTrim(m.getTranslated()))
-                                        .issueType(m.getIssueType())
-                                        .reason(safeTrim(m.getReason()))
-                                        .suggestion(normalizeTitleSpacing(safeTrim(m.getSuggestion())))
-                                        .originalSentence(pair.original())
-                                        .translatedSentence(pair.washed())
-                                        .severity(resolveSeverity(m.getIssueType()))
-                                        .build())
-                                .collect(Collectors.toList());
-                    } catch (Exception e) {
-                        log.warn("[HumanPatch] Sentence pair analysis failed — pair skipped: {}", e.getMessage());
-                        return List.<DraftAnalysisResult.Mistranslation>of();
-                    }
-                }))
-                .collect(Collectors.toList());
-
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-
         AtomicInteger idCounter = new AtomicInteger(1);
-        List<DraftAnalysisResult.Mistranslation> allMistranslations = futures.stream()
-                .flatMap(f -> {
-                    try {
-                        return f.join().stream();
-                    } catch (Exception e) {
-                        return Stream.empty();
-                    }
-                })
-                .peek(mis -> mis.setId("mis-" + idCounter.getAndIncrement()))
+        List<DraftAnalysisResult.Mistranslation> mistranslations = result.getMistranslations().stream()
+                .filter(m -> m.getTranslated() != null && !m.getTranslated().isBlank())
+                // translated 단어가 세탁본에 실제로 존재해야 함 (없으면 LLM 환각)
+                .filter(m -> washedKr.contains(safeTrim(m.getTranslated())))
+                // original 단어가 세탁본에 그대로 남아있으면 변경되지 않은 것 → 오탐 제거
+                // (예: 트랜잭션이 세탁본에도 존재하면 트랜잭션→X 오탐 방지)
+                .filter(m -> m.getOriginal() == null || !washedKr.contains(safeTrim(m.getOriginal())))
+                .map(m -> DraftAnalysisResult.Mistranslation.builder()
+                        .id("mis-" + idCounter.getAndIncrement())
+                        .original(safeTrim(m.getOriginal()))
+                        .translated(safeTrim(m.getTranslated()))
+                        .issueType(m.getIssueType())
+                        .reason(safeTrim(m.getReason()))
+                        .suggestion(normalizeTitleSpacing(safeTrim(m.getSuggestion())))
+                        .originalSentence(findContainingSentence(originalDraft, safeTrim(m.getOriginal())))
+                        .translatedSentence(findContainingSentence(washedKr, safeTrim(m.getTranslated())))
+                        .severity(resolveSeverity(m.getIssueType()))
+                        .build())
                 .collect(Collectors.toList());
 
-        log.info("[HumanPatch] Collected {} mistranslations from {} sentence pairs",
-                allMistranslations.size(), pairs.size());
+        log.info("[HumanPatch] Detected {} mistranslations from full-text analysis", mistranslations.size());
 
         return DraftAnalysisResult.builder()
-                .mistranslations(allMistranslations)
+                .mistranslations(mistranslations)
                 .humanPatchedText(washedKr)
                 .aiReviewReport(null)
                 .build();
+    }
+
+    /**
+     * phrase를 포함하는 문장을 text에서 찾아 반환.
+     * 마침표(+ 공백 or 줄바꿈) 기준으로 분리하되, 못 찾으면 phrase 자체를 fallback으로 반환.
+     */
+    private String findContainingSentence(String text, String phrase) {
+        if (text == null || phrase == null || phrase.isBlank()) return "";
+        // 마침표 뒤 공백/줄바꿈으로 문장 분리
+        String[] sentences = text.split("\\.(?=\\s|$)");
+        for (String sentence : sentences) {
+            if (sentence.contains(phrase)) return sentence.trim();
+        }
+        // fallback: 단순 마침표로 재시도
+        String[] sentences2 = text.split("\\.");
+        for (String sentence : sentences2) {
+            if (sentence.contains(phrase)) return sentence.trim();
+        }
+        return phrase;
     }
 
     private String resolveSeverity(String issueType) {

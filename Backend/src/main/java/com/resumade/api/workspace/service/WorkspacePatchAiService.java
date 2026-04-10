@@ -8,28 +8,39 @@ import dev.langchain4j.service.V;
 
 public interface WorkspacePatchAiService {
 
-    // ── 문장 단위 단일 용어 오역 탐지 ──────────────────────────────────────────
+    // ── 전체 텍스트 단일 용어 오역 탐지 ────────────────────────────────────────
     @SystemMessage({
-            "You are a precise Korean technical translation checker.",
-            "You receive ONE sentence pair: an original Korean AI draft sentence and its translation-washed Korean counterpart.",
-            "Your ONLY job is to find single-term mistranslations of these types:",
-            "  1. TERM_WEAKENED   — IT/developer technical terms replaced by generic words.",
-            "     Examples: '트랜잭션'→'거래', 'Redis'→'캐시 서버', 'API'→'인터페이스'",
-            "  2. PROPER_NOUN_CHANGED — Company names, project names, or product names altered.",
-            "     Examples: 'KB라이프'→'KB생명', 'SK하이닉스'→'SK', '리주마드'→'리주매드'",
-            "  3. METRIC_DROPPED  — Specific numbers or metrics dropped or generalized.",
-            "     Examples: '99.9% 가용성'→'높은 가용성', '3초'→'빠른 속도'",
-            "Do NOT flag tone changes, style issues, passive voice, or multi-word rephrasing.",
-            "Do NOT flag if the term difference is cosmetic (e.g., spacing, honorifics).",
-            "If there are NO issues of the above types, return {\"mistranslations\": []}.",
-            "Each item must have: original (exact verbatim term from original sentence), translated (exact verbatim term from washed sentence), issueType, reason (1 sentence), suggestion (corrected single term).",
-            "Return ONLY valid JSON. No markdown, no explanation outside JSON."
+            "You are a Korean IT-resume translation checker. Your task: compare an original Korean draft against a translation-washed version (KO→EN→KO machine translation) and detect where specific IT terms were lost or altered.",
+            "",
+            "Detect ONLY these three issue types:",
+            "  1. TERM_WEAKENED — A romanized English IT term in the original was replaced by a generic Korean description in the washed version.",
+            "     Good examples to flag: '헬스체크'→'상태 점검', '큐'→'대기열', '트랜잭션'→'거래', 'Redis'→'캐시 서버', 'API'→'인터페이스', '배치'→'일괄 처리'",
+            "     Do NOT flag if the original term itself is already a plain Korean word (e.g., '가용성', '지연', '모듈').",
+            "  2. PROPER_NOUN_CHANGED — A company name, project name, or product name was altered.",
+            "     Examples: 'KB라이프'→'KB생명', 'SK하이닉스'→'SK', 'RESUMADE'→'리주메이드'",
+            "  3. METRIC_DROPPED — A specific numeric metric was replaced by a vague expression.",
+            "     Examples: '99.9%'→'높은', '3초'→'빠른 속도', '월 1,000만 건'→'대규모'",
+            "",
+            "For EACH candidate pair, apply this 4-step check before reporting:",
+            "  Step 1. Find the `original` term verbatim in the Original text. If not found → skip.",
+            "  Step 2. Find the `translated` term verbatim in the Washed text. If not found → skip.",
+            "  Step 3. Confirm the `original` term does NOT appear verbatim anywhere in the Washed text.",
+            "           If it does appear in the Washed text → the term was preserved, not mistranslated → skip.",
+            "  Step 4. Confirm the change fits one of the 3 issue types above. If not → skip.",
+            "",
+            "Only report pairs that pass all 4 steps.",
+            "Do NOT flag: tone changes, passive voice, sentence restructuring, spacing differences, honorifics.",
+            "If nothing passes all 4 steps, return {\"mistranslations\": []}.",
+            "Return ONLY valid JSON. No markdown."
     })
     @UserMessage("""
-            Original sentence: {{original}}
-            Washed sentence: {{washed}}
+            [Original text]
+            {{original}}
 
-            Return JSON only:
+            [Washed text]
+            {{washed}}
+
+            Apply the 4-step check and return JSON only:
             {"mistranslations": [{"original": "...", "translated": "...", "issueType": "...", "reason": "...", "suggestion": "..."}]}
             """)
     SentencePairAnalysisResult analyzeSentencePair(
