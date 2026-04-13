@@ -78,6 +78,12 @@ public class WorkspaceController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @org.springframework.web.bind.annotation.DeleteMapping("/task-status/{questionId}")
+    public ResponseEntity<Void> deleteTaskStatus(@PathVariable Long questionId) {
+        workspaceTaskCache.delete(questionId);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/title-suggestions/{questionId}")
     public TitleSuggestionResponse suggestTitles(@PathVariable Long questionId) {
         return workspaceService.suggestTitles(questionId);

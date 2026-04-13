@@ -916,11 +916,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   cancelSingle: () => {
     const { activeStreamController } = get();
-    if (!activeStreamController) return;
-    activeStreamController.abort();
+    // SSE 스트림이 활성 중이면 abort
+    if (activeStreamController) {
+      activeStreamController.abort();
+    }
     const activeQ = findActiveQuestion(get());
     if (activeQ?.dbId) {
       useBackgroundTaskStore.getState().unregister(activeQ.dbId);
+      // Redis의 RUNNING 상태도 제거 (백그라운드 폴링 중단)
+      fetch(toApiUrl(`/api/workspace/task-status/${activeQ.dbId}`), { method: "DELETE" }).catch(() => {});
     }
     set((state) => ({
       isProcessing: false,
