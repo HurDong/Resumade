@@ -30,6 +30,24 @@ public class PersonalGrowthPromptStrategy implements PromptStrategy {
                 이 문항을 절대로 인생 연대기, 가족사 소개, 미담 모음으로 쓰지 말고,
                 지원자의 현재 일하는 방식, 직업관, 문제 해결 태도, 직무 선택 계기가 어떻게 형성되었는지를 보여주는 문항으로 해석하십시오.
 
+                <Question_Analysis>
+                글을 쓰기 전에 반드시 문항 텍스트를 분석하십시오:
+
+                STEP 1 — 문항 요구 파악
+                이 문항이 명시적으로 요구하는 것은 무엇인가? 한 문장으로 핵심 요구를 추출하십시오.
+
+                STEP 2 — 결론 타입 결정
+                문항에서 기여/적용 요구 신호를 탐색하십시오:
+                  • 기여 신호: "직무에서 어떻게 활용", "입사 후", "어떻게 기여", "어떻게 쓰일지", "왜 지원"
+                  • 신호 있음 → Type C (기여 결론): 해당 직무에서 할 구체적인 행동이나 과제를 1-2문장으로 명시. "기여할 수 있습니다" 같은 추상적 표현 금지.
+                  • 신호 없음 → Type R (성찰 결론): 가치관 형성 결과로 현재 일하는 방식이 어떻게 달라졌는지로 마무리. 문항이 요구하지 않은 기여 언급 금지.
+
+                STEP 3 — 제목 앵커
+                제목은 반드시 "이 문항이 묻는 것을 기준으로 지원자에 대해 무엇을 증명하는가?"를 답해야 합니다.
+                  ✗ 틀림: 경험 중에서 가장 인상적인 성과 지표만 뽑은 제목
+                  ✓ 옳음: 이 문항이 요구하는 가치관이나 일하는 기준이 드러나는 제목
+                </Question_Analysis>
+
                 <Core_Principles>
                 1. 성장과정 = 현재의 가치관/일하는 기준 + 그것이 형성된 배경 + 최근 행동 증거 + 직무 연결입니다.
                 2. 전체 생애를 나열하지 말고, 결정적 경험 1~2개만 선택하십시오.
@@ -56,6 +74,7 @@ public class PersonalGrowthPromptStrategy implements PromptStrategy {
                 3. "text": 위 구조를 따르는 본문 (소제목 없이 텍스트만)
                 4. 글자 수 제한(maxLength)을 엄수하며 95~100% 범위를 목표로 합니다.
                 5. 입력 정보가 부족하여 지침을 따를 수 없는 경우, 꾸며내지 말고 부족한 정보가 무엇인지 "성장과정 생성에 필요한 추가 정보: ..." 형식으로 한 줄만 반환하십시오.
+                6. CRITICAL — Experience label stripping: The experience context may contain structural labels such as '문제:', '원인:', '조치:', '결과:', '배경:', '역할:' etc. These are INPUT METADATA ONLY. Do NOT reproduce any of these labels in the output. Convert every labeled segment into natural first-person Korean narrative.
                 </Strict_Output_Rules>
                 """;
     }
@@ -82,24 +101,29 @@ public class PersonalGrowthPromptStrategy implements PromptStrategy {
     @Override
     public String buildUserMessage(DraftParams params) {
         return """
-                Company: %s
-                Position: %s
-                Question: %s
+                ## [STEP 1 — PRIMARY ANCHOR: 아래 문항을 먼저 분석하고 글을 쓰십시오]
+                문항: %s
+
+                위 문항에 대해 Question_Analysis STEP 1~3을 수행한 뒤 작성을 시작하십시오.
+                제목과 본문 전체는 이 문항이 요구하는 것을 증명하도록 구성되어야 합니다.
+                경험 데이터는 증거 재료이며, 무엇을 증명해야 하는지는 문항이 결정합니다.
+
+                Company: %s | Position: %s
 
                 <Instructions>
                 현재의 일하는 기준(가치관) 1개를 먼저 설정하고, 그 배경과 대학 이후의 실질적 증거 경험을 연결하십시오.
                 초중고 경험이나 가족사는 배제하거나 최소화하십시오.
-                
+
                 글자 수 제한: 최대 %d자 (목표: %d~%d자)
                 </Instructions>
 
                 <Provided_Context>
                 ## 지원자 정보 및 경험 소재 (가장 적합한 서사 재료를 선별하십시오)
                 %s
-                
+
                 ## 회사 및 공고 분석 (연결 지점으로 활용)
                 %s
-                
+
                 ## 다른 문항 내용 (소재 중복 회피용)
                 %s
                 </Provided_Context>
@@ -109,9 +133,9 @@ public class PersonalGrowthPromptStrategy implements PromptStrategy {
 
                 Return JSON format: {"title": "...", "text": "..."}
                 """.formatted(
+                nullSafe(params.questionTitle()),
                 nullSafe(params.company()), nullSafe(params.position()),
-                nullSafe(params.questionTitle()), params.maxLength(),
-                params.minTarget(), params.maxTarget(),
+                params.maxLength(), params.minTarget(), params.maxTarget(),
                 nullSafe(params.experienceContext()), nullSafe(params.companyContext()),
                 nullSafe(params.othersContext()), nullSafe(params.directive())
         );

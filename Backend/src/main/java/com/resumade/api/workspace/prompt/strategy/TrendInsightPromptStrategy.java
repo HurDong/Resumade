@@ -24,6 +24,24 @@ public class TrendInsightPromptStrategy implements PromptStrategy {
         return """
                 You are an expert Korean cover letter writer specializing in trend-insight questions for junior software applicants.
 
+                <Question_Analysis>
+                Before writing a single word, analyze the question text carefully:
+
+                STEP 1 — QUESTION DEMAND
+                What is the question explicitly asking for? Identify the core ask in one sentence.
+
+                STEP 2 — CONCLUSION TYPE
+                Scan the question for contribution/application signals:
+                  • Trend-insight questions typically ask for a viewpoint AND connection to the company/role, so contribution endings are often appropriate here.
+                  • If the question asks for viewpoint + role connection → Type C (Contribution): end with 1-2 specific sentences on what angle or problem you would tackle. Never generic "기여하겠습니다" — name the actual technical or business challenge.
+                  • If the question only asks for viewpoint/analysis without role application → Type R (Reflection): end with your analytical conclusion on the issue. Do NOT add contribution language.
+
+                STEP 3 — TITLE ANCHOR
+                The title must answer: "What does this answer prove about me, given WHAT THIS QUESTION IS ASKING?"
+                  ✓ Right: names the specific issue and the applicant's distinctive angle on it
+                  ✗ Wrong: a generic statement of the issue without the applicant's viewpoint
+                </Question_Analysis>
+
                 <Question_Intent>
                 This is a TREND_INSIGHT question. The evaluator looks for:
                 1. ISSUE SELECTION — one specific technological, industrial, or social issue, not a vague mega-topic.
@@ -49,6 +67,7 @@ public class TrendInsightPromptStrategy implements PromptStrategy {
                 9. If experience context contains a relevant technical episode, use it briefly as a credibility anchor rather than making the whole essay autobiographical.
                 10. Keep the tone believable for a junior applicant: offer a grounded viewpoint and contribution angle, not executive-level certainty.
                 11. Natural Korean narrative only. No bullet lists or parenthetical labels unless requested.
+                12. CRITICAL — Experience label stripping: The experience context may contain structural labels such as '문제:', '원인:', '조치:', '결과:', '배경:', '역할:' etc. These are INPUT METADATA ONLY. Do NOT reproduce any of these labels in the output. Convert every labeled segment into natural first-person Korean narrative.
                 </Strict_Rules>
 
                 <Output_Format>
@@ -79,9 +98,14 @@ public class TrendInsightPromptStrategy implements PromptStrategy {
     @Override
     public String buildUserMessage(DraftParams params) {
         return """
-                Company: %s
-                Position: %s
-                Question: %s
+                ## [STEP 1 — PRIMARY ANCHOR: Read and analyze this question before writing anything]
+                Question (문항): %s
+
+                Perform the Question_Analysis protocol above on this question now.
+                Your title and body must answer what THIS question is asking.
+                Experience data below is evidence — the question decides what that evidence must prove.
+
+                Company: %s | Position: %s
 
                 <Context>
                 ## Company & JD Analysis
@@ -105,13 +129,13 @@ public class TrendInsightPromptStrategy implements PromptStrategy {
                 <Output_Format>
                 Return ONLY valid JSON:
                 {"title": "제목 텍스트", "text": "본문..."}
-                - "title": names one concrete issue or insight, no brackets
-                - "text": issue definition → why it matters to this company → reasoned viewpoint → contribution angle
+                - "title": names one concrete issue or the applicant's distinctive viewpoint on it, no brackets
+                - "text": issue definition → why it matters to this company → reasoned viewpoint → conclusion per Question_Analysis STEP 2
                 </Output_Format>
                 """.formatted(
+                nullSafe(params.questionTitle()),
                 nullSafe(params.company()),
                 nullSafe(params.position()),
-                nullSafe(params.questionTitle()),
                 nullSafe(params.companyContext()),
                 nullSafe(params.experienceContext()),
                 nullSafe(params.othersContext()),

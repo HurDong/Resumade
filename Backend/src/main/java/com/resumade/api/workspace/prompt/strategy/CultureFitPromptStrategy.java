@@ -24,6 +24,24 @@ public class CultureFitPromptStrategy implements PromptStrategy {
         return """
                 You are an expert Korean cover letter writer specializing in culture-fit and execution questions for product companies.
 
+                <Question_Analysis>
+                Before writing a single word, analyze the question text carefully:
+
+                STEP 1 — QUESTION DEMAND
+                What is the question explicitly asking for? Identify the core ask in one sentence.
+
+                STEP 2 — CONCLUSION TYPE
+                Scan the question for contribution/application signals:
+                  • Contribution signals: "어떻게 기여", "직무에서 어떻게 활용", "입사 후", "왜 맞는다고 생각하는지", "무엇을 할 수 있는지"
+                  • Culture-fit questions often implicitly ask for fit proof → if the question asks "왜 우리 문화와 맞는가" or similar, Type C applies: conclude with 1-2 concrete sentences on what you will do or how you will work here. Avoid generic "기여하겠습니다" — name the actual behavior or output.
+                  • If the question only asks to describe an experience of fast execution or ownership → Type R: end with what you learned or how this shaped your working style.
+
+                STEP 3 — TITLE ANCHOR
+                The title must answer: "What does this answer prove about me, given WHAT THIS QUESTION IS ASKING?"
+                  ✓ Right: frames the specific execution context and measurable result that proves the cultural fit
+                  ✗ Wrong: a generic culture buzzword or vague claim
+                </Question_Analysis>
+
                 <Question_Intent>
                 This is a CULTURE_FIT question. The evaluator checks:
                 1. BEHAVIORAL PROOF — not "저는 빠르게 실행합니다", but one real moment proving speed, ownership, or customer focus.
@@ -49,6 +67,7 @@ public class CultureFitPromptStrategy implements PromptStrategy {
                 9. Do NOT invent A/B tests, MVP launches, or customer feedback that are not in the supplied context.
                 10. Keep the tone believable for a junior applicant: show ownership in a bounded scope, not exaggerated executive authority.
                 11. Natural Korean narrative only. No bullet lists or parenthetical labels unless requested.
+                12. CRITICAL — Experience label stripping: The experience context may contain structural labels such as '문제:', '원인:', '조치:', '결과:', '배경:', '역할:' etc. These are INPUT METADATA ONLY. Do NOT reproduce any of these labels in the output. Convert every labeled segment into natural first-person Korean narrative.
                 </Strict_Rules>
 
                 <Output_Format>
@@ -78,9 +97,14 @@ public class CultureFitPromptStrategy implements PromptStrategy {
     @Override
     public String buildUserMessage(DraftParams params) {
         return """
-                Company: %s
-                Position: %s
-                Question: %s
+                ## [STEP 1 — PRIMARY ANCHOR: Read and analyze this question before writing anything]
+                Question (문항): %s
+
+                Perform the Question_Analysis protocol above on this question now.
+                Your title and body must answer what THIS question is asking.
+                Experience data below is evidence — the question decides what that evidence must prove.
+
+                Company: %s | Position: %s
 
                 <Context>
                 ## Company & JD Analysis
@@ -104,13 +128,13 @@ public class CultureFitPromptStrategy implements PromptStrategy {
                 <Output_Format>
                 Return ONLY valid JSON:
                 {"title": "제목 텍스트", "text": "본문..."}
-                - "title": names the concrete execution context or measurable shift, no brackets
-                - "text": baseline or hypothesis → fast action → feedback signal → why this matches the company
+                - "title": anchored to what the question is asking — frames the execution proof, no brackets
+                - "text": baseline or hypothesis → fast action → feedback signal → conclusion per Question_Analysis STEP 2
                 </Output_Format>
                 """.formatted(
+                nullSafe(params.questionTitle()),
                 nullSafe(params.company()),
                 nullSafe(params.position()),
-                nullSafe(params.questionTitle()),
                 nullSafe(params.companyContext()),
                 nullSafe(params.experienceContext()),
                 nullSafe(params.othersContext()),

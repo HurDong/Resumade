@@ -32,6 +32,25 @@ public class ExperiencePromptStrategy implements PromptStrategy {
                 You are an expert Korean cover letter writer specializing in 직무 경험 (technical experience & achievement) questions.
                 Your primary goal is to showcase concrete technical contributions that are verifiable in an interview.
 
+                <Question_Analysis>
+                Before writing a single word, analyze the question text carefully:
+
+                STEP 1 — QUESTION DEMAND
+                What is the question explicitly asking for? Identify the core ask in one sentence.
+
+                STEP 2 — CONCLUSION TYPE
+                Scan the question for contribution/application signals:
+                  • Contribution signals: "어떻게 기여", "직무에서 어떻게 활용", "입사 후", "어떻게 쓰일지", "무엇을 할 수 있는지"
+                  • If signals present → Type C (Contribution): end with 1-2 sentences naming a SPECIFIC deliverable or technical problem you would tackle. Never write generic "기여할 수 있습니다".
+                  • If signals absent → Type R (Reflection): end with what you learned technically or how it shaped your engineering approach. Do NOT add contribution language the question did not ask for.
+
+                STEP 3 — TITLE ANCHOR
+                The title must answer: "What does this answer prove about me, given WHAT THIS QUESTION IS ASKING?"
+                  ✗ Wrong: only the most impressive metric, detached from what the question asks
+                  ✓ Right for "도전적 경험을 서술하라": frames the challenge and what was overcome
+                  ✓ Right for "경험이 직무에 어떻게 연결되는지 서술하라": frames experience + role-fit signal
+                </Question_Analysis>
+
                 <Question_Intent>
                 This is a TECHNICAL EXPERIENCE question. The evaluator is looking for:
                 1. SPECIFIC ROLE — not "팀원으로 참여", but "결제 도메인 서버 파트 리드로 API 설계 담당"
@@ -59,6 +78,7 @@ public class ExperiencePromptStrategy implements PromptStrategy {
                 11. Avoid vague openers. Start with the concrete claim.
                 12. Write in natural Korean narrative — not a resume bullet list.
                 13. Keep the scope believable for a junior applicant: highlight local technical impact and sound judgment, not company-wide transformation claims without evidence.
+                14. CRITICAL — The experience context may contain structural labels such as '문제:', '원인:', '조치:', '결과:', '배경:', '역할:', '과정:' etc. These are INPUT METADATA ONLY. Do NOT reproduce any of these labels in the output. Convert every labeled segment into natural first-person Korean narrative (e.g., '결과: 응답 시간 70% 감소' → '그 결과 응답 시간이 70% 줄었습니다').
                 </Strict_Rules>
 
                 <Output_Format>
@@ -88,9 +108,14 @@ public class ExperiencePromptStrategy implements PromptStrategy {
     @Override
     public String buildUserMessage(DraftParams params) {
         return """
-                Company: %s
-                Position: %s
-                Question: %s
+                ## [STEP 1 — PRIMARY ANCHOR: Read and analyze this question before writing anything]
+                Question (문항): %s
+
+                Perform the Question_Analysis protocol above on this question now.
+                Your title and body must answer what THIS question is asking.
+                Experience data below is evidence — the question decides what that evidence must prove.
+
+                Company: %s | Position: %s
 
                 <Context>
                 ## Company & JD Analysis
@@ -114,14 +139,14 @@ public class ExperiencePromptStrategy implements PromptStrategy {
                 <Output_Format>
                 Return ONLY valid JSON:
                 {"title": "제목 텍스트", "text": "본문..."}
-                - "title": specific action + result, no brackets (e.g., "응답 시간 70%% 단축, Redis 캐시 레이어 설계")
-                - "text": body only — role, technical decision reasoning, measurable outcome
+                - "title": anchored to what the question is asking (not just the best metric), no brackets
+                - "text": body only — role, technical decision reasoning, measurable outcome; conclusion type per Question_Analysis STEP 2
                 - Internal STAR structure — do NOT expose [배경], [행동], [결과] labels
                 </Output_Format>
                 """.formatted(
+                nullSafe(params.questionTitle()),
                 nullSafe(params.company()),
                 nullSafe(params.position()),
-                nullSafe(params.questionTitle()),
                 nullSafe(params.companyContext()),
                 nullSafe(params.experienceContext()),
                 nullSafe(params.othersContext()),

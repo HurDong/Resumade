@@ -32,6 +32,24 @@ public class ProblemSolvingPromptStrategy implements PromptStrategy {
                 You are an expert Korean cover letter writer specializing in 문제해결 (problem-solving & challenge) questions.
                 Your primary goal is to reveal the applicant's diagnostic depth and decision-making quality.
 
+                <Question_Analysis>
+                Before writing a single word, analyze the question text carefully:
+
+                STEP 1 — QUESTION DEMAND
+                What is the question explicitly asking for? Identify the core ask in one sentence.
+
+                STEP 2 — CONCLUSION TYPE
+                Scan the question for contribution/application signals:
+                  • Contribution signals: "어떻게 기여", "직무에서 어떻게 활용", "입사 후", "어떻게 쓰일지", "무엇을 할 수 있는지"
+                  • If signals present → Type C (Contribution): end with 1-2 sentences naming a SPECIFIC problem or challenge you would address in this role. Never generic.
+                  • If signals absent → Type R (Reflection): end with what you learned from this problem-solving experience and how it shaped your diagnostic approach. Do NOT add contribution language.
+
+                STEP 3 — TITLE ANCHOR
+                The title must answer: "What does this answer prove about me, given WHAT THIS QUESTION IS ASKING?"
+                  ✗ Wrong: just naming the project or technology used
+                  ✓ Right: frames the specific problem or challenge and how it was resolved — the evaluator can immediately ask a follow-up
+                </Question_Analysis>
+
                 <Question_Intent>
                 This is a PROBLEM-SOLVING question. The evaluator measures:
                 1. PROBLEM DIAGNOSIS — did the applicant identify the ROOT CAUSE, not just symptoms?
@@ -59,6 +77,7 @@ public class ProblemSolvingPromptStrategy implements PromptStrategy {
                 11. Write in the applicant's own reflective voice — not an evaluator's summarization.
                 12. No parenthetical labels. No bullet enumerations unless explicitly requested.
                 13. Keep the scope credible for a junior applicant: reveal depth of diagnosis and follow-through without overstating senior ownership.
+                14. CRITICAL — The experience context may contain structural labels such as '문제:', '원인 진단:', '원인:', '조치:', '임시 조치:', '근본 조치:', '결과:', '배경:', '과정:' etc. These are INPUT METADATA ONLY. Do NOT reproduce any of these labels in the output. Convert every labeled segment into natural first-person Korean narrative seamlessly woven into the text (e.g., '문제: X였습니다' → '저는 X 상황을 마주했습니다').
                 </Strict_Rules>
 
                 <Output_Format>
@@ -88,9 +107,14 @@ public class ProblemSolvingPromptStrategy implements PromptStrategy {
     @Override
     public String buildUserMessage(DraftParams params) {
         return """
-                Company: %s
-                Position: %s
-                Question: %s
+                ## [STEP 1 — PRIMARY ANCHOR: Read and analyze this question before writing anything]
+                Question (문항): %s
+
+                Perform the Question_Analysis protocol above on this question now.
+                Your title and body must answer what THIS question is asking.
+                Experience data below is evidence — the question decides what that evidence must prove.
+
+                Company: %s | Position: %s
 
                 <Context>
                 ## Company & JD Analysis
@@ -114,13 +138,13 @@ public class ProblemSolvingPromptStrategy implements PromptStrategy {
                 <Output_Format>
                 Return ONLY valid JSON:
                 {"title": "제목 텍스트", "text": "본문..."}
-                - "title": names the specific problem, no brackets, NOT generic 문제 해결 or 도전 경험
-                - "text": Problem → Root Cause → Decision → Outcome → Learning, active voice
+                - "title": anchored to what the question is asking — frames the problem, not just the project name; no brackets
+                - "text": natural first-person Korean narrative — weave Problem → Root Cause → Decision → Outcome → conclusion per Question_Analysis STEP 2
                 </Output_Format>
                 """.formatted(
+                nullSafe(params.questionTitle()),
                 nullSafe(params.company()),
                 nullSafe(params.position()),
-                nullSafe(params.questionTitle()),
                 nullSafe(params.companyContext()),
                 nullSafe(params.experienceContext()),
                 nullSafe(params.othersContext()),
