@@ -55,7 +55,7 @@ gemini:
 
 translation:
   provider: ${TRANSLATION_PROVIDER:google-cloud}
-  fallback-provider: ${TRANSLATION_FALLBACK_PROVIDER:deepl}
+  fallback-provider: ${TRANSLATION_FALLBACK_PROVIDER:}
   google-cloud:
     api-key: ${GOOGLE_CLOUD_TRANSLATE_API_KEY:${GEMINI_API_KEY:}}
 
