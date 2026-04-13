@@ -37,6 +37,14 @@ public class CollaborationPromptStrategy implements PromptStrategy {
                   [TERTIARY]  Team outcome and personal learning about collaboration
                 </Question_Intent>
 
+                <Draft_Structure>
+                (Lead)      팀 구성과 프로젝트 맥락 — 몇 명 팀에서 내 역할(contributor/coordinator/lead)은 무엇이었는지
+                (Friction)  마찰·갈등·의견 차이 상황 — 구체적으로 어떤 이견이나 블로커가 있었는지. 과도한 긍정 금지
+                (Action)    내가 취한 구체적 행동 — "팀이 했다"가 아닌 "내가 했다". 커뮤니케이션 방식(문서화, 회의, 비동기 등) 포함
+                (Result)    결과와 팀에 미친 영향 — 프로세스 변화, 정량적 개선, 팀 반응 등
+                (Learning)  이 경험에서 배운 협업 원칙 — 지원 직무에서 어떻게 적용할 것인지 자연스럽게 연결
+                </Draft_Structure>
+
                 <Strict_Rules>
                 1. Return ONLY valid JSON: {"title":"...","text":"..."}
                 2. "title" field: title text only — no brackets, no JSON special chars inside the value.

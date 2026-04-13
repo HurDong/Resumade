@@ -340,9 +340,10 @@ public class WorkspaceService {
 
             List<Experience> allExperiences = experienceRepository.findAll();
             String others = buildOthersContext(initialQuestion, questionId, allExperiences);
-            
+
             // storyIds가 있으면 서사 컨텍스트 구축, 없으면 기존 RAG/필터링 컨텍스트 사용
             String context = buildContext(initialQuestion, questionId, allExperiences, category, storyIds);
+            String writingGuideContext = buildWritingGuideContext(storyIds);
 
             paceProcessing();
             sendProgress(emitter, STAGE_DRAFT, "선택한 경험과 요청 사항을 반영해 초안을 다시 생성하고 있습니다. ✍️");
@@ -379,7 +380,8 @@ public class WorkspaceService {
                     maxTargetChars,
                     context,
                     others,
-                    directiveForPrompt);
+                    directiveForPrompt,
+                    writingGuideContext);
 
             WorkspaceDraftAiService.DraftResponse refineResponse = generateRefinedDraftWithStrategy(
                     category,
@@ -540,6 +542,7 @@ public class WorkspaceService {
 
             // storyIds가 있으면 서사 컨텍스트 구축, 없으면 기존 RAG/필터링 컨텍스트 사용
             String context = buildContext(initialQuestion, questionId, allExperiences, category, storyIds);
+            String writingGuideContext = buildWritingGuideContext(storyIds);
 
             paceProcessing();
             sendProgress(emitter, STAGE_DRAFT, "엄선한 경험 데이터를 바탕으로 새로운 초안을 생성 중입니다. ✍️");
@@ -584,7 +587,8 @@ public class WorkspaceService {
                     preferredTargetChars,
                     context,
                     others,
-                    directiveForPrompt);
+                    directiveForPrompt,
+                    writingGuideContext);
 
             WorkspaceDraftAiService.DraftResponse draftResponse = generateDraftWithStrategy(category, draftParams);
             String assembledDraft = assembleDraftText(draftResponse);
@@ -1629,6 +1633,23 @@ public class WorkspaceService {
             String others,
             String directive
     ) {
+        return buildDraftParams(company, position, questionTitle, companyContext,
+                maxLength, minTargetChars, maxTargetChars, context, others, directive, null);
+    }
+
+    private DraftParams buildDraftParams(
+            String company,
+            String position,
+            String questionTitle,
+            String companyContext,
+            int maxLength,
+            int minTargetChars,
+            int maxTargetChars,
+            String context,
+            String others,
+            String directive,
+            String writingGuideContext
+    ) {
         return DraftParams.builder()
                 .company(company)
                 .position(position)
@@ -1640,6 +1661,7 @@ public class WorkspaceService {
                 .experienceContext(context)
                 .othersContext(others)
                 .directive(directive)
+                .writingGuideContext(writingGuideContext)
                 .build();
     }
 
@@ -3580,7 +3602,10 @@ public class WorkspaceService {
     }
 
     private String buildStoryContext(List<Long> storyIds) {
-        List<com.resumade.api.experience.domain.PersonalStory> stories = personalStoryRepository.findAllById(storyIds);
+        List<com.resumade.api.experience.domain.PersonalStory> stories = personalStoryRepository.findAllById(storyIds)
+                .stream()
+                .filter(s -> s.getType() != com.resumade.api.experience.domain.PersonalStory.StoryType.WRITING_GUIDE)
+                .toList();
         if (stories.isEmpty()) {
             return "No personal stories selected.";
         }
@@ -3595,6 +3620,21 @@ public class WorkspaceService {
             sb.append("---\n");
         }
         return sb.toString();
+    }
+
+    private String buildWritingGuideContext(List<Long> storyIds) {
+        if (storyIds == null || storyIds.isEmpty()) return null;
+        List<com.resumade.api.experience.domain.PersonalStory> guides = personalStoryRepository.findAllById(storyIds)
+                .stream()
+                .filter(s -> s.getType() == com.resumade.api.experience.domain.PersonalStory.StoryType.WRITING_GUIDE)
+                .toList();
+        if (guides.isEmpty()) return null;
+
+        StringBuilder sb = new StringBuilder();
+        for (var guide : guides) {
+            sb.append(guide.getContent()).append("\n\n");
+        }
+        return sb.toString().trim();
     }
 
     private record RequestedLengthDirective(int minimum, int preferredTarget) {

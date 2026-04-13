@@ -25,16 +25,33 @@ public class CultureFitPromptStrategy implements PromptStrategy {
                 You are an expert Korean cover letter writer specializing in culture-fit and execution questions for product companies.
 
                 <Question_Intent>
-                This is a CULTURE_FIT question. The evaluator checks:
+                This is a CULTURE_FIT question. This category covers TWO sub-types:
+
+                [Sub-type A: 실행력/문화 적합성]
+                When the question asks about execution speed, MVP mindset, customer focus, or working style:
                 1. BEHAVIORAL PROOF — not "저는 빠르게 실행합니다", but one real moment proving speed, ownership, or customer focus.
                 2. EXECUTION WITH JUDGMENT — what was shipped quickly, what was intentionally simplified, and why.
                 3. FEEDBACK LOOP — what signal validated the action? (user response, data, operations, conversion, retention, etc.)
                 4. COMPANY FIT — why this way of working matches the target company's culture.
 
+                [Sub-type B: 성격 장단점/가치관/일하는 스타일]
+                When the question asks about personality strengths/weaknesses, values, or work style:
+                1. TRAIT DEFINITION — name the specific trait (strength or weakness), not a generic label.
+                2. PROJECT EVIDENCE — show how this trait manifested in a real team project experience.
+                   - For strengths: how was it actively utilized and what result did it produce?
+                   - For weaknesses: how was it recognized, what concrete steps were taken to improve, and how has the improved behavior been applied in subsequent projects?
+                3. GROWTH ARC — for weaknesses, the before/after behavioral change must be visible. For strengths, show deliberate leverage rather than passive possession.
+                4. TEAM IMPACT — the trait's effect on team dynamics or project outcomes, not just personal satisfaction.
+
                 Priority order:
-                  [PRIMARY]  Baseline problem or hypothesis → fast action or experiment → measurable feedback
-                  [SECONDARY] Trade-off awareness: what was intentionally not overbuilt
-                  [TERTIARY]  Why this working style fits the target company and role
+                  [Sub-type A]
+                    [PRIMARY]  Baseline problem or hypothesis → fast action or experiment → measurable feedback
+                    [SECONDARY] Trade-off awareness: what was intentionally not overbuilt
+                    [TERTIARY]  Why this working style fits the target company and role
+                  [Sub-type B]
+                    [PRIMARY]  Trait → project experience where it played out → concrete result or change
+                    [SECONDARY] Growth arc (especially for weaknesses): recognized → improved → applied
+                    [TERTIARY]  Connection to how this trait serves the target role
                 </Question_Intent>
 
                 <Strict_Rules>
@@ -43,12 +60,14 @@ public class CultureFitPromptStrategy implements PromptStrategy {
                 3. "text" field: body only — do NOT repeat the title inside the text.
                 4. Count ONLY characters inside "text" value for the character limit.
                 5. Never exceed maxLength. Never write below minTarget.
-                6. Title must name the concrete execution context or result, NOT 조직문화 적합성, 실행력, or 도전 정신.
+                6. Title must name the concrete execution context or specific trait, NOT 조직문화 적합성, 실행력, 도전 정신, 성격의 장단점.
                 7. Avoid abstract praise of company culture unless it is tied to the applicant's real behavior.
                 8. If metrics exist, use them. If not, use an operational or user-facing signal that is actually present in the context.
                 9. Do NOT invent A/B tests, MVP launches, or customer feedback that are not in the supplied context.
                 10. Keep the tone believable for a junior applicant: show ownership in a bounded scope, not exaggerated executive authority.
                 11. Natural Korean narrative only. No bullet lists or parenthetical labels unless requested.
+                12. For personality weakness questions: the weakness must be REAL and specific (not a disguised strength like "너무 꼼꼼합니다"). Show honest recognition, concrete improvement action, and behavioral change evidence from a project.
+                13. For personality strength questions: do NOT just declare the trait — show it in action within a team project and the result it produced.
                 </Strict_Rules>
 
                 <Output_Format>

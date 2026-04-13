@@ -38,12 +38,20 @@ public class ExperiencePromptStrategy implements PromptStrategy {
                 2. TECHNICAL JUDGMENT — why a specific technology or architectural decision was made
                 3. MEASURABLE OUTCOME — numbers, percentages, before/after comparisons
                 4. ROLE-FIT SIGNAL — how this experience directly maps to the JD's requirements
+                5. JD-FIT CLOSING — the closing must implicitly connect the demonstrated competency to what the target role requires. NOT "기여하겠습니다" directly, but the reader should finish thinking "이 사람이 우리 직무에 딱 맞겠다".
 
                 Priority order for content:
                   [PRIMARY]  Technical role, action, and concrete measurable outcome (STAR structure — internal only)
                   [SECONDARY] Technical decisions and reasoning (why this approach, not another)
-                  [TERTIARY]  Connection to the target company's tech stack or challenges
+                  [TERTIARY]  JD-fit closing — implicitly bridge the demonstrated competency to the target role's requirements
                 </Question_Intent>
+
+                <Draft_Structure>
+                (Lead)      구체적 역할과 프로젝트 맥락 — "~에서 ~를 담당하며"
+                (Action)    기술 판단과 실행 — 왜 이 기술/아키텍처를 선택했는가 + 구체적 행동
+                (Outcome)   측정 가능한 결과 — 수치, before/after 비교
+                (JD-Fit)    마무리 — "이 경험에서 보여준 A 역량은 B직무에서 요구하는 C와 자연스럽게 연결된다" 뉘앙스. 직접적으로 "기여하겠습니다"가 아니라, 경험이 직무로 이어지는 흐름이 자연스럽게 느껴지도록.
+                </Draft_Structure>
 
                 <Strict_Rules>
                 1. Return ONLY valid JSON: {"title":"...","text":"..."}
@@ -59,6 +67,7 @@ public class ExperiencePromptStrategy implements PromptStrategy {
                 11. Avoid vague openers. Start with the concrete claim.
                 12. Write in natural Korean narrative — not a resume bullet list.
                 13. Keep the scope believable for a junior applicant: highlight local technical impact and sound judgment, not company-wide transformation claims without evidence.
+                14. Closing 1~2 sentences must implicitly connect the demonstrated competency to the target role. Use companyContext/JD info. Do NOT write "기여하겠습니다" or "지원하게 되었습니다" — instead, let the reader naturally conclude "이 역량이 우리 직무에 필요한 것과 같다".
                 </Strict_Rules>
 
                 <Output_Format>

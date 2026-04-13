@@ -36,6 +36,13 @@ public class PersonalStoryController {
         return ResponseEntity.ok(service.updateStory(id, request));
     }
 
+    @PostMapping("/bulk")
+    public ResponseEntity<List<PersonalStoryResponse>> bulkCreate(
+            @RequestBody List<PersonalStoryResponse.UpsertRequest> requests
+    ) {
+        return ResponseEntity.ok(service.bulkCreate(requests));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteStory(@PathVariable Long id) {
         service.deleteStory(id);

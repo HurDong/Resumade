@@ -119,7 +119,8 @@ export type StoryType =
   | "ENVIRONMENT"
   | "INFLUENCE"
   | "FAILURE_RECOVERY"
-  | "MILESTONE";
+  | "MILESTONE"
+  | "WRITING_GUIDE";
 
 export const STORY_TYPE_LABELS: Record<StoryType, string> = {
   TURNING_POINT: "전환점",
@@ -128,6 +129,7 @@ export const STORY_TYPE_LABELS: Record<StoryType, string> = {
   INFLUENCE: "영향받은 인물/경험",
   FAILURE_RECOVERY: "실패와 극복",
   MILESTONE: "인생 이정표",
+  WRITING_GUIDE: "작성 가이드",
 };
 
 export interface PersonalStory {

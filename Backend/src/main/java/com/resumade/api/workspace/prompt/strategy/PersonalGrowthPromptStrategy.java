@@ -94,12 +94,15 @@ public class PersonalGrowthPromptStrategy implements PromptStrategy {
                 </Instructions>
 
                 <Provided_Context>
-                ## 지원자 정보 및 경험 소재 (가장 적합한 서사 재료를 선별하십시오)
+                ## 지원자 인생 서사 소재 (가장 적합한 서사 재료를 선별하십시오)
                 %s
-                
+
+                ## 작성 가이드라인 (WRITING_GUIDE — 아래 지침을 본문 작성 전략에 반드시 반영하십시오)
+                %s
+
                 ## 회사 및 공고 분석 (연결 지점으로 활용)
                 %s
-                
+
                 ## 다른 문항 내용 (소재 중복 회피용)
                 %s
                 </Provided_Context>
@@ -112,7 +115,9 @@ public class PersonalGrowthPromptStrategy implements PromptStrategy {
                 nullSafe(params.company()), nullSafe(params.position()),
                 nullSafe(params.questionTitle()), params.maxLength(),
                 params.minTarget(), params.maxTarget(),
-                nullSafe(params.experienceContext()), nullSafe(params.companyContext()),
+                nullSafe(params.experienceContext()),
+                nullSafe(params.writingGuideContext()),
+                nullSafe(params.companyContext()),
                 nullSafe(params.othersContext()), nullSafe(params.directive())
         );
     }

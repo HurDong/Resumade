@@ -66,6 +66,7 @@ public class PersonalStory {
         ENVIRONMENT,       // 성장 환경
         INFLUENCE,         // 영향받은 인물/경험
         FAILURE_RECOVERY, // 실패와 극복
-        MILESTONE          // 인생 이정표
+        MILESTONE,         // 인생 이정표
+        WRITING_GUIDE      // 작성 가이드 (강조 역량·성장 흐름·문체 지침 — AI 프롬프트에 직접 주입)
     }
 }

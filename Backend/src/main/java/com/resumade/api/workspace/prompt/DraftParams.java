@@ -35,7 +35,14 @@ public record DraftParams(
         String othersContext,
 
         /** 사용자 추가 지시사항 (배치 전략 + 개인 directive 병합본) */
-        String directive
+        String directive,
+
+        /**
+         * WRITING_GUIDE 타입 서사에서 추출한 작성 가이드라인.
+         * 강조 역량·성장 흐름·문체 지침·금지 항목 등을 포함.
+         * PersonalGrowth 문항 전용. 다른 카테고리에서는 null.
+         */
+        String writingGuideContext
 ) {
     public static Builder builder() {
         return new Builder();
@@ -52,23 +59,25 @@ public record DraftParams(
         private String experienceContext;
         private String othersContext;
         private String directive;
+        private String writingGuideContext;
 
-        public Builder company(String company)                   { this.company = company; return this; }
-        public Builder position(String position)                 { this.position = position; return this; }
-        public Builder questionTitle(String questionTitle)       { this.questionTitle = questionTitle; return this; }
-        public Builder companyContext(String companyContext)     { this.companyContext = companyContext; return this; }
-        public Builder maxLength(int maxLength)                  { this.maxLength = maxLength; return this; }
-        public Builder minTarget(int minTarget)                  { this.minTarget = minTarget; return this; }
-        public Builder maxTarget(int maxTarget)                  { this.maxTarget = maxTarget; return this; }
-        public Builder experienceContext(String ctx)             { this.experienceContext = ctx; return this; }
-        public Builder othersContext(String othersContext)       { this.othersContext = othersContext; return this; }
-        public Builder directive(String directive)               { this.directive = directive; return this; }
+        public Builder company(String company)                           { this.company = company; return this; }
+        public Builder position(String position)                         { this.position = position; return this; }
+        public Builder questionTitle(String questionTitle)               { this.questionTitle = questionTitle; return this; }
+        public Builder companyContext(String companyContext)             { this.companyContext = companyContext; return this; }
+        public Builder maxLength(int maxLength)                          { this.maxLength = maxLength; return this; }
+        public Builder minTarget(int minTarget)                          { this.minTarget = minTarget; return this; }
+        public Builder maxTarget(int maxTarget)                          { this.maxTarget = maxTarget; return this; }
+        public Builder experienceContext(String ctx)                     { this.experienceContext = ctx; return this; }
+        public Builder othersContext(String othersContext)               { this.othersContext = othersContext; return this; }
+        public Builder directive(String directive)                       { this.directive = directive; return this; }
+        public Builder writingGuideContext(String writingGuideContext)   { this.writingGuideContext = writingGuideContext; return this; }
 
         public DraftParams build() {
             return new DraftParams(
                     company, position, questionTitle, companyContext,
                     maxLength, minTarget, maxTarget,
-                    experienceContext, othersContext, directive
+                    experienceContext, othersContext, directive, writingGuideContext
             );
         }
     }

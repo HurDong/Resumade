@@ -37,14 +37,22 @@ public class MotivationPromptStrategy implements PromptStrategy {
                 This is a MOTIVATION question. The evaluator wants evidence for:
                 1. WHY specifically THIS company — product, culture, tech stack, business direction, or values.
                    Generic phrases like "글로벌 기업" or "성장 가능성" are red flags.
-                2. WHY specifically THIS role — how the applicant's past experience arc leads here naturally.
-                3. WHY NOW — what the applicant plans to contribute in the first 2-3 years.
+                2. COMPANY KNOWLEDGE — demonstrate the applicant actually researched the company: mention a recent product, service, or strategic move that is directly relevant to the target role.
+                3. WHY specifically THIS role — how the applicant's past experience arc leads here naturally.
+                4. WHY NOW — what the applicant plans to contribute in the first 2-3 years.
 
                 Priority order for content:
-                  [PRIMARY]  Company-fit narrative (use companyContext heavily)
+                  [PRIMARY]  Company-fit narrative + demonstration of company knowledge (use companyContext heavily)
                   [SECONDARY] Applicant's relevant experience as proof of capability
                   [TERTIARY]  Future contribution and growth vision
                 </Question_Intent>
+
+                <Draft_Structure>
+                (Lead)      기여 의지 — "A기업에서 B를 하고 싶어 지원했습니다" (결론 선행, 왜 이 회사인지 첫 문장에서 바로 답)
+                (Knowledge) 기업 이해 — 최근 A기업이 직무와 밀접하게 연관된 서비스 C를 출시하거나 기술적 행보 D를 하고 있다는 것을 1~2문장으로 언급. companyContext에서 가장 직무 관련성이 높은 정보를 선택.
+                (Proof)     경험 증명 — "저는 E한 경험을 하며 F한 역량을 갖추었습니다" — 기업이 필요로 하는 역량과 자연스럽게 연결
+                (Vision)    미래 기여 — 입사 후 2~3년 내 구체적 기여 계획
+                </Draft_Structure>
 
                 <Strict_Rules>
                 1. Return ONLY valid JSON with shape: {"title":"...","text":"..."}
@@ -55,11 +63,12 @@ public class MotivationPromptStrategy implements PromptStrategy {
                 6. Title must be concrete and specific, NOT generic labels like 성장, 열정, 지원동기.
                 7. Title must NOT: summarize the question, repeat company/position name, or use vague nouns.
                 8. First sentence of text MUST answer "why this company" directly in a conclusion-first style.
-                9. Do NOT invent company details, products, or technologies not found in companyContext.
-                10. Do NOT use ceremonial openings like "안녕하세요", "저는 ~에 지원하게 된", or similar.
-                11. Do NOT write in bullet/list format unless explicitly requested.
-                12. Write in natural Korean cover-letter prose — the applicant's own reflective voice.
-                13. Keep the voice believable for a new-grad or junior applicant: emphasize grounded evidence, learning curve, and near-term contribution over grand strategic claims.
+                9. After the opening, include 1~2 sentences demonstrating concrete knowledge of the company's recent activities — a specific product, service launch, or strategic direction that connects to the target role. This shows the applicant did real research.
+                10. Do NOT invent company details, products, or technologies not found in companyContext.
+                11. Do NOT use ceremonial openings like "안녕하세요", "저는 ~에 지원하게 된", or similar.
+                12. Do NOT write in bullet/list format unless explicitly requested.
+                13. Write in natural Korean cover-letter prose — the applicant's own reflective voice.
+                14. Keep the voice believable for a new-grad or junior applicant: emphasize grounded evidence, learning curve, and near-term contribution over grand strategic claims.
                 </Strict_Rules>
 
                 <Output_Format>
