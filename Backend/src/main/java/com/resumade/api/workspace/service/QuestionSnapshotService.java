@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -24,7 +25,7 @@ public class QuestionSnapshotService {
      * 스냅샷 저장 — 비동기 처리하여 메인 파이프라인을 블록하지 않습니다.
      */
     @Async
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void saveSnapshot(Long questionId, SnapshotType type, String content) {
         if (content == null || content.isBlank()) return;
         try {
