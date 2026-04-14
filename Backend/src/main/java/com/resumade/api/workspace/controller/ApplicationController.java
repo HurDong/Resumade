@@ -216,6 +216,7 @@ public class ApplicationController {
     @GetMapping("/workspace-selector")
     public List<Application> getWorkspaceSelectorApplications() {
         return applicationRepository.findAll().stream()
+                .filter(app -> app.getResult() == ApplicationResult.PENDING)
                 .filter(app -> app.getStatus() == ApplicationStatus.DOCUMENT)
                 .filter(app -> {
                     if (app.getQuestions().isEmpty()) return true;

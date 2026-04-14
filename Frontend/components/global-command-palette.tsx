@@ -22,6 +22,7 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command"
+import { isWorkspaceVisibleApplication } from "@/lib/workspace/workspace-visibility"
 
 type PaletteAction = {
   id: string
@@ -102,7 +103,7 @@ async function fetchPaletteApplications(): Promise<PaletteApplication[]> {
   const data = await response.json()
   if (!Array.isArray(data)) return []
 
-  return data.map((app: any) => ({
+  return data.filter(isWorkspaceVisibleApplication).map((app: any) => ({
     id: String(app.id),
     company: app.companyName || "미지정 공고",
     position: app.position || "직무 미지정",

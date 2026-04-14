@@ -10,6 +10,7 @@ import { Search, PenTool, LayoutDashboard, ArrowRight, Loader2 } from "lucide-re
 import { Input } from "@/components/ui/input"
 import { getDDay, mockApplications, type Application } from "@/lib/mock-data"
 import { isFrontendOnlyMode } from "@/lib/frontend-only"
+import { isWorkspaceVisibleApplication } from "@/lib/workspace/workspace-visibility"
 
 export function WorkspaceSelector() {
   const router = useRouter()
@@ -20,7 +21,7 @@ export function WorkspaceSelector() {
   useEffect(() => {
     const fetchApps = async () => {
       if (isFrontendOnlyMode()) {
-        setApplications(mockApplications)
+        setApplications(mockApplications.filter(isWorkspaceVisibleApplication))
         setLoading(false)
         return
       }
@@ -42,13 +43,13 @@ export function WorkspaceSelector() {
             result: app.result,
             questions: app.questions || []
           }))
-          setApplications(mapped)
+          setApplications(mapped.filter(isWorkspaceVisibleApplication))
         } else {
-          setApplications(mockApplications)
+          setApplications(mockApplications.filter(isWorkspaceVisibleApplication))
         }
       } catch (err) {
         console.error("Failed to fetch apps", err)
-        setApplications(mockApplications)
+        setApplications(mockApplications.filter(isWorkspaceVisibleApplication))
       } finally {
         setLoading(false)
       }
