@@ -2726,7 +2726,7 @@ public class WorkspaceService {
      */
     private String buildFilteredContext(WorkspaceQuestion initialQuestion, Long questionId,
             List<Experience> allExperiences, QuestionCategory category) {
-        Set<Long> excludedExperienceIds = shouldRelaxExperienceExclusion(initialQuestion)
+        Set<Long> excludedExperienceIds = shouldRelaxExperienceExclusion(initialQuestion, category)
                 ? Set.of()
                 : removeDirectiveMentionedExperiences(
                         extractUsedExperienceIds(initialQuestion, questionId, allExperiences),
@@ -2783,7 +2783,10 @@ public class WorkspaceService {
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
-    private boolean shouldRelaxExperienceExclusion(WorkspaceQuestion question) {
+    private boolean shouldRelaxExperienceExclusion(WorkspaceQuestion question, QuestionCategory category) {
+        if (category == QuestionCategory.TREND_INSIGHT) {
+            return true;
+        }
         return !extractFacetHintsFromDirective(question == null ? null : question.getBatchStrategyDirective()).isBlank();
     }
 
@@ -2799,7 +2802,9 @@ public class WorkspaceService {
         if (excludedIds.isEmpty()) {
             return excludedIds;
         }
-        String directive = question == null ? null : question.getBatchStrategyDirective();
+        String directive = String.join("\n",
+                safeTrim(question == null ? null : question.getBatchStrategyDirective()),
+                safeTrim(question == null ? null : question.getUserDirective()));
         if (directive == null || directive.isBlank()) {
             return excludedIds;
         }
