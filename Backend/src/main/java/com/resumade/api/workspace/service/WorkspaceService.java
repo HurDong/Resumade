@@ -151,6 +151,296 @@ public class WorkspaceService {
             "\uAC1C\uC120",
             "\uD5A5\uC0C1",
             "\uC6B4\uC601");
+    private static final List<String> MOTIVATION_TITLE_META_SIGNALS = List.of(
+            "\uC9C0\uC6D0\uB3D9\uAE30",
+            "\uC9C0\uC6D0\uC774\uC720",
+            "\uC785\uC0AC\uC774\uC720",
+            "\uC785\uC0AC\uD6C4\uD3EC\uBD80",
+            "\uC785\uC0AC\uD6C4\uBAA9\uD45C",
+            "\uD569\uB958\uC774\uC720",
+            "\uC65C\uC774\uD68C\uC0AC");
+    private static final List<String> MOTIVATION_TITLE_GENERIC_PRAISE_SIGNALS = List.of(
+            "\uAE00\uB85C\uBC8C",
+            "\uC120\uB3C4",
+            "\uCD5C\uACE0",
+            "\uD601\uC2E0",
+            "\uC131\uC7A5\uAC00\uB2A5\uC131",
+            "\uBBF8\uB798",
+            "\uBE44\uC804",
+            "\uB3C4\uC804\uC815\uC2E0");
+    private static final List<String> EXPERIENCE_TITLE_GENERIC_SIGNALS = List.of(
+            "\uD504\uB85C\uC81D\uD2B8\uACBD\uD5D8",
+            "\uAC1C\uBC1C\uACBD\uD5D8",
+            "\uC9C1\uBB34\uC5ED\uB7C9",
+            "\uAE30\uC220\uC5ED\uB7C9",
+            "\uBC31\uC5D4\uB4DC\uAC1C\uBC1C",
+            "\uC11C\uBE44\uC2A4\uAC1C\uBC1C",
+            "\uB3C4\uC804\uACBD\uD5D8",
+            "\uC131\uC7A5\uACBD\uD5D8");
+    private static final List<String> EXPERIENCE_TITLE_ACTION_SIGNALS = List.of(
+            "\uC124\uACC4",
+            "\uAD6C\uD604",
+            "\uC7AC\uC124\uACC4",
+            "\uC790\uB3D9\uD654",
+            "\uCD5C\uC801\uD654",
+            "\uB9AC\uD329\uD1A0\uB9C1",
+            "\uD45C\uC900\uD654",
+            "\uAD6C\uCD95",
+            "\uB3C4\uC785",
+            "\uBD84\uC11D",
+            "\uAC1C\uC120",
+            "\uC548\uC815\uD654");
+    private static final List<String> EXPERIENCE_TITLE_RESULT_SIGNALS = List.of(
+            "\uB2E8\uCD95",
+            "\uAC10\uC18C",
+            "\uD5A5\uC0C1",
+            "\uC808\uAC10",
+            "\uC548\uC815\uD654",
+            "\uACE0\uB3C4\uD654",
+            "\uAC1C\uC120",
+            "\uB2EC\uC131",
+            "\uC644\uB8CC",
+            "\uD6A8\uC728",
+            "\uD488\uC9C8",
+            "\uC751\uB2F5\uC2DC\uAC04",
+            "\uC624\uB958\uC728");
+    private static final List<String> COLLABORATION_TITLE_META_SIGNALS = List.of(
+            "\uD611\uC5C5\uACBD\uD5D8",
+            "\uD300\uC6CC\uD06C",
+            "\uC18C\uD1B5\uB2A5\uB825",
+            "\uAC08\uB4F1\uD574\uACB0",
+            "\uD611\uC5C5\uC5ED\uB7C9",
+            "\uD300\uD504\uB85C\uC81D\uD2B8",
+            "\uB9AC\uB354\uC2ED\uACBD\uD5D8");
+    private static final List<String> COLLABORATION_TITLE_ROLE_SIGNALS = List.of(
+            "\uD300\uC7A5",
+            "\uC2E4\uBB34\uB2F4\uB2F9",
+            "\uAE30\uD68D",
+            "\uC870\uC728",
+            "\uB2F4\uB2F9",
+            "\uC6B4\uC601",
+            "\uC911\uC7AC",
+            "\uB9AC\uB4DC");
+    private static final List<String> COLLABORATION_TITLE_PROCESS_SIGNALS = List.of(
+            "\uC870\uC728",
+            "\uC124\uB4DD",
+            "\uC911\uC7AC",
+            "\uD569\uC758",
+            "\uC815\uB9AC",
+            "\uBB38\uC11C\uD654",
+            "\uACF5\uC720",
+            "\uC815\uB82C",
+            "\uD53C\uB4DC\uBC31",
+            "\uD68C\uC758",
+            "\uC2E4\uD5D8",
+            "\uC2DC\uBBAC\uB808\uC774\uC158");
+    private static final List<String> COLLABORATION_TITLE_OUTCOME_SIGNALS = List.of(
+            "\uD5A5\uC0C1",
+            "\uAC10\uC18C",
+            "\uB2E8\uCD95",
+            "\uB2EC\uC131",
+            "\uD655\uBCF4",
+            "\uC644\uC218",
+            "\uC815\uCC29",
+            "\uC548\uC815",
+            "\uD488\uC9C8",
+            "\uD6A8\uC728",
+            "\uC751\uB300");
+    private static final List<String> PERSONAL_GROWTH_TITLE_META_SIGNALS = List.of(
+            "\uC131\uC7A5\uACFC\uC815",
+            "\uAC00\uCE58\uAD00",
+            "\uBC30\uC6C0\uACFC\uC131\uC7A5",
+            "\uB098\uB97C\uB9CC\uB4E0\uACBD\uD5D8",
+            "\uC778\uC0DD\uC758\uC804\uD658\uC810",
+            "\uC0B6\uC758\uD0DC\uB3C4");
+    private static final List<String> PERSONAL_GROWTH_TITLE_VALUE_SIGNALS = List.of(
+            "\uCC45\uC784\uAC10",
+            "\uAE30\uC900",
+            "\uC6D0\uCE59",
+            "\uD0DC\uB3C4",
+            "\uC2DC\uC120",
+            "\uC2B5\uAD00",
+            "\uB07C\uAE30",
+            "\uACBD\uCCAD",
+            "\uBC30\uB824",
+            "\uC2E4\uD589",
+            "\uC815\uB9AC",
+            "\uC2E0\uB8B0",
+            "\uC790\uC138");
+    private static final List<String> PERSONAL_GROWTH_TITLE_BEHAVIOR_SIGNALS = List.of(
+            "\uAE30\uB85D",
+            "\uC9C8\uBB38",
+            "\uBCF5\uAE30",
+            "\uC815\uB9AC",
+            "\uB4E3\uAE30",
+            "\uBC84\uD2F0\uAE30",
+            "\uBC14\uAFB8\uAE30",
+            "\uC804\uD658",
+            "\uC774\uC5B4\uAC00\uAE30",
+            "\uB2E4\uC2DC",
+            "\uB05D\uAE4C\uC9C0",
+            "\uC2E4\uD589",
+            "\uAC1C\uC120");
+    private static final List<String> CULTURE_FIT_TITLE_META_SIGNALS = List.of(
+            "\uC870\uC9C1\uBB38\uD654\uC801\uD569\uC131",
+            "\uC870\uC9C1\uBB38\uD654",
+            "\uBB38\uD654\uC801\uD569\uC131",
+            "\uC131\uACA9\uC758\uC7A5\uB2E8\uC810",
+            "\uC7A5\uB2E8\uC810",
+            "\uAC00\uCE58\uAD00",
+            "\uC77C\uD558\uB294\uBC29\uC2DD",
+            "\uC2E4\uD589\uB825",
+            "\uACE0\uAC1D\uC911\uC2EC",
+            "\uC624\uB108\uC2ED");
+    private static final List<String> CULTURE_FIT_TITLE_GENERIC_TRAIT_SIGNALS = List.of(
+            "\uCC45\uC784\uAC10",
+            "\uC5F4\uC815",
+            "\uC131\uC2E4",
+            "\uAF3C\uAF3C\uD568",
+            "\uC2E0\uC911\uD568",
+            "\uC801\uADF9\uC131",
+            "\uC18C\uD1B5\uB2A5\uB825",
+            "\uB9AC\uB354\uC2ED",
+            "\uC624\uB108\uC2ED",
+            "\uACE0\uAC1D\uC911\uC2EC",
+            "\uBE60\uB978\uC2E4\uD589",
+            "\uB3C4\uC804\uC815\uC2E0");
+    private static final List<String> CULTURE_FIT_TITLE_BEHAVIOR_SIGNALS = List.of(
+            "\uBC18\uC601",
+            "\uC870\uC728",
+            "\uC804\uD658",
+            "\uAC1C\uC120",
+            "\uB3C4\uC785",
+            "\uC870\uC815",
+            "\uC124\uB4DD",
+            "\uC815\uB9AC",
+            "\uBB38\uC11C\uD654",
+            "\uACF5\uC720",
+            "\uC2E4\uD589",
+            "\uC2E4\uD5D8",
+            "\uAC80\uC99D",
+            "\uACBD\uCCAD",
+            "\uC644\uD654",
+            "\uB300\uC751",
+            "\uC6B4\uC601",
+            "\uC8FC\uB3C4");
+    private static final List<String> CULTURE_FIT_TITLE_IMPACT_SIGNALS = List.of(
+            "\uC99D\uAC00",
+            "\uAC10\uC18C",
+            "\uD5A5\uC0C1",
+            "\uAC1C\uC120",
+            "\uB2EC\uC131",
+            "\uC815\uCC29",
+            "\uC548\uC815",
+            "\uB9CC\uC871\uB3C4",
+            "\uC804\uD658\uC728",
+            "\uBB38\uC758\uC728",
+            "\uCC38\uC5EC\uC728",
+            "\uC2E0\uB8B0",
+            "\uD569\uC758",
+            "\uC644\uB8CC");
+    private static final List<String> PROBLEM_SOLVING_TITLE_META_SIGNALS = List.of(
+            "\uBB38\uC81C\uD574\uACB0",
+            "\uB3C4\uC804\uACBD\uD5D8",
+            "\uC2E4\uD328\uADF9\uBCF5",
+            "\uC704\uAE30\uADF9\uBCF5",
+            "\uD574\uACB0\uACBD\uD5D8",
+            "\uC5B4\uB824\uC6C0\uADF9\uBCF5");
+    private static final List<String> PROBLEM_SOLVING_TITLE_PROBLEM_SIGNALS = List.of(
+            "\uBCD1\uBAA9",
+            "\uC2E4\uD328\uC728",
+            "\uC9C0\uC5F0",
+            "\uC624\uB958",
+            "\uACE0\uAC08",
+            "\uCDA9\uB3CC",
+            "\uB204\uB77D",
+            "\uC815\uC9C0",
+            "\uBD88\uB7C9",
+            "\uACE0\uC7A5",
+            "\uB099\uC81C",
+            "\uC704\uAE30",
+            "\uD3B8\uCC28",
+            "\uACFC\uBD80\uD558",
+            "\uC624\uC791\uB3D9",
+            "\uD63C\uC120",
+            "\uBD88\uC77C\uCE58");
+    private static final List<String> PROBLEM_SOLVING_TITLE_RESOLUTION_SIGNALS = List.of(
+            "\uC7AC\uC9C4\uB2E8",
+            "\uC7AC\uC124\uACC4",
+            "\uBCF5\uAD6C",
+            "\uC804\uD658",
+            "\uAC1C\uC120",
+            "\uC218\uC815",
+            "\uC870\uC815",
+            "\uD574\uC18C",
+            "\uBCF5\uC6D0",
+            "\uD45C\uC900\uD654",
+            "\uC7AC\uAD6C\uC131",
+            "\uAD50\uCCB4",
+            "\uCD5C\uC801\uD654",
+            "\uBD84\uC11D",
+            "\uC644\uC8FC");
+    private static final List<String> PROBLEM_SOLVING_TITLE_JUDGMENT_SIGNALS = List.of(
+            "\uC6D0\uC778",
+            "\uD310\uB2E8",
+            "\uC120\uD0DD",
+            "\uAE30\uC900",
+            "\uB9AC\uC2A4\uD06C",
+            "\uC81C\uC57D",
+            "\uC6B0\uC120\uC21C\uC704",
+            "\uB300\uC751");
+    private static final List<String> TREND_INSIGHT_TITLE_GENERIC_THEME_SIGNALS = List.of(
+            "\uAE30\uC220\uD2B8\uB80C\uB4DC",
+            "\uC0B0\uC5C5\uD2B8\uB80C\uB4DC",
+            "\uBBF8\uB798\uAE30\uC220",
+            "\uD2B8\uB80C\uB4DC",
+            "\uB3D9\uD5A5",
+            "\uB514\uC9C0\uD138\uC804\uD658",
+            "ai\uD601\uC2E0",
+            "\uC0DD\uC131\uD615ai",
+            "\uC2E0\uAE30\uC220");
+    private static final List<String> TREND_INSIGHT_TITLE_IMPLICATION_SIGNALS = List.of(
+            "\uD568\uC758",
+            "\uC601\uD5A5",
+            "\uBCC0\uD654",
+            "\uC804\uD658",
+            "\uD655\uC0B0",
+            "\uB300\uC751",
+            "\uACE0\uB3C4\uD654",
+            "\uC7AC\uD3B8",
+            "\uC2E0\uB8B0",
+            "\uACBD\uC7C1\uB825",
+            "\uC6B0\uC120\uC21C\uC704",
+            "\uB9AC\uC2A4\uD06C",
+            "\uAE30\uD68C",
+            "\uC801\uC6A9");
+    private static final List<String> TREND_INSIGHT_TITLE_SCENE_SIGNALS = List.of(
+            "\uC11C\uBE44\uC2A4",
+            "\uACE0\uAC1D",
+            "\uC2DC\uC2A4\uD15C",
+            "\uC5C5\uBB34",
+            "\uC6B4\uC601",
+            "\uC81C\uD488",
+            "\uD50C\uB7AB\uD3FC",
+            "\uC0C1\uB2F4",
+            "\uD488\uC9C8",
+            "\uACF5\uC815",
+            "\uBA54\uBAA8\uB9AC",
+            "\uC815\uBE44",
+            "\uACB0\uC81C",
+            "\uBB38\uC11C",
+            "\uAC80\uC99D");
+    private static final List<String> TREND_INSIGHT_TITLE_EVIDENCE_SIGNALS = List.of(
+            "\uB370\uC774\uD130",
+            "\uC9C0\uD45C",
+            "\uD1B5\uACC4",
+            "\uC815\uCC45",
+            "\uADDC\uC81C",
+            "\uAC80\uC0C9",
+            "\uC218\uC694",
+            "\uADFC\uAC70",
+            "\uBE44\uAD50",
+            "\uC2E0\uD638");
     private static final List<String> TITLE_ACHIEVEMENT_SUMMARY_SIGNALS = List.of(
             "\uB2E8\uCD95",
             "\uCD5C\uC801\uD654",
@@ -1130,61 +1420,67 @@ public class WorkspaceService {
 
         switch (effectiveCategory) {
             case MOTIVATION -> {
-                requiredShape = "Show BOTH a proven past capability and the forward contribution direction that makes the application credible.";
+                requiredShape = "Show one prepared capability or selection criterion that naturally points to the applicant's early contribution direction.";
                 preferredPatterns = """
-                        - [past evidence] + [target value or operating value]
-                        - [past capability] + [initial execution or improvement direction]
-                        - [past improvement experience] + [role-fit contribution logic]
+                        - [prepared capability or criterion] + [contribution direction]
+                        - [past proof] + [why-this-role value]
+                        - [problem awareness or value] + [execution direction]
                         """;
-                avoidLine = "Avoid pure metric-summary titles that stop at the past achievement alone. Also avoid forced bridge wording that reads like a report sentence.";
+                avoidLine = "Avoid pure achievement-summary titles, abstract company-praise titles, and aspiration-only titles that never show why this company and role are the next step now.";
             }
             case EXPERIENCE -> {
-                requiredShape = "Lead with concrete action or result first, then let the technical value or role-fit signal follow naturally.";
+                requiredShape = "Show the owned technical action or decision and the bounded result, not just the project name or a competence slogan.";
                 preferredPatterns = """
-                        - [technical action] + [measurable result]
-                        - [problem] + [solution or architecture choice]
+                        - [technical action or decision] + [measurable result]
+                        - [problem] + [solution or architecture choice] + [result]
+                        - [owned scope] + [stabilized or improved outcome]
                         """;
-                avoidLine = "Avoid vague competence slogans that hide the actual role, decision, or measurable outcome.";
+                avoidLine = "Avoid project-name-only titles, vague competence slogans, and titles that hide the applicant's actual role, decision, or measurable outcome.";
             }
             case PROBLEM_SOLVING -> {
-                requiredShape = "Name the problem pressure and the way it was resolved, not just the final achievement.";
+                requiredShape = "Name the problem pressure or failure point and the resolution or turnaround, not just the final achievement.";
                 preferredPatterns = """
-                        - [problem pressure] + [resolution]
-                        - [failure or bottleneck] + [turnaround result]
+                        - [problem pressure or bottleneck] + [resolution]
+                        - [root cause or re-diagnosis] + [turnaround result]
+                        - [constraint or failure point] + [chosen fix]
                         """;
-                avoidLine = "Avoid titles that sound like a generic success story without the challenge or diagnosis layer.";
+                avoidLine = "Avoid meta titles like 문제 해결 or 도전 경험, and avoid pure result titles that hide what had to be solved or re-diagnosed.";
             }
             case COLLABORATION -> {
-                requiredShape = "Expose a collaboration trait through a concrete interface, conflict, or team outcome.";
+                requiredShape = "Show the shared goal, the applicant's owned role, and the coordination or conflict-handling method through a concrete team scene.";
                 preferredPatterns = """
-                        - [collaboration trait] + [team outcome]
-                        - [coordination action] + [delivery result]
+                        - [owned role or coordination action] + [team outcome]
+                        - [conflict or blocker] + [resolution method]
+                        - [shared goal] + [alignment process]
                         """;
-                avoidLine = "Avoid titles that only name an individual achievement without the team context.";
+                avoidLine = "Avoid meta titles like 협업 경험 or 팀워크 역량, and avoid titles that only name an individual achievement without the shared goal, team context, or coordination process.";
             }
             case PERSONAL_GROWTH -> {
-                requiredShape = "Show the formed value or work principle through one lived behavior signal.";
+                requiredShape = "Show one formed value or work principle through a decisive episode and the way it still appears in current behavior.";
                 preferredPatterns = """
                         - [formed value] + [current behavior]
-                        - [turning-point lesson] + [work principle]
+                        - [turning-point lesson] + [today's work principle]
+                        - [decisive episode] + [formed standard]
                         """;
-                avoidLine = "Avoid technical metric headlines that erase the human story or value formation.";
+                avoidLine = "Avoid meta titles like 성장과정 or 가치관, pure company-choice framing, and technical metric headlines that erase the human story or value formation.";
             }
             case CULTURE_FIT -> {
-                requiredShape = "Show the working style through one bounded execution signal and its value.";
+                requiredShape = "Show one value, trait, or working style through a concrete behavior episode and its team or customer impact.";
                 preferredPatterns = """
-                        - [working style] + [execution signal]
-                        - [ownership or speed] + [validated value]
+                        - [value or trait] + [behavioral proof]
+                        - [customer or team-facing action] + [impact]
+                        - [weakness improvement] + [changed behavior]
                         """;
-                avoidLine = "Avoid abstract praise of culture without a concrete execution trace.";
+                avoidLine = "Avoid abstract culture praise, trait-only slogans, and meta titles like 성격의 장단점 or 고객 중심 without a concrete behavior trace.";
             }
             case TREND_INSIGHT -> {
-                requiredShape = "Name the issue and the practical implication instead of turning it into a generic opinion label.";
+                requiredShape = "Name one external issue and the company-side implication or application scene instead of turning it into a generic opinion label.";
                 preferredPatterns = """
-                        - [issue or trend] + [practical implication]
-                        - [viewpoint] + [business or product relevance]
+                        - [external issue or trend] + [company-side implication]
+                        - [judgment] + [product, customer, service, or system scene]
+                        - [trade-off or condition] + [practical direction]
                         """;
-                avoidLine = "Avoid broad theme labels that never show the applicant's actual angle or judgment.";
+                avoidLine = "Avoid broad theme labels, project-retrospective titles, and abstract AI slogans that never show the applicant's actual angle, evidence, or company-side implication.";
             }
             default -> {
             }
@@ -1483,6 +1779,136 @@ public class WorkspaceService {
             QuestionCategory category,
             String titleCore,
             String normalizedTitle) {
+        QuestionCategory effectiveCategory = category != null ? category : QuestionCategory.DEFAULT;
+        if (effectiveCategory == QuestionCategory.EXPERIENCE) {
+            boolean hasAction = hasExperienceTitleActionSignal(titleCore, normalizedTitle);
+            boolean hasResult = hasExperienceTitleResultSignal(titleCore, normalizedTitle);
+
+            if (containsAny(normalizedTitle, EXPERIENCE_TITLE_GENERIC_SIGNALS) && !hasAction && !hasResult) {
+                return "experience_generic_skill_title";
+            }
+
+            if (containsAny(normalizedTitle, "\uD504\uB85C\uC81D\uD2B8", "\uACBD\uD5D8") && !hasAction && !hasResult) {
+                return "experience_project_only_title";
+            }
+
+            return null;
+        }
+
+        if (effectiveCategory == QuestionCategory.PROBLEM_SOLVING) {
+            boolean hasProblem = hasProblemSolvingProblemSignal(titleCore, normalizedTitle);
+            boolean hasResolution = hasProblemSolvingResolutionSignal(titleCore, normalizedTitle);
+
+            if (containsAny(normalizedTitle, PROBLEM_SOLVING_TITLE_META_SIGNALS) && !hasProblem && !hasResolution) {
+                return "problem_solving_meta_title";
+            }
+
+            return null;
+        }
+
+        if (effectiveCategory == QuestionCategory.COLLABORATION) {
+            boolean hasRole = hasCollaborationRoleSignal(titleCore, normalizedTitle);
+            boolean hasProcess = hasCollaborationProcessSignal(titleCore, normalizedTitle);
+            boolean hasOutcome = hasCollaborationOutcomeSignal(titleCore, normalizedTitle);
+
+            if (containsAny(normalizedTitle, COLLABORATION_TITLE_META_SIGNALS) && !hasRole && !hasProcess && !hasOutcome) {
+                return "collaboration_meta_title";
+            }
+
+            if (containsAny(normalizedTitle, "\uC18C\uD1B5", "\uD611\uC5C5", "\uD300\uC6CC\uD06C") && !hasProcess && !hasOutcome) {
+                return "collaboration_trait_only_title";
+            }
+
+            return null;
+        }
+
+        if (effectiveCategory == QuestionCategory.PERSONAL_GROWTH) {
+            boolean hasValue = hasPersonalGrowthValueSignal(titleCore, normalizedTitle);
+            boolean hasBehavior = hasPersonalGrowthBehaviorSignal(titleCore, normalizedTitle);
+
+            if (containsAny(normalizedTitle, PERSONAL_GROWTH_TITLE_META_SIGNALS) && !hasValue && !hasBehavior) {
+                return "personal_growth_meta_title";
+            }
+
+            if (containsAny(normalizedTitle,
+                    "\uC9C0\uC6D0\uB3D9\uAE30",
+                    "\uC9C1\uBB34\uC120\uD0DD",
+                    "\uD68C\uC0AC\uC120\uD0DD",
+                    "\uC785\uC0AC\uC774\uC720")) {
+                return "personal_growth_motivation_drift_title";
+            }
+
+            return null;
+        }
+
+        if (effectiveCategory == QuestionCategory.CULTURE_FIT) {
+            boolean hasBehavior = hasCultureFitTitleBehaviorSignal(titleCore, normalizedTitle);
+            boolean hasImpact = hasCultureFitTitleImpactSignal(titleCore, normalizedTitle);
+
+            if (containsAny(normalizedTitle, CULTURE_FIT_TITLE_META_SIGNALS) && !hasBehavior && !hasImpact) {
+                return "culture_fit_meta_title";
+            }
+
+            if (containsAny(normalizedTitle, CULTURE_FIT_TITLE_GENERIC_TRAIT_SIGNALS) && !hasBehavior && !hasImpact) {
+                return "culture_fit_trait_only_title";
+            }
+
+            return null;
+        }
+
+        if (effectiveCategory == QuestionCategory.TREND_INSIGHT) {
+            boolean hasImplication = hasTrendInsightImplicationSignal(titleCore, normalizedTitle);
+            boolean hasScene = hasTrendInsightSceneSignal(titleCore, normalizedTitle);
+            boolean hasEvidence = hasTrendInsightEvidenceSignal(titleCore, normalizedTitle);
+            boolean looksLikeAchievementSummary = looksLikeAchievementSummaryTitle(titleCore, normalizedTitle);
+
+            if (containsAny(normalizedTitle, TREND_INSIGHT_TITLE_GENERIC_THEME_SIGNALS)
+                    && !hasImplication
+                    && !hasScene
+                    && !hasEvidence) {
+                return "trend_generic_theme_title";
+            }
+
+            if (looksLikeAchievementSummary
+                    && !hasImplication
+                    && !hasScene
+                    && !hasEvidence) {
+                return "trend_project_centric_title";
+            }
+
+            return null;
+        }
+
+        if (effectiveCategory != QuestionCategory.MOTIVATION) {
+            return null;
+        }
+
+        boolean hasBridge = hasMotivationTitleBridge(titleCore, normalizedTitle);
+        boolean hasValue = hasMotivationValueSignal(titleCore, normalizedTitle);
+        boolean hasPlan = hasMotivationPlanSignal(titleCore, normalizedTitle);
+        boolean hasEvidence = hasMotivationEvidenceSignal(titleCore, normalizedTitle);
+        boolean looksLikeAchievementSummary = looksLikeAchievementSummaryTitle(titleCore, normalizedTitle);
+
+        if (containsAny(normalizedTitle, MOTIVATION_TITLE_META_SIGNALS)) {
+            return "motivation_meta_title";
+        }
+
+        if (looksLikeAchievementSummary && !hasBridge && !hasValue && !hasPlan) {
+            return "motivation_past_only_title";
+        }
+
+        if (containsAny(normalizedTitle, MOTIVATION_TITLE_GENERIC_PRAISE_SIGNALS)
+                && !hasEvidence
+                && !hasValue
+                && !hasPlan) {
+            return "motivation_generic_praise_title";
+        }
+
+        if (containsAny(normalizedTitle, "\uCD5C\uC120\uC744\uB2E4\uD558", "\uC5F4\uC2EC\uD788\uD558", "\uD568\uAED8\uC131\uC7A5", "\uC131\uC7A5\uD558\uACA0\uC2B5\uB2C8", "\uAE30\uC5EC\uD558\uACA0\uC2B5\uB2C8")
+                && !hasEvidence) {
+            return "motivation_vague_promise_title";
+        }
+
         return null;
     }
 
@@ -1501,6 +1927,107 @@ public class WorkspaceService {
                 || containsAny(normalizedTitle, MOTIVATION_TITLE_PLAN_SIGNALS);
     }
 
+    private boolean hasMotivationEvidenceSignal(String titleCore, String normalizedTitle) {
+        return looksLikeAchievementSummaryTitle(titleCore, normalizedTitle)
+                || containsAny(normalizedTitle,
+                "\uACBD\uD5D8",
+                "\uAE30\uC900",
+                "\uC900\uBE44",
+                "\uD604\uC7A5",
+                "\uAC80\uC99D",
+                "\uBD84\uC11D",
+                "\uC6B4\uC601",
+                "\uC124\uACC4",
+                "\uC815\uBE44",
+                "\uD488\uC9C8");
+    }
+
+    private boolean hasExperienceTitleActionSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, EXPERIENCE_TITLE_ACTION_SIGNALS)
+                || containsAny(normalizedTitle, EXPERIENCE_TITLE_ACTION_SIGNALS)
+                || containsAny(titleCore, TITLE_ACTION_SIGNALS);
+    }
+
+    private boolean hasExperienceTitleResultSignal(String titleCore, String normalizedTitle) {
+        return titleCore.chars().anyMatch(Character::isDigit)
+                || containsAny(titleCore, EXPERIENCE_TITLE_RESULT_SIGNALS)
+                || containsAny(normalizedTitle, EXPERIENCE_TITLE_RESULT_SIGNALS)
+                || looksLikeAchievementSummaryTitle(titleCore, normalizedTitle);
+    }
+
+    private boolean hasProblemSolvingProblemSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, PROBLEM_SOLVING_TITLE_PROBLEM_SIGNALS)
+                || containsAny(normalizedTitle, PROBLEM_SOLVING_TITLE_PROBLEM_SIGNALS);
+    }
+
+    private boolean hasProblemSolvingResolutionSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, PROBLEM_SOLVING_TITLE_RESOLUTION_SIGNALS)
+                || containsAny(normalizedTitle, PROBLEM_SOLVING_TITLE_RESOLUTION_SIGNALS)
+                || containsAny(titleCore, TITLE_ACTION_SIGNALS);
+    }
+
+    private boolean hasProblemSolvingJudgmentSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, PROBLEM_SOLVING_TITLE_JUDGMENT_SIGNALS)
+                || containsAny(normalizedTitle, PROBLEM_SOLVING_TITLE_JUDGMENT_SIGNALS);
+    }
+
+    private boolean hasCollaborationRoleSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, COLLABORATION_TITLE_ROLE_SIGNALS)
+                || containsAny(normalizedTitle, COLLABORATION_TITLE_ROLE_SIGNALS);
+    }
+
+    private boolean hasCollaborationProcessSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, COLLABORATION_TITLE_PROCESS_SIGNALS)
+                || containsAny(normalizedTitle, COLLABORATION_TITLE_PROCESS_SIGNALS)
+                || containsAny(titleCore, TITLE_ACTION_SIGNALS);
+    }
+
+    private boolean hasCollaborationOutcomeSignal(String titleCore, String normalizedTitle) {
+        return titleCore.chars().anyMatch(Character::isDigit)
+                || containsAny(titleCore, COLLABORATION_TITLE_OUTCOME_SIGNALS)
+                || containsAny(normalizedTitle, COLLABORATION_TITLE_OUTCOME_SIGNALS)
+                || looksLikeAchievementSummaryTitle(titleCore, normalizedTitle);
+    }
+
+    private boolean hasPersonalGrowthValueSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, PERSONAL_GROWTH_TITLE_VALUE_SIGNALS)
+                || containsAny(normalizedTitle, PERSONAL_GROWTH_TITLE_VALUE_SIGNALS);
+    }
+
+    private boolean hasPersonalGrowthBehaviorSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, PERSONAL_GROWTH_TITLE_BEHAVIOR_SIGNALS)
+                || containsAny(normalizedTitle, PERSONAL_GROWTH_TITLE_BEHAVIOR_SIGNALS)
+                || containsAny(titleCore, TITLE_ACTION_SIGNALS);
+    }
+
+    private boolean hasCultureFitTitleBehaviorSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, CULTURE_FIT_TITLE_BEHAVIOR_SIGNALS)
+                || containsAny(normalizedTitle, CULTURE_FIT_TITLE_BEHAVIOR_SIGNALS)
+                || containsAny(titleCore, TITLE_ACTION_SIGNALS);
+    }
+
+    private boolean hasCultureFitTitleImpactSignal(String titleCore, String normalizedTitle) {
+        return titleCore.chars().anyMatch(Character::isDigit)
+                || containsAny(titleCore, CULTURE_FIT_TITLE_IMPACT_SIGNALS)
+                || containsAny(normalizedTitle, CULTURE_FIT_TITLE_IMPACT_SIGNALS)
+                || looksLikeAchievementSummaryTitle(titleCore, normalizedTitle);
+    }
+
+    private boolean hasTrendInsightImplicationSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, TREND_INSIGHT_TITLE_IMPLICATION_SIGNALS)
+                || containsAny(normalizedTitle, TREND_INSIGHT_TITLE_IMPLICATION_SIGNALS);
+    }
+
+    private boolean hasTrendInsightSceneSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, TREND_INSIGHT_TITLE_SCENE_SIGNALS)
+                || containsAny(normalizedTitle, TREND_INSIGHT_TITLE_SCENE_SIGNALS);
+    }
+
+    private boolean hasTrendInsightEvidenceSignal(String titleCore, String normalizedTitle) {
+        return containsAny(titleCore, TREND_INSIGHT_TITLE_EVIDENCE_SIGNALS)
+                || containsAny(normalizedTitle, TREND_INSIGHT_TITLE_EVIDENCE_SIGNALS);
+    }
+
     private boolean looksLikeAchievementSummaryTitle(String titleCore, String normalizedTitle) {
         return titleCore.chars().anyMatch(Character::isDigit)
                 || containsAny(titleCore, TITLE_ACTION_SIGNALS)
@@ -1510,34 +2037,224 @@ public class WorkspaceService {
     private int adjustTitleCandidateScore(int baseScore, String titleLine, QuestionCategory category) {
         int adjusted = Math.max(0, Math.min(100, baseScore));
         QuestionCategory effectiveCategory = category != null ? category : QuestionCategory.DEFAULT;
-        if (effectiveCategory != QuestionCategory.MOTIVATION) {
-            return adjusted;
-        }
-
         String core = extractBracketTitleCore(titleLine);
         String normalizedCore = normalizeTitleComparison(core);
         if (core.isBlank() || normalizedCore.isBlank()) {
             return adjusted;
         }
 
+        if (effectiveCategory == QuestionCategory.EXPERIENCE) {
+            boolean hasAction = hasExperienceTitleActionSignal(core, normalizedCore);
+            boolean hasResult = hasExperienceTitleResultSignal(core, normalizedCore);
+
+            if (hasAction) {
+                adjusted += 6;
+            }
+
+            if (hasResult) {
+                adjusted += 6;
+            }
+
+            if (hasAction && hasResult) {
+                adjusted += 4;
+            }
+
+            if (containsAny(normalizedCore, EXPERIENCE_TITLE_GENERIC_SIGNALS) && !hasAction && !hasResult) {
+                adjusted -= 10;
+            }
+
+            if (containsAny(normalizedCore, "\uD504\uB85C\uC81D\uD2B8", "\uACBD\uD5D8") && !hasAction && !hasResult) {
+                adjusted -= 8;
+            }
+
+            return Math.max(0, Math.min(100, adjusted));
+        }
+
+        if (effectiveCategory == QuestionCategory.PROBLEM_SOLVING) {
+            boolean hasProblem = hasProblemSolvingProblemSignal(core, normalizedCore);
+            boolean hasResolution = hasProblemSolvingResolutionSignal(core, normalizedCore);
+            boolean hasJudgment = hasProblemSolvingJudgmentSignal(core, normalizedCore);
+            boolean looksLikeAchievementSummary = looksLikeAchievementSummaryTitle(core, normalizedCore);
+
+            if (hasProblem) {
+                adjusted += 6;
+            }
+
+            if (hasResolution) {
+                adjusted += 6;
+            }
+
+            if (hasJudgment) {
+                adjusted += 4;
+            }
+
+            if (hasProblem && hasResolution) {
+                adjusted += 4;
+            }
+
+            if (containsAny(normalizedCore, PROBLEM_SOLVING_TITLE_META_SIGNALS) && !hasProblem && !hasResolution) {
+                adjusted -= 10;
+            }
+
+            if (looksLikeAchievementSummary && !hasProblem) {
+                adjusted -= 6;
+            }
+
+            return Math.max(0, Math.min(100, adjusted));
+        }
+
+        if (effectiveCategory == QuestionCategory.COLLABORATION) {
+            boolean hasRole = hasCollaborationRoleSignal(core, normalizedCore);
+            boolean hasProcess = hasCollaborationProcessSignal(core, normalizedCore);
+            boolean hasOutcome = hasCollaborationOutcomeSignal(core, normalizedCore);
+
+            if (hasRole) {
+                adjusted += 5;
+            }
+
+            if (hasProcess) {
+                adjusted += 6;
+            }
+
+            if (hasOutcome) {
+                adjusted += 5;
+            }
+
+            if (hasRole && hasProcess) {
+                adjusted += 4;
+            }
+
+            if (containsAny(normalizedCore, COLLABORATION_TITLE_META_SIGNALS) && !hasRole && !hasProcess && !hasOutcome) {
+                adjusted -= 10;
+            }
+
+            if (containsAny(normalizedCore, "\uC18C\uD1B5", "\uD611\uC5C5", "\uD300\uC6CC\uD06C") && !hasProcess && !hasOutcome) {
+                adjusted -= 8;
+            }
+
+            return Math.max(0, Math.min(100, adjusted));
+        }
+
+        if (effectiveCategory == QuestionCategory.PERSONAL_GROWTH) {
+            boolean hasValue = hasPersonalGrowthValueSignal(core, normalizedCore);
+            boolean hasBehavior = hasPersonalGrowthBehaviorSignal(core, normalizedCore);
+
+            if (hasValue) {
+                adjusted += 5;
+            }
+
+            if (hasBehavior) {
+                adjusted += 5;
+            }
+
+            if (hasValue && hasBehavior) {
+                adjusted += 4;
+            }
+
+            if (containsAny(normalizedCore, PERSONAL_GROWTH_TITLE_META_SIGNALS) && !hasValue && !hasBehavior) {
+                adjusted -= 10;
+            }
+
+            if (containsAny(normalizedCore,
+                    "\uC9C0\uC6D0\uB3D9\uAE30",
+                    "\uC9C1\uBB34\uC120\uD0DD",
+                    "\uD68C\uC0AC\uC120\uD0DD",
+                    "\uC785\uC0AC\uC774\uC720")) {
+                adjusted -= 8;
+            }
+
+            return Math.max(0, Math.min(100, adjusted));
+        }
+
+        if (effectiveCategory == QuestionCategory.CULTURE_FIT) {
+            boolean hasBehavior = hasCultureFitTitleBehaviorSignal(core, normalizedCore);
+            boolean hasImpact = hasCultureFitTitleImpactSignal(core, normalizedCore);
+
+            if (hasBehavior) {
+                adjusted += 6;
+            }
+
+            if (hasImpact) {
+                adjusted += 5;
+            }
+
+            if (hasBehavior && hasImpact) {
+                adjusted += 4;
+            }
+
+            if (containsAny(normalizedCore, CULTURE_FIT_TITLE_META_SIGNALS) && !hasBehavior && !hasImpact) {
+                adjusted -= 10;
+            }
+
+            if (containsAny(normalizedCore, CULTURE_FIT_TITLE_GENERIC_TRAIT_SIGNALS) && !hasBehavior && !hasImpact) {
+                adjusted -= 8;
+            }
+
+            return Math.max(0, Math.min(100, adjusted));
+        }
+
+        if (effectiveCategory == QuestionCategory.TREND_INSIGHT) {
+            boolean hasImplication = hasTrendInsightImplicationSignal(core, normalizedCore);
+            boolean hasScene = hasTrendInsightSceneSignal(core, normalizedCore);
+            boolean hasEvidence = hasTrendInsightEvidenceSignal(core, normalizedCore);
+            boolean looksLikeAchievementSummary = looksLikeAchievementSummaryTitle(core, normalizedCore);
+
+            if (hasImplication) {
+                adjusted += 6;
+            }
+
+            if (hasScene) {
+                adjusted += 6;
+            }
+
+            if (hasEvidence) {
+                adjusted += 4;
+            }
+
+            if (hasImplication && hasScene) {
+                adjusted += 4;
+            }
+
+            if (containsAny(normalizedCore, TREND_INSIGHT_TITLE_GENERIC_THEME_SIGNALS) && !hasImplication && !hasScene) {
+                adjusted -= 10;
+            }
+
+            if (looksLikeAchievementSummary && !hasImplication && !hasScene && !hasEvidence) {
+                adjusted -= 8;
+            }
+
+            return Math.max(0, Math.min(100, adjusted));
+        }
+
+        if (effectiveCategory != QuestionCategory.MOTIVATION) {
+            return adjusted;
+        }
+
         boolean hasBridge = hasMotivationTitleBridge(core, normalizedCore);
         boolean hasValue = hasMotivationValueSignal(core, normalizedCore);
         boolean hasPlan = hasMotivationPlanSignal(core, normalizedCore);
+        boolean hasEvidence = hasMotivationEvidenceSignal(core, normalizedCore);
         boolean looksLikeAchievementSummary = looksLikeAchievementSummaryTitle(core, normalizedCore);
 
-        if (hasValue) {
+        if (hasEvidence && hasValue) {
             adjusted += 8;
+        } else if (hasValue) {
+            adjusted += 3;
         }
 
-        if (hasPlan) {
+        if (hasEvidence && hasPlan) {
             adjusted += 6;
+        } else if (hasPlan) {
+            adjusted += 2;
         }
 
-        if (hasBridge) {
+        if (hasEvidence && hasBridge) {
             adjusted += 4;
+        } else if (hasBridge) {
+            adjusted += 1;
         }
 
-        if (hasValue || hasPlan) {
+        if (hasEvidence && (hasValue || hasPlan)) {
             adjusted += 4;
         }
 
@@ -1545,11 +2262,15 @@ public class WorkspaceService {
             adjusted -= 12;
         }
 
+        if (hasBridge && !hasEvidence) {
+            adjusted -= 2;
+        }
+
         if (hasMotivationTitleBridge(core, normalizedCore)) {
             adjusted += 2;
         }
 
-        if (containsAny(core, "\uC9C0\uC6D0", "\uC785\uC0AC") && !hasValue && !hasPlan) {
+        if (containsAny(core, "\uC9C0\uC6D0", "\uC785\uC0AC") && !hasEvidence && !hasValue && !hasPlan) {
             adjusted -= 4;
         }
 
@@ -2544,32 +3265,32 @@ public class WorkspaceService {
 
         switch (effectiveCategory) {
             case MOTIVATION -> {
-                primaryFocus = "company-choice logic, role-fit proof, and realistic near-term contribution";
-                weightingRule = "Use company and JD context as the primary rubric. Select past evidence only if it proves why this company and role are a logical next step now.";
+                primaryFocus = "company-choice logic, role-fit proof, timing rationale, and realistic near-term contribution";
+                weightingRule = "Use company and JD context as the primary rubric. Select only the past evidence that proves why this company and role are the logical next step now, and make the timing credible.";
             }
             case EXPERIENCE -> {
-                primaryFocus = "specific scope, technical judgment, verifiable action, and measurable outcome";
-                weightingRule = "Prioritize technical evidence first. Use JD as a matching lens rather than letting the answer drift into a generic project summary.";
+                primaryFocus = "specific scope, role ownership, technical judgment, verifiable action, measurable outcome, and JD fit";
+                weightingRule = "Prioritize owned scope and technical evidence first. Use JD as a matching lens, and end with a grounded role connection rather than a generic promise or a broad project summary.";
             }
             case PROBLEM_SOLVING -> {
-                primaryFocus = "problem definition, root-cause depth, chosen solution, and reflective learning";
-                weightingRule = "Prioritize diagnostic depth and follow-through first. Use JD only as a secondary reason this problem-solving style matters for the role.";
+                primaryFocus = "problem definition, root-cause diagnosis, inaction risk, option selection, and reflective learning";
+                weightingRule = "Prioritize diagnosis and decision logic first. Make the risk of not solving the problem visible, show why the chosen option beat alternatives under the actual constraint, then close with the changed approach and role relevance.";
             }
             case COLLABORATION -> {
-                primaryFocus = "role clarity, friction handling, interface alignment, and team outcome";
-                weightingRule = "Prioritize the team context and the applicant's specific contribution first. Do not force a pure technical-fit essay when the question is about collaboration.";
+                primaryFocus = "shared goal, role ownership, coordination process, friction handling when relevant, and team outcome";
+                weightingRule = "Prioritize the common goal and the applicant's specific contribution first. Make team outcome and personal contribution distinct, and if there was disagreement or a blocker, explain how alignment was rebuilt instead of writing a generic teamwork slogan.";
             }
             case PERSONAL_GROWTH -> {
-                primaryFocus = "authentic life episode, turning point, value formation, and how it drives current behavior";
-                weightingRule = "Prioritize the personal narrative and the emotional/cognitive shift it produced. Avoid technical stacks and project metrics. Connect the formed value to why this role matters to the applicant.";
+                primaryFocus = "formative episode, value or work principle formed, current behavior trace, and grounded role relevance";
+                weightingRule = "Start from one representative experience or turning point, show what changed in the applicant's judgment or attitude, and then show how that principle appears in recent behavior. Metrics may support credibility, but do not let the answer turn into a technical achievement essay or a company-choice story.";
             }
             case CULTURE_FIT -> {
-                primaryFocus = "execution speed, customer or operational signal, bounded ownership, and culture fit";
-                weightingRule = "Prioritize proof of working style first: fast execution, validation, and user or business signal. Use company context to sharpen why that style fits here.";
+                primaryFocus = "value or trait in action, behavioral proof, team or customer impact, and culture fit";
+                weightingRule = "Prioritize one bounded behavior episode first. Show how the value or working style appeared in a team, customer, or execution context, and close with why that pattern fits the company's culture and role. For weakness questions, make the improvement arc visible.";
             }
             case TREND_INSIGHT -> {
-                primaryFocus = "issue selection, company relevance, reasoned viewpoint, and practical implication";
-                weightingRule = "Use company context as the primary frame. Connect one concrete issue to the business or product direction and keep any personal anecdote short and credibility-building.";
+                primaryFocus = "issue selection, evidence-backed reasoning, company relevance, applicant viewpoint, and practical implication";
+                weightingRule = "Start from one external issue with supplied evidence when available. Use company context as the primary frame, show one company-side application scene, and keep any personal anecdote short and credibility-building.";
             }
             default -> {
                 primaryFocus = "the question's dominant competency, factual proof, and role relevance";
@@ -2614,12 +3335,20 @@ public class WorkspaceService {
             avoid = "Avoid startup-style slogan writing or trend commentary that is disconnected from enterprise execution and customer trust.";
         }
 
-        if (category == QuestionCategory.PERSONAL_GROWTH) {
-            emphasis += " For personal growth questions, focus on the authentic human story — the specific episode, emotional shift, and value formed — rather than technical capability or project outcomes.";
+        if (category == QuestionCategory.MOTIVATION) {
+            emphasis += " For motivation questions, anchor the draft in one company-specific reason, one role-fit proof, and one timing signal. Do not let it drift into generic self-introduction, company praise, or autobiography.";
+        } else if (category == QuestionCategory.EXPERIENCE) {
+            emphasis += " For experience questions, state ownership, bounded scope, and measurable impact early. Show why the chosen method fit the problem, and end with a grounded JD connection rather than generic passion or abstract growth language.";
+        } else if (category == QuestionCategory.PROBLEM_SOLVING) {
+            emphasis += " For problem-solving questions, make the root cause, impact of inaction, and the chosen option's decision criteria explicit. Keep collaboration as supporting context and make the applicant's own diagnostic judgment visible.";
+        } else if (category == QuestionCategory.COLLABORATION) {
+            emphasis += " For collaboration questions, start from the shared goal, state the applicant's owned role early, and separate team outcome from individual contribution. Use one real coordination method or conflict-handling process instead of abstract teamwork praise.";
+        } else if (category == QuestionCategory.PERSONAL_GROWTH) {
+            emphasis += " For personal growth questions, focus on one formative episode, the value or work principle it formed, and one current behavior that proves it still operates today. Use technical outcomes only as supporting proof, and do not drift into company-choice motivation.";
         } else if (category == QuestionCategory.CULTURE_FIT) {
-            emphasis += " For culture-fit questions, prove the working style with one bounded execution episode instead of praising the company culture abstractly.";
+            emphasis += " For culture-fit questions, prove the value or working style with one bounded behavior episode instead of praising the company culture abstractly. Show team or customer impact, and for weakness questions make the recognition → improvement → re-application arc explicit.";
         } else if (category == QuestionCategory.TREND_INSIGHT) {
-            emphasis += " For trend-insight questions, connect one issue to the company's business direction rather than writing a broad opinion essay.";
+            emphasis += " For trend-insight questions, connect one external issue to a concrete product, customer, service, system, or operational scene in the company. Prefer evidence-backed reasoning and include one balanced condition, trade-off, or risk instead of writing a broad opinion essay.";
         }
 
         return """
