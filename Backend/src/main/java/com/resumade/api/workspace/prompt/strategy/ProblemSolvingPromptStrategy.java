@@ -72,6 +72,8 @@ public class ProblemSolvingPromptStrategy implements PromptStrategy {
                 14. Write in the applicant's own reflective, first-person voice — not an evaluator's summarization.
                 15. No parenthetical labels. No bullet enumerations unless explicitly requested.
                 16. Keep the scope credible for a junior applicant: depth of thinking matters more than breadth of ownership.
+                17. Even if teamwork was involved, the applicant's own diagnosis, choice, and action must remain visible.
+                18. If the question is about failure or difficulty, do NOT turn it into a generic perseverance story. Keep the diagnosis and correction logic at the center.
                 </Strict_Rules>
 
                 <Output_Format>
@@ -92,7 +94,31 @@ public class ProblemSolvingPromptStrategy implements PromptStrategy {
                         Hard limit: 700 characters | Target: 560 ~ 700 characters
                         """,
                         """
-                        {"title": "배포 직후 결제 실패율 8% 급증 — 원인 재진단으로 12시간 내 롤백 없이 복구", "text": "라이브 배포 3시간 후 결제 API 실패율이 8%로 치솟았습니다. 로그를 분석하자 실패 케이스는 프로모션 적용 여부와 무관하게 발생하고 있었고, 원인은 HikariCP의 FIN_WAIT 누적으로 인한 DB 커넥션 고갈이었습니다. 이 상태를 방치하면 결제 실패율이 계속 상승해 서비스 전체 신뢰에 타격이 갈 수 있었고, 배포 윈도우가 닫히기 전 조치하지 않으면 더 긴 다운타임으로 이어질 상황이었습니다.\\n\\n롤백과 keepaliveTime 핫픽스 두 가지를 검토했습니다. 롤백은 배포 윈도우 정책상 불가했고, 핫픽스는 스테이징에서 10분 내 재현·검증이 가능한 범위였습니다. 범위가 명확하고 되돌릴 수 있는 변경이라는 판단 하에 핫픽스를 선택했고, 긴급 배포 후 30분 만에 실패율이 0.3%로 복구됐습니다.\\n\\n이후 저는 원인을 확정하기 전에 먼저 영향 범위를 구체적으로 그려보는 습관이 생겼습니다. 무엇이 위험한지를 먼저 정의해야 어떤 해결책이 충분한지 판단할 수 있다는 걸 그때 실감했습니다."}
+                        {"title": "배포 직후 결제 실패율 8% 급증, 원인 재진단으로 12시간 내 롤백 없이 복구", "text": "라이브 배포 3시간 후 결제 API 실패율이 8%까지 치솟았습니다. 당시 저는 온콜 대응을 맡고 있었고, 처음에는 프로모션 로직 오류를 의심했습니다. 그러나 로그를 다시 분리해 보니 실패 케이스는 프로모션 적용 여부와 무관하게 발생했고, 공통점은 HikariCP의 FIN_WAIT 누적으로 인한 DB 커넥션 고갈이었습니다. 이 상태를 방치하면 실패율이 더 올라 서비스 신뢰에 직접 타격을 줄 수 있었고, 배포 윈도우가 닫히기 전 조치하지 않으면 더 긴 다운타임으로 이어질 상황이었습니다.\\n\\n저는 롤백과 keepaliveTime 핫픽스 두 가지를 검토했습니다. 롤백은 배포 윈도우 정책상 불가했고, 핫픽스는 스테이징에서 10분 내 재현·검증이 가능한 범위였습니다. 범위가 명확하고 되돌릴 수 있는 변경이라는 판단 아래 핫픽스를 선택했고, 긴급 배포 후 30분 만에 실패율을 0.3% 수준으로 복구했습니다.\\n\\n이 경험 이후에는 원인을 확정하기 전에 먼저 영향 범위와 제약을 같이 그리는 습관이 생겼습니다. 무엇이 위험한지 먼저 정의해야 어떤 해결책이 충분한지 판단할 수 있다는 점을 그때 분명히 배웠습니다."}
+                        """
+                ),
+                new FewShotExample(
+                        """
+                        [EXAMPLE TASK]
+                        Company: 한국남동발전
+                        Position: 설비기술
+                        Question: 예상치 못한 문제를 해결했던 경험을 구체적으로 작성해 주세요. 당시 판단 기준과 결과를 함께 설명해 주세요. (700자 이내)
+                        Hard limit: 700 characters | Target: 560 ~ 700 characters
+                        """,
+                        """
+                        {"title": "점검 순서 충돌로 생기던 병목, 공정 맵 재구성으로 작업 효율 28% 개선", "text": "정기 점검 프로젝트에서 가장 큰 문제는 인력 부족이 아니라 같은 설비 구간에 작업이 몰리며 대기 시간이 반복되는 병목이었습니다. 처음에는 작업반 수를 늘리면 해결될 것이라 생각했지만, 실제 작업 로그를 시간대별로 다시 정리해 보니 원인은 특정 공정 순서가 겹치며 핵심 설비 접근이 막히는 구조에 있었습니다. 이 상태를 그대로 두면 예정된 정지 시간 안에 핵심 점검을 끝내지 못해 후속 공정 전체가 밀릴 수 있었습니다.\\n\\n저는 인력 추가, 야간 작업 확대, 공정 순서 재조정 세 가지를 검토했습니다. 인력 증원은 당일 배치 한계가 있었고 야간 확대는 안전 리스크가 컸습니다. 그래서 선행 관계를 다시 그려 동시 진행 가능한 작업과 반드시 순차 진행해야 하는 작업을 분리했습니다. 작업반장들과 재조정안을 공유한 뒤 순서를 바꾼 결과 전체 작업 효율이 28% 개선됐고, 계획한 정지 시간 안에 점검을 마칠 수 있었습니다.\\n\\n이 경험 이후에는 자원이 부족하다고 단정하기보다 흐름을 막는 지점을 먼저 구조적으로 확인하는 습관이 생겼습니다. 설비기술 직무에서도 같은 방식으로 원인을 먼저 진단하는 엔지니어가 되고 싶습니다."}
+                        """
+                ),
+                new FewShotExample(
+                        """
+                        [EXAMPLE TASK]
+                        Company: 삼성전자
+                        Position: 생산기술 엔지니어
+                        Question: 문제를 새롭게 정의하거나 다른 방식으로 해결했던 경험을 구체적으로 작성해 주세요. (700자 이내)
+                        Hard limit: 700 characters | Target: 560 ~ 700 characters
+                        """,
+                        """
+                        {"title": "급회전 구간 이탈 반복, 센서 위치 재설계와 조건식 수정으로 기록 50초 단축", "text": "자율주행 로봇 대회를 준비할 때 가장 큰 문제는 급회전 구간에서 센서가 장애물을 늦게 인식해 8개 코스를 완주하지 못하는 것이었습니다. 처음에는 모터 출력 부족을 원인으로 봤지만, 주행 로그와 영상을 프레임 단위로 비교하자 실제 원인은 속도보다 센서 부착 위치와 회전 임계값이 맞지 않는 데 있었습니다. 이 문제를 그대로 두면 완주 자체가 불가능했고, 남은 일정도 일주일뿐이라 재설계 범위를 크게 넓힐 수 없었습니다.\\n\\n저는 모터 교체와 알고리즘 보정 두 가지를 두고 고민했습니다. 모터 교체는 하드웨어 적응 시간이 부족했고 배터리 소모도 커질 수 있었습니다. 그래서 센서 각도와 위치를 먼저 조정하고, 회전 조건식을 다시 짜는 방향을 택했습니다. 30회 넘는 테스트 끝에 급회전 구간 이탈이 5회 중 3회 발생하던 수준에서 10회 연속 미발생으로 바뀌었고, 기록도 이전 대비 50초 단축됐습니다.\\n\\n이 경험을 통해 가장 먼저 떠오른 원인을 정답처럼 믿지 않고, 관찰 데이터로 가설을 다시 검증하는 습관이 생겼습니다. 생산기술 직무에서도 같은 방식으로 공정 문제를 진단하고 개선하겠습니다."}
                         """
                 )
         );
@@ -121,6 +147,17 @@ public class ProblemSolvingPromptStrategy implements PromptStrategy {
                 Target range: %d ~ %d characters
                 </Strict_Rules>
 
+                <ProblemSolving_Checklist>
+                - Define one concrete problem, bottleneck, failure, or incident. Do NOT write a broad hardship story.
+                - Make the root cause visible and explain how you confirmed it.
+                - State why leaving the problem unsolved was risky or important.
+                - Mention at least one rejected option or why the chosen method fit the actual constraint better.
+                - Keep the applicant's own diagnosis, judgment, and action visible even if teamwork was involved.
+                - Use metrics when available. If not, use a concrete observable result such as a reproduced test result, before/after comparison, or user/operation feedback.
+                - End with what specifically changed in how you diagnose or solve problems, and connect that to the target role.
+                - Do NOT let the draft collapse into generic perseverance, teamwork, or motivation language.
+                </ProblemSolving_Checklist>
+
                 ## Additional User Directive
                 %s
 
@@ -128,7 +165,7 @@ public class ProblemSolvingPromptStrategy implements PromptStrategy {
                 Return ONLY valid JSON:
                 {"title": "제목 텍스트", "text": "본문..."}
                 - "title": names the specific problem or pivotal decision, no brackets, NOT generic 문제 해결 or 도전 경험
-                - "text": 상황 → 근본 원인 진단 → 방치 시 피해(urgency) → 옵션 비교·판단 기준 → 결과 → 느낀점, active voice
+                - "text": 상황 → 근본 원인 진단 → 방치 시 피해(urgency) → 옵션 비교·판단 기준·제약 → 결과 → 달라진 판단 방식, active voice
                 </Output_Format>
                 """.formatted(
                 nullSafe(params.company()),
