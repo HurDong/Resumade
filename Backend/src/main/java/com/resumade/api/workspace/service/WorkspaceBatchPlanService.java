@@ -75,16 +75,16 @@ public class WorkspaceBatchPlanService {
               MOTIVATION       – support motive, domain interest, company/role choice, join goal, near-term contribution
               EXPERIENCE       – technical experience, project execution, engineering judgment, measurable outcome
               PROBLEM_SOLVING  – root-cause analysis, challenge, troubleshooting, adaptation under constraint
-              COLLABORATION    – teamwork, conflict resolution, communication, alignment, documentation
-              PERSONAL_GROWTH   – personal life narrative, turning points, value formation, character shaping episodes (NOT technical growth)
+              COLLABORATION    – teamwork, shared goal, role split, coordination, conflict resolution, communication
+              PERSONAL_GROWTH   – formative episode, turning point, value formation, and how it explains the applicant's current work principle (NOT technical growth)
               CULTURE_FIT      – fast execution, MVP judgment, customer focus, experiment culture, ownership
               TREND_INSIGHT    – industry/technology issue analysis, business implication, company relevance
               DEFAULT          – only when none of the above clearly dominates
 
             Rules:
             - If a question title is about 지원동기, 입사 후 포부, 회사/직무 선택 이유 → MOTIVATION.
-            - If it asks about 협업, 갈등, 조율, 팀 프로젝트 → COLLABORATION.
-            - If it asks about 성장과정, 가치관, 인생 노선, 어린 시절, 전환점 → PERSONAL_GROWTH (NOT about tech learning).
+            - If it asks about 협업, 공동 목표, 갈등, 조율, 팀 프로젝트, 팀 성과와 개인 기여 → COLLABORATION.
+            - If it asks about 성장과정, 가치관, 전환점, 나를 만든 경험, 또는 과거 경험이 현재의 행동 원칙으로 이어진 흐름 → PERSONAL_GROWTH (NOT about tech learning or company-choice motive).
             - If it asks about 빠른 실행, 고객 반응, 실험, 적응, 새로운 방식 활용 → prefer CULTURE_FIT or PROBLEM_SOLVING depending on whether the emphasis is working style or diagnosis.
             - If it asks about 최근 기술/산업/사회 이슈 견해 → TREND_INSIGHT.
             - DEFAULT should be rare.
@@ -119,8 +119,24 @@ public class WorkspaceBatchPlanService {
               "검색 응답속도 95ms 단축 → 식품안전정보원의 국민 데이터 접근성과 신뢰도 직결"
               "결제 API 타임아웃 방어 로직 → 금융 서비스 SLA 달성과 고객 신뢰 유지에 직결"
 
-            If the question is COLLABORATION, the bridge must connect the collaboration outcome
-            to team velocity or product quality, not technical architecture.
+            If the question is COLLABORATION, the bridge must connect the coordination role and outcome
+            to team delivery quality, handoff efficiency, or operational impact — NOT individual technical achievement.
+            Format: "[coordination role or process] → [team delivery or operational impact at THIS company]"
+
+            If the question is PROBLEM_SOLVING, the bridge must connect the diagnosis and judgment process
+            to the role's problem-solving capability — NOT just the final result metric.
+            Format: "[root cause diagnosed + solution chosen] → [why that judgment matters for THIS company's role]"
+
+            If the question is CULTURE_FIT, the bridge must connect a concrete behavior episode
+            to how that working style fits the company's culture or values — NOT a generic competency statement.
+            Format: "[specific behavior in context] → [why it fits THIS company's working culture or value]"
+
+            EXCEPTION - If the question's intentTag is TREND_INSIGHT:
+            The domainBridge must NOT start from a personal technical achievement.
+            Instead, connect one external industry or technology trend to a concrete company-side application or impact.
+            Format: "[external trend or technology] → [concrete application or impact at THIS company's domain]"
+            Example: "근거 기반 생성형 AI 확산 → 제주은행 내부 약관/상품 문서 검색 고도화와 고객 응대 품질 향상에 직결"
+            The applicant's experience may be referenced only as supporting evidence, never as the starting point.
             </Step3_DomainBridge>
 
             <Step4_AntiOverlapValidation>
@@ -864,6 +880,60 @@ public class WorkspaceBatchPlanService {
             );
         }
 
+        if (category == QuestionCategory.TREND_INSIGHT) {
+            // Trend-first bridge: connect an external trend to the company domain.
+            // The applicant's experience is not the starting point here.
+            String companyDomain = company.isBlank() ? position : company + "의 " + position;
+            return firstNonBlank(
+                    joinNonBlank(
+                            "최신 기술/산업 트렌드를",
+                            companyDomain,
+                            "맥락에서 해석하고, 실제 서비스나 시스템에 적용할 수 있는 방향을 제시합니다."
+                    ),
+                    ""
+            );
+        }
+
+        if (category == QuestionCategory.COLLABORATION) {
+            // Collaboration bridge: connect team coordination outcome to company delivery or operational impact.
+            // Do NOT anchor on individual technical achievement.
+            return firstNonBlank(
+                    joinNonBlank(
+                            detail,
+                            "경험에서 맡은 역할과 조율 방식이",
+                            company.isBlank() ? position : company + "의 " + position,
+                            "팀 납기 품질과 운영 안정성에 기여할 수 있는 협업 역량으로 이어집니다."
+                    ),
+                    ""
+            );
+        }
+
+        if (category == QuestionCategory.CULTURE_FIT) {
+            // Culture-fit bridge: connect working style or trait evidence to company culture fit.
+            return firstNonBlank(
+                    joinNonBlank(
+                            detail,
+                            "경험에서 보여준 일하는 방식과 판단 기준이",
+                            company.isBlank() ? position : company + "의 " + position,
+                            "조직 문화와 맞닿아 있습니다."
+                    ),
+                    ""
+            );
+        }
+
+        if (category == QuestionCategory.PROBLEM_SOLVING) {
+            // Problem-solving bridge: connect diagnosis and judgment to role-level capability signal.
+            return firstNonBlank(
+                    joinNonBlank(
+                            result.isBlank() ? detail : result,
+                            "과정에서 드러난 원인 진단과 해결 판단이",
+                            company.isBlank() ? position : company + "의 " + position,
+                            "직무에서 문제를 구조적으로 다루는 역량으로 연결됩니다."
+                    ),
+                    ""
+            );
+        }
+
         return firstNonBlank(
                 joinNonBlank(
                         result.isBlank() ? detail : result,
@@ -970,8 +1040,8 @@ public class WorkspaceBatchPlanService {
             case MOTIVATION -> candidates.add("지원 기업 도메인과 내 경험이 맞닿은 구체적 접점");
             case EXPERIENCE -> candidates.add("직무에서 즉시 발휘 가능한 기술 판단과 실행 이력");
             case PROBLEM_SOLVING -> candidates.add("문제 원인 규명과 해결 방식의 차이를 보여주는 판단 근거");
-            case COLLABORATION -> candidates.add("협업 과정에서 맡은 역할과 조율 방식");
-            case PERSONAL_GROWTH -> candidates.add("삶의 전환점과 그로부터 형성된 가치관의 연결고리");
+            case COLLABORATION -> candidates.add("공동 목표 아래 맡은 역할과 조율 방식");
+            case PERSONAL_GROWTH -> candidates.add("대표 경험이 만든 현재의 행동 원칙과 가치 형성의 연결고리");
             case CULTURE_FIT -> candidates.add("빠르게 실행하고 검증한 working style의 증거");
             case TREND_INSIGHT -> candidates.add("회사 도메인과 연결되는 이슈 해석 관점");
             default -> candidates.add("문항 의도에 맞는 핵심 증거 한 축");
@@ -985,8 +1055,8 @@ public class WorkspaceBatchPlanService {
             case MOTIVATION -> List.of("기술 선택을 사용자 가치와 연결하는 기준");
             case EXPERIENCE -> List.of("기술 역량이 실제 비즈니스 임팩트로 이어진 경로");
             case PROBLEM_SOLVING -> List.of("문제 해결 경험을 직무 역량으로 번역하는 시각");
-            case COLLABORATION -> List.of("기술 설명을 팀 상황에 맞게 조정하는 능력");
-            case PERSONAL_GROWTH -> List.of("인생 경험에서 형성된 가치관이 지금의 선택과 태도에 미치는 영향");
+            case COLLABORATION -> List.of("팀 목표를 위해 역할을 조정하고 기준을 맞추는 능력");
+            case PERSONAL_GROWTH -> List.of("형성된 가치가 지금의 판단 기준과 일하는 태도에 미치는 영향");
             case CULTURE_FIT -> List.of("빠르게 만들고 실제 신호로 검증하는 일하는 방식");
             case TREND_INSIGHT -> List.of("기술 이슈를 회사 맥락으로 해석하는 관점");
             default -> List.of("문항 의도에 맞는 증거를 선별하는 기준");
@@ -998,8 +1068,8 @@ public class WorkspaceBatchPlanService {
             case MOTIVATION -> "이 기업의 도메인과 내 경험이 맞닿은 접점에서 출발하는 지원동기 각도";
             case EXPERIENCE -> "보유 역량과 실행 이력을 직무 수행 청사진으로 연결하는 역량 어필 각도";
             case PROBLEM_SOLVING -> "핵심 문제를 해결하며 만든 판단과 실행의 차별점을 보여주는 각도";
-            case COLLABORATION -> "협업 과정에서 기술 판단과 조율 역량을 증명하는 각도";
-            case PERSONAL_GROWTH -> "삶의 전환점을 통해 형성된 가치관이 현재의 일하는 방식과 직무 선택으로 이어지는 서사 각도";
+            case COLLABORATION -> "공동 목표 아래 역할 분담과 조율 역량을 증명하는 각도";
+            case PERSONAL_GROWTH -> "한 경험이 만든 가치가 현재의 행동 원칙으로 이어지는 서사 각도";
             case CULTURE_FIT -> "빠르게 실행하고 검증한 방식이 조직 문화와 맞닿는 각도";
             case TREND_INSIGHT -> "기술·산업 이슈를 회사의 현재 사업 맥락과 연결해 해석하는 각도";
             default -> "문항 의도에 맞는 핵심 증거를 한 축으로 세우는 각도";
@@ -1016,51 +1086,89 @@ public class WorkspaceBatchPlanService {
             lines.add("Question intent: " + intentTag);
             if (intentTag.contains("MOTIVATION")) {
                 lines.add("→ Start from domain/company interest. Do NOT open with tech stack.");
+            } else if (intentTag.contains("PROBLEM_SOLVING")) {
+                lines.add("→ Lead with the root cause diagnosis, not the surface symptom. Make the judgment criteria visible: why this solution over the alternatives, given real constraints. Impact of inaction must be stated. Reflection must be specific — what concretely changed in thinking or behavior, not 'I learned the importance of X'.");
             } else if (intentTag.contains("COLLABORATION")) {
-                lines.add("→ Lead with human dynamics and interpersonal process, then connect to outcome.");
+                lines.add("→ Lead with the shared goal, your owned role, and the coordination process. Distinguish team outcome from your own contribution.");
             } else if (intentTag.contains("PERSONAL_GROWTH")) {
-                lines.add("→ Focus on authentic life episodes and formed values. Avoid generic self-development or family chronicles.");
+                lines.add("→ Focus on one formative episode, the value it formed, and how it appears in current behavior. Avoid generic family chronicles or motivation-style company-choice logic.");
             } else if (intentTag.contains("CULTURE_FIT")) {
-                lines.add("→ Prove working style with one execution-and-validation episode rather than abstract culture praise.");
+                lines.add("→ If the question is about working style or company value fit (Sub-type A): prove it with one concrete execution-and-validation episode. If the question is about personality strengths/weaknesses (Sub-type B): name the specific trait, show how it played out in a real team project, and for weaknesses show the before/after behavioral change. Do NOT declare the trait without project evidence.");
             } else if (intentTag.contains("TREND_INSIGHT")) {
-                lines.add("→ Connect one concrete issue to this company's business direction. Avoid broad newspaper-style commentary.");
+                lines.add("→ Select one external industry or technology trend first. The answer must open with the trend, not with a personal project. The experience listed in 'Supporting evidence' is supporting evidence only — do NOT make it the main topic or the opening of the answer.");
             }
         }
 
-        List<String> primaryExperiences = normalizeList(a.primaryExperiences);
-        if (!primaryExperiences.isEmpty()) {
-            lines.add("Primary experience: " + String.join(", ", primaryExperiences));
-        }
+        if (intentTag.contains("TREND_INSIGHT")) {
+            // TREND_INSIGHT: trend-first structure.
+            // Experience fields are reframed as optional supporting evidence, not the main topic anchor.
+            String domainBridge = safe(a.domainBridge);
+            if (!"None".equals(domainBridge)) {
+                lines.add("Trend-to-company connection (anchor the external trend argument here, NOT a project summary): " + domainBridge);
+            }
 
-        List<String> experienceFacets = normalizeList(a.experienceFacets);
-        if (!experienceFacets.isEmpty()) {
-            lines.add("Use this specific facet (event-level, not the whole project): "
-                    + String.join(" | ", experienceFacets));
-        }
+            String angle = safe(a.angle);
+            if (!"None".equals(angle)) {
+                lines.add("Angle: " + angle);
+            }
 
-        String domainBridge = safe(a.domainBridge);
-        if (!"None".equals(domainBridge)) {
-            lines.add("Domain bridge (embed this logic into your answer): " + domainBridge);
-        }
+            List<String> primaryExperiences = normalizeList(a.primaryExperiences);
+            if (!primaryExperiences.isEmpty()) {
+                lines.add("Supporting evidence available (use only to strengthen the trend argument — do NOT open with this or make it the main topic): "
+                        + String.join(", ", primaryExperiences));
+            }
 
-        String angle = safe(a.angle);
-        if (!"None".equals(angle)) {
-            lines.add("Angle: " + angle);
-        }
+            List<String> experienceFacets = normalizeList(a.experienceFacets);
+            if (!experienceFacets.isEmpty()) {
+                lines.add("Evidence facet available if needed (supporting role only): "
+                        + String.join(" | ", experienceFacets));
+            }
 
-        List<String> focusDetails = normalizeList(a.focusDetails);
-        if (!focusDetails.isEmpty()) {
-            lines.add("Focus details: " + String.join(" | ", focusDetails));
-        }
+            // focusDetails and learningPoints are experience-centric — skip for TREND_INSIGHT
+            // to avoid anchoring the answer on the project rather than the external trend.
 
-        List<String> learningPoints = normalizeList(a.learningPoints);
-        if (!learningPoints.isEmpty()) {
-            lines.add("Learning points to prove: " + String.join(" | ", learningPoints));
-        }
+            List<String> avoidDetails = normalizeList(a.avoidDetails);
+            if (!avoidDetails.isEmpty()) {
+                lines.add("Avoid reusing from other questions: " + String.join(" | ", avoidDetails));
+            }
 
-        List<String> avoidDetails = normalizeList(a.avoidDetails);
-        if (!avoidDetails.isEmpty()) {
-            lines.add("Avoid reusing from other questions: " + String.join(" | ", avoidDetails));
+        } else {
+            // Default: experience-centric structure for all other categories.
+            List<String> primaryExperiences = normalizeList(a.primaryExperiences);
+            if (!primaryExperiences.isEmpty()) {
+                lines.add("Primary experience: " + String.join(", ", primaryExperiences));
+            }
+
+            List<String> experienceFacets = normalizeList(a.experienceFacets);
+            if (!experienceFacets.isEmpty()) {
+                lines.add("Use this specific facet (event-level, not the whole project): "
+                        + String.join(" | ", experienceFacets));
+            }
+
+            String domainBridge = safe(a.domainBridge);
+            if (!"None".equals(domainBridge)) {
+                lines.add("Domain bridge (embed this logic into your answer): " + domainBridge);
+            }
+
+            String angle = safe(a.angle);
+            if (!"None".equals(angle)) {
+                lines.add("Angle: " + angle);
+            }
+
+            List<String> focusDetails = normalizeList(a.focusDetails);
+            if (!focusDetails.isEmpty()) {
+                lines.add("Focus details: " + String.join(" | ", focusDetails));
+            }
+
+            List<String> learningPoints = normalizeList(a.learningPoints);
+            if (!learningPoints.isEmpty()) {
+                lines.add("Learning points to prove: " + String.join(" | ", learningPoints));
+            }
+
+            List<String> avoidDetails = normalizeList(a.avoidDetails);
+            if (!avoidDetails.isEmpty()) {
+                lines.add("Avoid reusing from other questions: " + String.join(" | ", avoidDetails));
+            }
         }
 
         lines.add("If the same project appears elsewhere, change the sub-problem, technical decision, lesson, and evidence arc.");

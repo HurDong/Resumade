@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { DragDropContext, Droppable, type DropResult } from "@hello-pangea/dnd"
 import { ArchiveX, ChevronRight, ChevronsUp, Loader2, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -448,13 +448,13 @@ export function KanbanBoard() {
                       전형 컬럼으로 다시 드래그하면 진행 중으로 복구됩니다.
                     </p>
 
-                    <ScrollArea className="max-h-[220px] rounded-2xl border border-border/70 bg-background">
+                    <ScrollArea className="w-full max-h-[220px] rounded-2xl border border-border/70 bg-background">
                       <Droppable droppableId={`${FAILED_BIN_ID}-list`} direction="horizontal">
                         {(listProvided) => (
                           <div
                             ref={listProvided.innerRef}
                             {...listProvided.droppableProps}
-                            className="flex min-h-[140px] gap-3 p-3"
+                            className="flex min-h-[140px] gap-3 p-3 pb-5"
                           >
                             {failedApplications.map((application, index) => (
                               <div key={application.id} className="w-[260px] shrink-0">
@@ -474,6 +474,7 @@ export function KanbanBoard() {
                           </div>
                         )}
                       </Droppable>
+                      <ScrollBar orientation="horizontal" />
                     </ScrollArea>
                   </div>
                 )}

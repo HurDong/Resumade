@@ -62,6 +62,13 @@ public class PersonalStoryService {
     }
 
     @Transactional
+    public List<PersonalStoryResponse> bulkCreate(List<PersonalStoryResponse.UpsertRequest> requests) {
+        return requests.stream()
+                .map(this::createStory)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
     public void deleteStory(Long id) {
         repository.deleteById(id);
     }

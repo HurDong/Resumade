@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    url: jdbc:mysql://resumade-mysql:3306/resumade?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+    username: ${MYSQL_USERNAME}
+    password: ${MYSQL_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+
+  data:
+    redis:
+      host: resumade-redis
+      port: 6379
+
+  elasticsearch:
+    uris: http://resumade-es:9200
+
+app:
+  cors:
+    allowed-origins: https://resumade.vercel.app
+
+logging:
+  level:
+    root: WARN
+    com.resumade: INFO

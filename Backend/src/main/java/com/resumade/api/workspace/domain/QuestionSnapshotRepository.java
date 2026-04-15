@@ -14,16 +14,18 @@ public interface QuestionSnapshotRepository extends JpaRepository<QuestionSnapsh
     long countByQuestionId(Long questionId);
 
     @Modifying
-    @Query("""
-        DELETE FROM QuestionSnapshot s
-        WHERE s.questionId = :questionId
-          AND s.id NOT IN (
-              SELECT s2.id FROM QuestionSnapshot s2
-              WHERE s2.questionId = :questionId
-              ORDER BY s2.createdAt DESC
-              LIMIT :keepCount
+    @Query(value = """
+        DELETE FROM question_snapshots
+        WHERE question_id = :questionId
+          AND id NOT IN (
+              SELECT id FROM (
+                  SELECT id FROM question_snapshots
+                  WHERE question_id = :questionId
+                  ORDER BY created_at DESC
+                  LIMIT :keepCount
+              ) AS keep_ids
           )
-        """)
+        """, nativeQuery = true)
     void deleteOldSnapshots(@Param("questionId") Long questionId,
                             @Param("keepCount") int keepCount);
 }

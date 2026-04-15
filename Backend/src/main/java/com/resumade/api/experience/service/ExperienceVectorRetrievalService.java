@@ -52,13 +52,13 @@ public class ExperienceVectorRetrievalService {
     private static final int VECTOR_FETCH_MULTIPLIER = 4;
 
     private static final Map<QuestionCategory, CategoryFieldBoost> CATEGORY_BOOSTS = Map.of(
-            QuestionCategory.MOTIVATION, new CategoryFieldBoost(0, 12, 0, 0, 0, 8, 0),
-            QuestionCategory.EXPERIENCE, new CategoryFieldBoost(0, 2, 14, 10, 10, 0, 0),
-            QuestionCategory.PROBLEM_SOLVING, new CategoryFieldBoost(0, 14, 0, 4, 0, 10, 0),
-            QuestionCategory.COLLABORATION, new CategoryFieldBoost(0, 8, 0, 0, 14, 4, 0),
+            QuestionCategory.MOTIVATION, new CategoryFieldBoost(0, 10, 4, 6, 8, 8, 0),
+            QuestionCategory.EXPERIENCE, new CategoryFieldBoost(0, 4, 14, 10, 10, 4, 0),
+            QuestionCategory.PROBLEM_SOLVING, new CategoryFieldBoost(0, 14, 0, 6, 4, 10, 0),
+            QuestionCategory.COLLABORATION, new CategoryFieldBoost(0, 10, 0, 6, 14, 8, 0),
             QuestionCategory.PERSONAL_GROWTH, CategoryFieldBoost.none(), // RAG 우회 대상 — Personal Story Vault로 처리
-            QuestionCategory.CULTURE_FIT, new CategoryFieldBoost(0, 8, 4, 8, 10, 8, 0),
-            QuestionCategory.TREND_INSIGHT, new CategoryFieldBoost(4, 8, 8, 0, 0, 10, 0),
+            QuestionCategory.CULTURE_FIT, new CategoryFieldBoost(0, 10, 2, 6, 10, 12, 0),
+            QuestionCategory.TREND_INSIGHT, new CategoryFieldBoost(6, 8, 6, 8, 6, 8, 0),
             QuestionCategory.DEFAULT, CategoryFieldBoost.none()
     );
 

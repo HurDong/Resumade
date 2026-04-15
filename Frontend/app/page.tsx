@@ -17,7 +17,7 @@ export default function DashboardPage() {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset className="min-h-0">
+      <SidebarInset className="min-h-0 min-w-0">
         <div className="flex h-screen min-h-0 flex-col">
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6">
             <h1 className="text-lg font-semibold tracking-tight">
