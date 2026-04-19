@@ -5,5 +5,7 @@ export type WorkspaceVisibleApplication = {
 export function isWorkspaceVisibleApplication<T extends WorkspaceVisibleApplication>(
   application: T,
 ) {
-  return (application.result ?? "pending") === "pending"
+  const normalizedResult = application.result?.trim().toLowerCase()
+
+  return normalizedResult === "pending"
 }
