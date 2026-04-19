@@ -216,13 +216,12 @@ public class ApplicationController {
     @GetMapping("/workspace-selector")
     public List<Application> getWorkspaceSelectorApplications() {
         return applicationRepository.findAll().stream()
-                .filter(app -> app.getResult() == ApplicationResult.PENDING)
-                .filter(app -> app.getStatus() == ApplicationStatus.DOCUMENT)
-                .filter(app -> {
-                    if (app.getQuestions().isEmpty()) return true;
-                    return app.getQuestions().stream().anyMatch(q -> !q.isCompleted());
-                })
+                .filter(this::isWorkspaceSelectable)
                 .collect(Collectors.toList());
+    }
+
+    private boolean isWorkspaceSelectable(Application app) {
+        return app.getResult() == ApplicationResult.PENDING;
     }
 
     @Transactional

@@ -1,0 +1,52 @@
+name: Backend Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Backend/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x Backend/gradlew
+
+      - name: Build JAR
+        working-directory: Backend
+        run: ./gradlew bootJar -x test --no-daemon
+
+      - name: Rename JAR to app.jar
+        run: mv Backend/build/libs/*[^plain].jar Backend/build/libs/app.jar
+
+      - name: SCP JAR to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "Backend/build/libs/app.jar"
+          target: "/home/ubuntu/resumade/"
+          strip_components: 3
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/ubuntu/resumade
+            docker compose up -d --build app

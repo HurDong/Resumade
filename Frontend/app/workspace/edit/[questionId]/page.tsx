@@ -1277,7 +1277,7 @@ export default function FinalEditorPage() {
               </div>
             </div>
 
-            {/* ── 오른쪽: 세탁본 + 원본 초안 비교 ── */}
+            {/* ── 오른쪽: 원본 초안 + 세탁본 비교 ── */}
             <div className={`flex flex-col overflow-hidden rounded-2xl border border-border bg-background transition-opacity duration-200 ${focusMode ? "hidden" : ""}`}>
 
               <div className="shrink-0 border-b border-border bg-muted/10 px-4 py-3">
@@ -1293,8 +1293,34 @@ export default function FinalEditorPage() {
                 </div>
               </div>
 
-              {/* 세탁본 — 상단 */}
+              {/* 원본 초안 — 상단 */}
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border">
+                <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-accent/50 border-b border-accent/70">
+                  <div className="flex items-center gap-2">
+                    <span className="size-2 rounded-full bg-accent-foreground/70 inline-block" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-accent-foreground">원본 초안</span>
+                    <Badge className="rounded-full text-[9px] px-1.5 py-0 h-4 bg-accent text-accent-foreground border-accent/70 hover:bg-accent">
+                      Original
+                    </Badge>
+                  </div>
+                  <span className="text-[10px] tabular-nums font-semibold text-accent-foreground">
+                    {countChars(normalizeDisplayText(data.originalDraft ?? "")).toLocaleString()}자
+                  </span>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                  <div className="px-4 py-3.5">
+                    <HighlightedText
+                      text={normalizeDisplayText(data.originalDraft ?? "")}
+                      activeParagraphIdx={activeParagraphIdx}
+                      activeSentenceText={activeSentenceText}
+                      className="text-[12.5px] leading-7 text-foreground/70 select-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 세탁본 — 하단 */}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-primary/8 border-b border-primary/15">
                   <div className="flex items-center gap-2">
                     <span className="size-2 rounded-full bg-primary inline-block" />
@@ -1314,29 +1340,6 @@ export default function FinalEditorPage() {
                       activeParagraphIdx={activeParagraphIdx}
                       activeSentenceText={activeSentenceText}
                       className="text-[12.5px] leading-7 text-foreground select-none"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 원본 초안 — 하단 */}
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-muted/30 border-b border-border/60">
-                  <div className="flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-muted-foreground/60 inline-block" />
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">원본 초안</span>
-                  </div>
-                  <span className="text-[10px] tabular-nums font-semibold text-muted-foreground">
-                    {countChars(normalizeDisplayText(data.originalDraft ?? "")).toLocaleString()}자
-                  </span>
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                  <div className="px-4 py-3.5">
-                    <HighlightedText
-                      text={normalizeDisplayText(data.originalDraft ?? "")}
-                      activeParagraphIdx={activeParagraphIdx}
-                      activeSentenceText={activeSentenceText}
-                      className="text-[12.5px] leading-7 text-foreground/70 select-none"
                     />
                   </div>
                 </div>
