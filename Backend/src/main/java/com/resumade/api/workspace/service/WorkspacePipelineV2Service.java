@@ -256,9 +256,8 @@ public class WorkspacePipelineV2Service {
                 : washedKr;
 
         Map<String, Object> result = new HashMap<>();
-        result.put("originalDraft", originalDraft);
-        result.put("washedDraft",   washedKr);
-        result.put("responseDraft", responseDraft);
+        result.put("draft",       responseDraft);   // 프론트: 세탁본 표시용
+        result.put("sourceDraft", originalDraft);   // 프론트: 원본 초안
         result.put("mistranslations", analysis.getMistranslations());
         result.put("aiReviewReport",  analysis.getAiReviewReport());
         result.put("minTarget",  minTarget);

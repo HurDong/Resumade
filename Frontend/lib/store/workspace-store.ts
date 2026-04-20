@@ -613,7 +613,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     registerBackgroundTask(activeQ.dbId, get().applicationId, "generate");
     await runWorkspaceSse({
       url: toApiUrl(
-        `/api/workspace/stream/${activeQ.dbId}?useDirective=${useDirective}${targetQuery}${storyQuery}`
+        `/api/workspace/v2/stream/${activeQ.dbId}?useDirective=${useDirective}${targetQuery}${storyQuery}`
       ),
       set,
       get,
@@ -1184,7 +1184,7 @@ async function runBatchQuestionSse(
 
   try {
     await streamSse({
-      url: toApiUrl(`/api/workspace/stream/${dbId}?useDirective=${useDirective}`),
+      url: toApiUrl(`/api/workspace/v2/stream/${dbId}?useDirective=${useDirective}`),
       signal: controller.signal,
       onOpen: () => {
         setBatchQuestion(set, questionId, { message: "파이프라인 연결됨" });
