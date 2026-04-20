@@ -2,6 +2,9 @@ package com.resumade.api.infra.ai;
 
 import com.resumade.api.experience.service.ExperienceAiService;
 import com.resumade.api.workspace.service.ClassifierAiService;
+import com.resumade.api.workspace.service.IntentExtractorAiService;
+import com.resumade.api.workspace.service.QuestionAnalyzerAiService;
+import com.resumade.api.workspace.service.DraftQualityCheckerAiService;
 import com.resumade.api.workspace.service.FinalEditorAiService;
 import com.resumade.api.workspace.service.JdTextAiService;
 import com.resumade.api.workspace.service.JdVisionAiService;
@@ -52,6 +55,12 @@ public class AiConfig {
 
     @Value("${openai.models.spell-check:gpt-5-nano}")
     private String spellCheckModelName;
+
+    @Value("${openai.models.question-analyzer:gpt-4o-mini}")
+    private String questionAnalyzerModelName;
+
+    @Value("${openai.models.draft-quality-checker:gpt-4o-mini}")
+    private String draftQualityCheckerModelName;
 
     @PostConstruct
     public void logSelectedModels() {
@@ -152,11 +161,10 @@ public class AiConfig {
      */
     @Bean
     public ClassifierAiService classifierAiService() {
-        // 분류는 짧은 응답만 필요하므로 가장 가벼운 모델 사용
         OpenAiChatModel classifierModel = OpenAiChatModel.builder()
                 .apiKey(openAiApiKey)
                 .modelName(experienceModelName)   // gpt-4o-mini
-                .temperature(0.0)                 // 분류는 결정론적으로
+                .temperature(0.0)
                 .maxRetries(1)
                 .timeout(openAiTimeout)
                 .logRequests(false)
@@ -164,6 +172,71 @@ public class AiConfig {
                 .build();
         return AiServices.builder(ClassifierAiService.class)
                 .chatLanguageModel(classifierModel)
+                .build();
+    }
+
+    /**
+     * 복합 문항 세부 intent 추출 서비스.
+     * 분류기와 동일한 경량 모델을 사용합니다.
+     */
+    @Bean
+    public IntentExtractorAiService intentExtractorAiService() {
+        OpenAiChatModel intentModel = OpenAiChatModel.builder()
+                .apiKey(openAiApiKey)
+                .modelName(experienceModelName)   // gpt-4o-mini
+                .temperature(0.0)
+                .maxRetries(1)
+                .timeout(openAiTimeout)
+                // JSON 배열 반환이므로 json_object 미사용 — sanitizeJsonArray로 파싱
+                .logRequests(false)
+                .logResponses(false)
+                .build();
+        return AiServices.builder(IntentExtractorAiService.class)
+                .chatLanguageModel(intentModel)
+                .build();
+    }
+
+    // -------------------------------------------------------------------------
+    // v2 파이프라인 빈
+    // -------------------------------------------------------------------------
+
+    /**
+     * 문항 심층 분석 서비스 (v2). 분류 + 복합 감지 + 전략 방향을 한 번의 LLM 호출로 처리.
+     */
+    @Bean
+    public QuestionAnalyzerAiService questionAnalyzerAiService() {
+        OpenAiChatModel model = OpenAiChatModel.builder()
+                .apiKey(openAiApiKey)
+                .modelName(questionAnalyzerModelName)
+                .temperature(0.0)
+                .maxRetries(1)
+                .timeout(openAiTimeout)
+                .responseFormat("json_object")
+                .logRequests(false)
+                .logResponses(false)
+                .build();
+        return AiServices.builder(QuestionAnalyzerAiService.class)
+                .chatLanguageModel(model)
+                .build();
+    }
+
+    /**
+     * 초안 품질 검수 서비스 (v2 Tier-2). requiredElements 충족 여부 확인.
+     */
+    @Bean
+    public DraftQualityCheckerAiService draftQualityCheckerAiService() {
+        OpenAiChatModel model = OpenAiChatModel.builder()
+                .apiKey(openAiApiKey)
+                .modelName(draftQualityCheckerModelName)
+                .temperature(0.0)
+                .maxRetries(1)
+                .timeout(openAiTimeout)
+                .responseFormat("json_object")
+                .logRequests(false)
+                .logResponses(false)
+                .build();
+        return AiServices.builder(DraftQualityCheckerAiService.class)
+                .chatLanguageModel(model)
                 .build();
     }
 

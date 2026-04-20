@@ -4,6 +4,7 @@ import com.resumade.api.workspace.prompt.DraftParams;
 import com.resumade.api.workspace.prompt.FewShotExample;
 import com.resumade.api.workspace.prompt.PromptStrategy;
 import com.resumade.api.workspace.prompt.QuestionCategory;
+import com.resumade.api.workspace.prompt.QuestionProfile;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -25,6 +26,86 @@ public class MotivationPromptStrategy implements PromptStrategy {
     @Override
     public QuestionCategory getCategory() {
         return QuestionCategory.MOTIVATION;
+    }
+
+    @Override
+    public String buildSystemPromptWithProfile(QuestionProfile profile) {
+        String layer1 = buildQualityLayer();
+        String layer2 = (profile != null && profile.hasFramingOverride())
+                ? buildDynamicStructureLayer(profile)
+                : buildDefaultStructureLayer();
+        return layer1 + "\n\n" + layer2;
+    }
+
+    /** Layer1: 역할 + Strict_Rules + Output_Format (항상 고정) */
+    private String buildQualityLayer() {
+        return """
+                You are an expert Korean cover letter writer specializing in 지원동기 (motivation/why-this-company) questions.
+                Your primary goal is to craft a highly convincing, human-sounding answer that passes AI-detection screening.
+
+                <Strict_Rules>
+                1. Return ONLY valid JSON with shape: {"title":"...","text":"..."}
+                2. "title" field: title text only — no brackets, no JSON special chars inside the value.
+                3. "text" field: body only — do NOT repeat the title inside the text.
+                4. Count ONLY the characters inside the "text" value. Never count JSON braces, keys, quotes, or the title field.
+                5. Never exceed maxLength. Never write below minTarget unless the hard limit physically prevents it.
+                6. Title must be concrete and specific, NOT generic labels like 성장, 열정, 지원동기.
+                7. Title must NOT: summarize the question, repeat company/position name, or use vague nouns.
+                8. Do NOT invent company details, products, technologies, values, or industry facts not found in companyContext.
+                9. Do NOT use motivations based on salary, stability, welfare, brand prestige, or vague admiration.
+                10. Avoid empty closings such as "최선을 다하겠습니다" without an execution path.
+                11. Do NOT use ceremonial openings like "안녕하세요" or "저는 ~에 지원하게 된".
+                12. Do NOT write in bullet/list format unless explicitly requested.
+                13. Write in natural Korean cover-letter prose — the applicant's own reflective voice.
+                14. Keep the voice believable for a new-grad or junior applicant.
+                </Strict_Rules>
+
+                <Output_Format>
+                Return ONLY this JSON shape, nothing else:
+                {"title": "제목 텍스트", "text": "본문 내용..."}
+                </Output_Format>
+                """;
+    }
+
+    /** Layer2 (기본): 단순 MOTIVATION 문항용 구조 가이드 */
+    private String buildDefaultStructureLayer() {
+        return """
+                <Question_Intent>
+                This is a MOTIVATION question. The evaluator wants evidence for:
+                1. WHY specifically THIS company — business direction, operating principle, product/service, industry issue, value, or capability.
+                2. COMPANY KNOWLEDGE — demonstrate research by using one company-specific anchor from companyContext.
+                3. WHY specifically THIS role — how past experiences make this role the logical next step.
+                4. WHY NOW — what changed so that applying now is credible.
+                5. FUTURE CONTRIBUTION — a concrete early contribution plan in believable junior scope.
+
+                Priority: [PRIMARY] Company-choice logic + anchor + timing / [SECONDARY] Role-fit proof / [TERTIARY] Near-term contribution
+                </Question_Intent>
+
+                <Draft_Structure>
+                (Opening)   첫 1~2문장 안에 왜 이 회사와 직무가 지금의 다음 단계인지 결론형으로 제시
+                (Anchor)    companyContext에서 회사 고유 근거 1개를 골라 직무와 연결
+                (Proof)     experienceContext에서 1~2개의 근거만 골라 준비성을 증명
+                (Why_Now)   왜 하필 지금 지원하는지 설명
+                (Closing)   입사 후 1~3년 내 실행 가능한 기여 계획으로 마무리
+                </Draft_Structure>
+                """;
+    }
+
+    /** Layer2 (동적): 복합/특수 문항용 — framingNote로 구조 오버라이드 */
+    private String buildDynamicStructureLayer(QuestionProfile profile) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<Question_Strategy>\n");
+        sb.append("이 문항은 다음 전략으로 접근하세요:\n");
+        sb.append(profile.framingNote()).append("\n");
+        if (!profile.requiredElements().isEmpty()) {
+            sb.append("\n반드시 포함해야 할 요소 (Required_Elements 블록 참고):\n");
+            for (int i = 0; i < profile.requiredElements().size(); i++) {
+                sb.append(i + 1).append(". ").append(profile.requiredElements().get(i)).append("\n");
+            }
+            sb.append("→ 항목별 단락 분리 없이 하나의 자연스러운 서사 흐름으로 모두 통합하세요.\n");
+        }
+        sb.append("</Question_Strategy>\n");
+        return sb.toString();
     }
 
     @Override

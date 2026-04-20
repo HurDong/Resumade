@@ -1,6 +1,7 @@
 package com.resumade.api.workspace.prompt;
 
 import com.resumade.api.workspace.prompt.strategy.DefaultPromptStrategy;
+import com.resumade.api.workspace.prompt.QuestionProfile;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -56,17 +57,146 @@ public class PromptFactory {
         return strategyMap.getOrDefault(category, defaultStrategy);
     }
 
+    /**
+     * [v2] QuestionProfile 기반 메시지 조립.
+     * buildSystemPromptWithProfile()로 Layer1+Layer2 동적 시스템 프롬프트를 사용하고,
+     * requiredElements를 <Required_Elements> 블록으로 주입합니다.
+     */
+    public List<ChatMessage> buildMessagesV2(QuestionProfile profile, DraftParams params) {
+        QuestionCategory category = profile != null ? profile.primaryCategory() : QuestionCategory.DEFAULT;
+        PromptStrategy strategy = getStrategy(category);
+
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(SystemMessage.from(strategy.buildSystemPromptWithProfile(profile)));
+        appendFewShotExamples(messages, strategy, category, "generate-v2");
+
+        String userMsg = strategy.buildUserMessage(params);
+        if (profile != null && !profile.requiredElements().isEmpty()) {
+            userMsg = injectRequiredElements(userMsg, profile.requiredElements());
+        }
+        messages.add(UserMessage.from(userMsg));
+
+        log.debug("PromptFactory: built {} v2 messages for category={} compound={} company={} question={}",
+                messages.size(), category,
+                profile != null && profile.isCompound(),
+                truncate(params.company(), 30),
+                truncate(params.questionTitle(), 60));
+
+        return messages;
+    }
+
+    /**
+     * [v2 refine] QuestionProfile + retryDirective 기반 리파인 메시지.
+     */
+    public List<ChatMessage> buildRefineMessagesV2(QuestionProfile profile, DraftParams params,
+                                                    String currentDraft, String retryDirective) {
+        QuestionCategory category = profile != null ? profile.primaryCategory() : QuestionCategory.DEFAULT;
+        PromptStrategy strategy = getStrategy(category);
+
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(SystemMessage.from(strategy.buildSystemPromptWithProfile(profile)));
+        appendFewShotExamples(messages, strategy, category, "refine-v2");
+
+        String refineMsg = buildRefineUserMessageV2(params, currentDraft, retryDirective);
+        if (profile != null && !profile.requiredElements().isEmpty()) {
+            refineMsg = injectRequiredElements(refineMsg, profile.requiredElements());
+        }
+        messages.add(UserMessage.from(refineMsg));
+
+        return messages;
+    }
+
+    private String buildRefineUserMessageV2(DraftParams params, String currentDraft, String retryDirective) {
+        return """
+                Company: %s
+                Position: %s
+                Question: %s
+
+                <Context>
+                ## Company & JD Analysis
+                %s
+
+                ## Relevant Experience Data
+                %s
+
+                ## Other questions already written (HARD anti-overlap constraint)
+                %s
+
+                ## Current Draft
+                %s
+                </Context>
+
+                <Retry_Directive>
+                %s
+                </Retry_Directive>
+
+                <Strict_Rules>
+                Hard character limit: %d
+                Target range: %d ~ %d characters
+                </Strict_Rules>
+
+                ## Additional User Directive
+                %s
+
+                <Output_Format>
+                Return ONLY valid JSON:
+                {"title": "제목 텍스트", "text": "본문..."}
+                - "title": specific, concrete, no brackets
+                - "text": revised body only, do NOT repeat the title inside the text
+                </Output_Format>
+                """.formatted(
+                nullSafe(params.company()),
+                nullSafe(params.position()),
+                nullSafe(params.questionTitle()),
+                nullSafe(params.companyContext()),
+                nullSafe(params.experienceContext()),
+                nullSafe(params.othersContext()),
+                nullSafe(currentDraft),
+                nullSafe(retryDirective),
+                params.maxLength(),
+                params.minTarget(),
+                params.maxTarget(),
+                nullSafe(params.directive())
+        );
+    }
+
+    /**
+     * requiredElements를 <Required_Elements> 블록으로 <Output_Format> 직전에 주입.
+     */
+    private static String injectRequiredElements(String userMsg, List<String> elements) {
+        StringBuilder block = new StringBuilder();
+        block.append("\n\n<Required_Elements>\n");
+        block.append("이 문항에서 반드시 다뤄야 할 요소입니다. 각 요소를 하나의 유기적 서사 안에 자연스럽게 통합하세요:\n");
+        for (int i = 0; i < elements.size(); i++) {
+            block.append(i + 1).append(". ").append(elements.get(i)).append("\n");
+        }
+        block.append("→ 항목별 소제목·단락 분리 없이 하나의 흐름으로 작성하세요.\n");
+        block.append("</Required_Elements>");
+
+        int idx = userMsg.indexOf("<Output_Format>");
+        if (idx >= 0) {
+            return userMsg.substring(0, idx) + block + "\n\n" + userMsg.substring(idx);
+        }
+        return userMsg + block;
+    }
+
     public List<ChatMessage> buildMessages(QuestionCategory category, DraftParams params) {
         PromptStrategy strategy = getStrategy(category);
 
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(SystemMessage.from(strategy.buildSystemPrompt()));
         appendFewShotExamples(messages, strategy, category, "generate");
-        messages.add(UserMessage.from(strategy.buildUserMessage(params)));
 
-        log.debug("PromptFactory: built {} generate messages for category={} company={} question={}",
+        String userMsg = strategy.buildUserMessage(params);
+        if (params.additionalIntents() != null && !params.additionalIntents().isEmpty()) {
+            userMsg = injectAdditionalIntents(userMsg, params.additionalIntents());
+        }
+        messages.add(UserMessage.from(userMsg));
+
+        log.debug("PromptFactory: built {} generate messages for category={} compound={} company={} question={}",
                 messages.size(),
                 category,
+                params.additionalIntents() != null && !params.additionalIntents().isEmpty(),
                 truncate(params.company(), 30),
                 truncate(params.questionTitle(), 60));
 
@@ -84,7 +214,12 @@ public class PromptFactory {
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(SystemMessage.from(strategy.buildSystemPrompt()));
         appendFewShotExamples(messages, strategy, category, lengthRetry ? "length-retry" : "refine");
-        messages.add(UserMessage.from(buildRefineUserMessage(params, currentDraft, lengthRetry)));
+
+        String refineMsg = buildRefineUserMessage(params, currentDraft, lengthRetry);
+        if (params.additionalIntents() != null && !params.additionalIntents().isEmpty()) {
+            refineMsg = injectAdditionalIntents(refineMsg, params.additionalIntents());
+        }
+        messages.add(UserMessage.from(refineMsg));
 
         log.debug("PromptFactory: built {} refine messages for category={} company={} question={} retry={}",
                 messages.size(),
@@ -177,6 +312,27 @@ public class PromptFactory {
                 params.maxTarget(),
                 nullSafe(params.directive())
         );
+    }
+
+    /**
+     * 복합 문항의 세부 항목을 {@code <Additional_Requirements>} 블록으로 주입합니다.
+     * {@code <Output_Format>} 태그 직전에 삽입하며, 없으면 메시지 끝에 추가합니다.
+     */
+    private static String injectAdditionalIntents(String userMsg, List<String> intents) {
+        StringBuilder block = new StringBuilder();
+        block.append("\n\n<Additional_Requirements>\n");
+        block.append("이 문항은 복합 요구 문항입니다. 아래 항목을 모두 빠짐없이 하나의 유기적 서사로 답하세요:\n");
+        for (int i = 0; i < intents.size(); i++) {
+            block.append(i + 1).append(". ").append(intents.get(i)).append("\n");
+        }
+        block.append("→ 항목별 소제목·단락 구분 없이 자연스러운 흐름 안에서 모두 다루세요.\n");
+        block.append("</Additional_Requirements>");
+
+        int idx = userMsg.indexOf("<Output_Format>");
+        if (idx >= 0) {
+            return userMsg.substring(0, idx) + block + "\n\n" + userMsg.substring(idx);
+        }
+        return userMsg + block;
     }
 
     private static String truncate(String value, int maxLen) {

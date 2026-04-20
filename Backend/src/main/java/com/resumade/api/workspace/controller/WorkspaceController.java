@@ -7,6 +7,7 @@ import com.resumade.api.workspace.dto.BatchPlanResponse;
 import com.resumade.api.workspace.dto.TitleSuggestionResponse;
 import com.resumade.api.workspace.dto.UpdateCategoryRequest;
 import com.resumade.api.workspace.service.WorkspaceBatchPlanService;
+import com.resumade.api.workspace.service.WorkspacePipelineV2Service;
 import com.resumade.api.workspace.service.WorkspaceService;
 import com.resumade.api.workspace.service.WorkspaceTaskCache;
 import lombok.RequiredArgsConstructor;
@@ -31,9 +32,23 @@ import java.util.concurrent.Executors;
 public class WorkspaceController {
 
     private final WorkspaceService workspaceService;
+    private final WorkspacePipelineV2Service workspacePipelineV2Service;
     private final WorkspaceBatchPlanService workspaceBatchPlanService;
     private final WorkspaceTaskCache workspaceTaskCache;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
+
+    /** v2 파이프라인 엔드포인트 — QuestionAnalysis + 2-Tier Retry + 기존 Wash/Patch */
+    @GetMapping(value = "/v2/stream/{questionId}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
+    public SseEmitter streamHumanPatchV2(
+            @PathVariable Long questionId,
+            @RequestParam(defaultValue = "true") boolean useDirective,
+            @RequestParam(required = false) Integer targetChars,
+            @RequestParam(required = false) java.util.List<Long> storyIds) {
+        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
+        executorService.execute(() ->
+                workspacePipelineV2Service.processV2(questionId, useDirective, targetChars, storyIds, emitter));
+        return emitter;
+    }
 
     @GetMapping(value = "/stream/{questionId}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
     public SseEmitter streamHumanPatch(
