@@ -67,7 +67,7 @@ public class QuestionAnalysisService {
         }
 
         List<String> requiredElements = new ArrayList<>();
-        if (isCompound && node.has("requiredElements") && node.get("requiredElements").isArray()) {
+        if (node.has("requiredElements") && node.get("requiredElements").isArray()) {
             for (JsonNode el : node.get("requiredElements")) {
                 String text = el.asText("").trim();
                 if (!text.isBlank()) requiredElements.add(text);
