@@ -1,6 +1,8 @@
 services:
   resumade-mysql:
     image: mysql:8.0
+    container_name: resumade-mysql
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: resumade
@@ -8,7 +10,8 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
-    restart: unless-stopped
+    networks:
+      - resumade-network
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -17,27 +20,43 @@ services:
 
   resumade-redis:
     image: redis:7.2-alpine
+    container_name: resumade-redis
     restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - resumade-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   resumade-es:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: resumade-es
+    restart: unless-stopped
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     volumes:
       - es_data:/usr/share/elasticsearch/data
-    restart: unless-stopped
+    networks:
+      - resumade-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
       interval: 15s
       timeout: 10s
       retries: 10
 
   app:
-    build: .
-    ports:
-      - "8080:8080"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: resumade-app:latest
+    container_name: resumade-app
+    restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
       MYSQL_USERNAME: ${MYSQL_USERNAME}
@@ -45,16 +64,44 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       DEEPL_API_KEY: ${DEEPL_API_KEY}
-      GOOGLE_CLOUD_TRANSLATE_API_KEY: ${GOOGLE_CLOUD_TRANSLATE_API_KEY}
+      GOOGLE_CLOUD_TRANSLATE_API_KEY: ${GOOGLE_CLOUD_TRANSLATE_API_KEY:-}
+      TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-deepl}
     depends_on:
       resumade-mysql:
         condition: service_healthy
+      resumade-redis:
+        condition: service_healthy
       resumade-es:
         condition: service_healthy
-      resumade-redis:
-        condition: service_started
+    networks:
+      - resumade-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  nginx:
+    image: nginx:alpine
+    container_name: resumade-nginx
     restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - resumade-network
+
+networks:
+  resumade-network:
+    driver: bridge
 
 volumes:
   mysql_data:
+  redis_data:
   es_data:
