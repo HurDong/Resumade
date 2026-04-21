@@ -3332,7 +3332,10 @@ public class WorkspaceService {
             log.info("QuestionCategory: using user-set category={} for questionId={}", question.getCategory(), question.getId());
             return question.getCategory();
         }
-        return questionClassifierService.classify(safeTrim(question.getTitle()));
+        QuestionCategory resolved = questionClassifierService.classify(safeTrim(question.getTitle()));
+        question.setCategory(resolved);
+        questionRepository.save(question);
+        return resolved;
     }
 
     private String buildApplicationResearchContext(WorkspaceQuestion question) {

@@ -67,7 +67,9 @@ public class WorkspacePipelineV2Service {
     private static final double REQUESTED_TARGET_MIN_RATIO = 0.90;
     private static final double DEFAULT_DESIRED_TARGET_RATIO = 0.90;
     private static final double MINI_SHORTEN_MAX_RATIO = 1.20;
-    private static final int    LENGTH_REWRITE_MAX_ATTEMPTS = 2;
+    // wash(KO→EN→KO 번역) 후 글자 수가 ~1.39x 팽창하므로 LLM에 요청할 글자수는 목표의 70%
+    private static final double PRE_WASH_LENGTH_FACTOR = 0.70;
+    private static final int    LENGTH_REWRITE_MAX_ATTEMPTS = 5;
     private static final long   HEARTBEAT_INTERVAL  = 8L;
 
     private final WorkspaceQuestionRepository      questionRepository;
@@ -158,16 +160,21 @@ public class WorkspacePipelineV2Service {
                 .company(company).position(position).questionTitle(questionTitle)
                 .companyContext(companyContext).experienceContext(experienceContext)
                 .othersContext(othersContext).directive(directive)
-                .maxLength(maxLength).minTarget(minTarget).maxTarget(preferredMax)
+                .maxLength((int) Math.round(maxLength * PRE_WASH_LENGTH_FACTOR)).minTarget(minTarget).maxTarget(preferredMax)
                 .build();
 
         String draft = generateWithRetry(profile, params, minTarget, preferredMax, emitter);
-        draft = fitDraftLengthBeforeWash(profile, params, draft, lengthPolicy, emitter);
+        try {
+            draft = fitDraftLengthBeforeWash(profile, params, draft, lengthPolicy, emitter);
+        } catch (DraftLengthFitException e) {
+            draft = e.bestDraft();
+            saveDraft(questionId, draft);
+            sendSse(emitter, "draft_intermediate", draft);
+            completeWithDraftLengthFailed(emitter, questionId, draft, maxLength, minTarget, preferredMax, e.getMessage());
+            return;
+        }
 
-        question = questionRepository.findById(questionId).orElseThrow();
-        question.setContent(draft);
-        questionSnapshotService.saveSnapshot(questionId, SnapshotType.DRAFT_GENERATED, draft);
-        questionRepository.save(question);
+        saveDraft(questionId, draft);
         sendSse(emitter, "draft_intermediate", draft);
 
         // ── STAGE 4: Wash ────────────────────────────────────────────────────
@@ -205,7 +212,7 @@ public class WorkspacePipelineV2Service {
         String draft = assembleDraft(resp);
 
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            DraftQualityResult quality = draftQualityCheckService.check(draft, profile, minTarget);
+            DraftQualityResult quality = draftQualityCheckService.check(draft, profile, minTarget, preferredMax);
             if (quality.passed()) {
                 return draft;
             }
@@ -233,12 +240,27 @@ public class WorkspacePipelineV2Service {
         return "[" + title + "]" + "\n\n" + text;
     }
 
+    private void saveDraft(Long questionId, String draft) {
+        WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
+        question.setContent(draft);
+        questionSnapshotService.saveSnapshot(questionId, SnapshotType.DRAFT_GENERATED, draft);
+        questionRepository.save(question);
+    }
+
     private String fitDraftLengthBeforeWash(QuestionProfile profile, DraftParams params, String draft,
                                             LengthPolicy policy, SseEmitter emitter) {
         String candidate = normalizeLengthText(draft).trim();
+        String bestCandidate = candidate;
+        int bestScore = lengthDistance(countVisibleChars(candidate), policy);
 
         for (int attempt = 1; attempt <= LENGTH_REWRITE_MAX_ATTEMPTS + 1; attempt++) {
             int currentLength = countVisibleChars(candidate);
+            int currentScore = lengthDistance(currentLength, policy);
+            if (currentScore < bestScore) {
+                bestCandidate = candidate;
+                bestScore = currentScore;
+            }
+
             LengthDecision decision = decideLengthAction(currentLength, policy);
             if (decision == LengthDecision.ACCEPT) {
                 log.debug("V2 draft length ok chars={} target={}-{}", currentLength, policy.minTarget(), policy.desiredTarget());
@@ -248,6 +270,11 @@ public class WorkspacePipelineV2Service {
             if (decision == LengthDecision.MINI_SHORTEN) {
                 String shortened = shortenWithMini(candidate, policy, params);
                 int shortenedLength = countVisibleChars(shortened);
+                int shortenedScore = lengthDistance(shortenedLength, policy);
+                if (!shortened.isBlank() && shortenedScore < bestScore) {
+                    bestCandidate = shortened;
+                    bestScore = shortenedScore;
+                }
                 if (!shortened.isBlank()
                         && shortenedLength >= policy.minTarget()
                         && shortenedLength <= policy.desiredTarget()) {
@@ -281,14 +308,22 @@ public class WorkspacePipelineV2Service {
         }
 
         int finalLength = countVisibleChars(candidate);
-        if (policy.hardLimit() > 0 && finalLength > policy.hardLimit()) {
-            log.warn("V2 draft hard-trim chars={} → limit={}", finalLength, policy.hardLimit());
-            return hardTrimToLimit(candidate, policy.hardLimit());
-        }
+        int bestLength = countVisibleChars(bestCandidate);
+        log.warn("V2 draft length failed after retries chars={} bestChars={} target={}-{} limit={}",
+                finalLength, bestLength, policy.minTarget(), policy.desiredTarget(), policy.hardLimit());
+        throw new DraftLengthFitException(String.format(
+                "초안이 세탁 전 목표 구간(%d-%d자)에 맞지 않아 세탁을 중단했습니다. 가장 가까운 초안(%d자)을 저장했습니다.",
+                policy.minTarget(), policy.desiredTarget(), bestLength), bestCandidate);
+    }
 
-        log.warn("V2 draft best-effort chars={} target={}-{} limit={}",
-                finalLength, policy.minTarget(), policy.desiredTarget(), policy.hardLimit());
-        return candidate;
+    private int lengthDistance(int length, LengthPolicy policy) {
+        if (length < policy.minTarget()) {
+            return policy.minTarget() - length;
+        }
+        if (length > policy.desiredTarget()) {
+            return length - policy.desiredTarget();
+        }
+        return 0;
     }
 
     private LengthDecision decideLengthAction(int currentLength, LengthPolicy policy) {
@@ -465,6 +500,24 @@ public class WorkspacePipelineV2Service {
         sendSse(emitter, "complete", result);
     }
 
+    private void completeWithDraftLengthFailed(SseEmitter emitter, Long questionId,
+                                               String draft, int maxLength, int minTarget,
+                                               int preferredMax, String warningMessage) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("draft",          draft);
+        result.put("sourceDraft",    draft);
+        result.put("mistranslations", List.of());
+        result.put("aiReviewReport", null);
+        result.put("minTarget",      minTarget);
+        result.put("maxLength",      maxLength);
+        result.put("preferredMax",   preferredMax);
+        result.put("warningMessage", warningMessage);
+
+        workspaceTaskCache.setComplete(questionId, result);
+        sendStage(emitter, STAGE_DONE);
+        sendSse(emitter, "complete", result);
+    }
+
     // -------------------------------------------------------------------------
     // Context Builders
     // -------------------------------------------------------------------------
@@ -566,13 +619,13 @@ public class WorkspacePipelineV2Service {
         }
 
         if (targetChars != null && targetChars > 0) {
-            int desired = Math.min(Math.max(1, targetChars), maxLength);
+            int desired = (int) Math.round(Math.min(Math.max(1, targetChars), maxLength) * PRE_WASH_LENGTH_FACTOR);
             int lower   = Math.max(1, (int) Math.ceil(desired * REQUESTED_TARGET_MIN_RATIO));
             return new LengthPolicy(Math.min(lower, desired), desired, maxLength, true);
         }
 
-        int lower   = Math.max(1, (int) Math.ceil(maxLength * TARGET_MIN_RATIO));
-        int desired = Math.max(lower, Math.min(maxLength, (int) Math.round(maxLength * DEFAULT_DESIRED_TARGET_RATIO)));
+        int lower   = Math.max(1, (int) Math.ceil(maxLength * TARGET_MIN_RATIO * PRE_WASH_LENGTH_FACTOR));
+        int desired = Math.max(lower, (int) Math.round(maxLength * DEFAULT_DESIRED_TARGET_RATIO * PRE_WASH_LENGTH_FACTOR));
         return new LengthPolicy(lower, desired, maxLength, false);
     }
 
@@ -703,6 +756,19 @@ public class WorkspacePipelineV2Service {
         ACCEPT,
         MINI_SHORTEN,
         REWRITE
+    }
+
+    private static class DraftLengthFitException extends RuntimeException {
+        private final String bestDraft;
+
+        DraftLengthFitException(String message, String bestDraft) {
+            super(message);
+            this.bestDraft = bestDraft;
+        }
+
+        String bestDraft() {
+            return bestDraft;
+        }
     }
 
     private static class SseConnectionClosedException extends RuntimeException {

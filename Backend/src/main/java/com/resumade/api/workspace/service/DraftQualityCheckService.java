@@ -38,7 +38,7 @@ public class DraftQualityCheckService {
      * @param minTargetChars   최소 목표 글자수
      * @return 검수 결과
      */
-    public DraftQualityResult check(String draft, QuestionProfile profile, int minTargetChars) {
+    public DraftQualityResult check(String draft, QuestionProfile profile, int minTargetChars, int maxTargetChars) {
         if (draft == null || draft.isBlank()) {
             return DraftQualityResult.lengthFail(0, minTargetChars);
         }
@@ -48,6 +48,10 @@ public class DraftQualityCheckService {
         if (currentChars < minTargetChars) {
             log.info("DraftQualityCheck: Tier-1 FAIL currentChars={} minTarget={}", currentChars, minTargetChars);
             return DraftQualityResult.lengthFail(currentChars, minTargetChars);
+        }
+        if (currentChars > maxTargetChars) {
+            log.info("DraftQualityCheck: Tier-1 too long currentChars={} maxTarget={} → skip to length fitting", currentChars, maxTargetChars);
+            return DraftQualityResult.ok();
         }
 
         // Tier-2: requiredElements 충족 체크 (복합 문항만)
