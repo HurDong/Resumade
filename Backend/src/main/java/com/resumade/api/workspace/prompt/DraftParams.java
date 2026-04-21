@@ -1,5 +1,7 @@
 package com.resumade.api.workspace.prompt;
 
+import java.util.List;
+
 /**
  * 자기소개서 초안 생성에 필요한 모든 파라미터를 담는 Value Object.
  *
@@ -42,7 +44,14 @@ public record DraftParams(
          * 강조 역량·성장 흐름·문체 지침·금지 항목 등을 포함.
          * PersonalGrowth 문항 전용. 다른 카테고리에서는 null.
          */
-        String writingGuideContext
+        String writingGuideContext,
+
+        /**
+         * 복합 문항에서 추출된 세부 요구 항목 목록.
+         * 단순 문항이면 null 또는 빈 리스트. PromptFactory가
+         * {@code <Additional_Requirements>} 블록으로 주입합니다.
+         */
+        List<String> additionalIntents
 ) {
     public static Builder builder() {
         return new Builder();
@@ -60,6 +69,7 @@ public record DraftParams(
         private String othersContext;
         private String directive;
         private String writingGuideContext;
+        private List<String> additionalIntents;
 
         public Builder company(String company)                           { this.company = company; return this; }
         public Builder position(String position)                         { this.position = position; return this; }
@@ -72,12 +82,14 @@ public record DraftParams(
         public Builder othersContext(String othersContext)               { this.othersContext = othersContext; return this; }
         public Builder directive(String directive)                       { this.directive = directive; return this; }
         public Builder writingGuideContext(String writingGuideContext)   { this.writingGuideContext = writingGuideContext; return this; }
+        public Builder additionalIntents(List<String> additionalIntents) { this.additionalIntents = additionalIntents; return this; }
 
         public DraftParams build() {
             return new DraftParams(
                     company, position, questionTitle, companyContext,
                     maxLength, minTarget, maxTarget,
-                    experienceContext, othersContext, directive, writingGuideContext
+                    experienceContext, othersContext, directive, writingGuideContext,
+                    additionalIntents
             );
         }
     }

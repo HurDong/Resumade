@@ -48,8 +48,10 @@ public class WorkspaceBatchPlanService {
     private static final int MAX_EXPERIENCE_DESCRIPTION_CHARS = 240;
     private static final int MAX_EXPERIENCE_RAW_CHARS = 380;
     private static final int MAX_CURRENT_DRAFT_CHARS = 220;
-    private static final int INITIAL_BATCH_PLAN_MAX_OUTPUT_TOKENS = 3600;
-    private static final int RETRY_BATCH_PLAN_MAX_OUTPUT_TOKENS = 5600;
+    private static final int TOKENS_PER_QUESTION      = 1200;
+    private static final int MIN_BATCH_PLAN_TOKENS     = 3600;
+    private static final int MAX_BATCH_PLAN_TOKENS     = 12000;
+    private static final double RETRY_TOKEN_MULTIPLIER = 1.6;
     private static final Pattern TOKEN_PATTERN = Pattern.compile("[\\p{IsAlphabetic}\\p{IsDigit}\\u3131-\\u318E\\uAC00-\\uD7A3+#._-]+");
     private static final Set<String> STOPWORDS = Set.of(
             "the", "and", "for", "with", "from", "that", "this", "your", "into", "self", "intro", "introduction",
@@ -208,25 +210,20 @@ public class WorkspaceBatchPlanService {
             return buildHeuristicPlan(application, questions, experiences);
         }
 
+        int initialTokens = resolveTokenBudget(questions.size(), 1.0);
+        int retryTokens   = resolveTokenBudget(questions.size(), RETRY_TOKEN_MULTIPLIER);
+        log.info("Workspace batch plan token budget questionCount={} initialTokens={} retryTokens={}",
+                questions.size(), initialTokens, retryTokens);
+
         try {
-            JsonNode response = requestPlanFromOpenAi(
-                    application,
-                    questions,
-                    experiences,
-                    INITIAL_BATCH_PLAN_MAX_OUTPUT_TOKENS
-            );
+            JsonNode response = requestPlanFromOpenAi(application, questions, experiences, initialTokens);
             BatchPlanAiResponse parsed = parsePlanResponse(response);
             return toResponse(parsed, questions, application, experiences);
         } catch (Exception e) {
-            log.warn("Workspace batch planning primary attempt failed. Retrying once with a larger output budget. model={}",
-                    modelName, e);
+            log.warn("Workspace batch planning primary attempt failed. Retrying with larger budget. model={} initialTokens={} retryTokens={}",
+                    modelName, initialTokens, retryTokens, e);
             try {
-                JsonNode retryResponse = requestPlanFromOpenAi(
-                        application,
-                        questions,
-                        experiences,
-                        RETRY_BATCH_PLAN_MAX_OUTPUT_TOKENS
-                );
+                JsonNode retryResponse = requestPlanFromOpenAi(application, questions, experiences, retryTokens);
                 BatchPlanAiResponse parsed = parsePlanResponse(retryResponse);
                 return toResponse(parsed, questions, application, experiences);
             } catch (Exception retryException) {
@@ -234,6 +231,11 @@ public class WorkspaceBatchPlanService {
                 return buildHeuristicPlan(application, questions, experiences);
             }
         }
+    }
+
+    private int resolveTokenBudget(int questionCount, double multiplier) {
+        int base = (int) Math.ceil(questionCount * TOKENS_PER_QUESTION * multiplier);
+        return Math.min(MAX_BATCH_PLAN_TOKENS, Math.max(MIN_BATCH_PLAN_TOKENS, base));
     }
 
     private JsonNode requestPlanFromOpenAi(
@@ -253,7 +255,7 @@ public class WorkspaceBatchPlanService {
                 message("system", SYSTEM_PROMPT),
                 message("user", buildUserPrompt(application, questions, experiences))
         ));
-        requestBody.put("max_output_tokens", Math.max(INITIAL_BATCH_PLAN_MAX_OUTPUT_TOKENS, maxOutputTokens));
+        requestBody.put("max_output_tokens", maxOutputTokens);
         requestBody.put("reasoning", buildReasoningConfig());
         requestBody.put("text", buildTextConfig());
 

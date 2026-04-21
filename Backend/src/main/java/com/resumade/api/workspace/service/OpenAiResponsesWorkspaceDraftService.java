@@ -358,6 +358,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
     private final Duration timeout;
     private final ObjectMapper objectMapper;
     private final WorkspaceDraftAiService fallback;
+    private final WorkspaceDraftAiService utilityFallback;
     private final RestTemplate restTemplate;
 
     public OpenAiResponsesWorkspaceDraftService(
@@ -365,13 +366,15 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             String modelName,
             Duration timeout,
             ObjectMapper objectMapper,
-            WorkspaceDraftAiService fallback
+            WorkspaceDraftAiService fallback,
+            WorkspaceDraftAiService utilityFallback
     ) {
         this.apiKey = apiKey;
         this.modelName = modelName;
         this.timeout = timeout;
         this.objectMapper = objectMapper;
         this.fallback = fallback;
+        this.utilityFallback = utilityFallback;
         this.restTemplate = buildRestTemplate(timeout);
     }
 
@@ -461,7 +464,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             String context,
             String others
     ) {
-        return fallback.shortenToLimit(company, position, companyContext, input, maxLength, context, others);
+        return utilityFallback.shortenToLimit(company, position, companyContext, input, maxLength, context, others);
     }
 
     @Override
@@ -473,7 +476,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             String input,
             String context
     ) {
-        return fallback.rewriteTitle(company, position, question, companyContext, input, context);
+        return utilityFallback.rewriteTitle(company, position, question, companyContext, input, context);
     }
 
     @Override
@@ -485,7 +488,7 @@ public class OpenAiResponsesWorkspaceDraftService implements WorkspaceDraftAiSer
             String input,
             String context
     ) {
-        return fallback.suggestTitles(company, position, question, companyContext, input, context);
+        return utilityFallback.suggestTitles(company, position, question, companyContext, input, context);
     }
 
     private String buildCompactSystemPrompt(String stage, boolean isLengthRetry) {

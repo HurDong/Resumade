@@ -64,7 +64,10 @@ public class WorkspacePipelineV2Service {
 
     private static final int    MAX_RETRIES         = 2;
     private static final double TARGET_MIN_RATIO    = 0.80;
-    private static final double TARGET_MAX_RATIO    = 1.00;
+    private static final double REQUESTED_TARGET_MIN_RATIO = 0.90;
+    private static final double DEFAULT_DESIRED_TARGET_RATIO = 0.90;
+    private static final double MINI_SHORTEN_MAX_RATIO = 1.20;
+    private static final int    LENGTH_REWRITE_MAX_ATTEMPTS = 2;
     private static final long   HEARTBEAT_INTERVAL  = 8L;
 
     private final WorkspaceQuestionRepository      questionRepository;
@@ -75,6 +78,7 @@ public class WorkspacePipelineV2Service {
     private final StrategyDraftGeneratorService    strategyDraftGeneratorService;
     private final DraftQualityCheckService         draftQualityCheckService;
     private final TranslationService               translationService;
+    private final WorkspaceDraftAiService          workspaceDraftAiService;
     private final WorkspacePatchAiService          workspacePatchAiService;
     private final QuestionSnapshotService          questionSnapshotService;
     private final WorkspaceTaskCache               workspaceTaskCache;
@@ -141,8 +145,9 @@ public class WorkspacePipelineV2Service {
         String experienceContext = buildExperienceContext(question, questionId, profile, storyIds);
         String othersContext     = buildOthersContext(question, questionId);
 
-        int minTarget     = (int) (maxLength * TARGET_MIN_RATIO);
-        int preferredMax  = (int) (maxLength * TARGET_MAX_RATIO);
+        LengthPolicy lengthPolicy = resolveLengthPolicy(maxLength, targetChars);
+        int minTarget    = lengthPolicy.minTarget();
+        int preferredMax = lengthPolicy.desiredTarget();
 
         String directive = buildDirective(question, useDirective, maxLength, targetChars);
         sendProgress(emitter, STAGE_RAG, "문항에 맞는 핵심 소재를 선별했습니다. 🧩");
@@ -157,6 +162,7 @@ public class WorkspacePipelineV2Service {
                 .build();
 
         String draft = generateWithRetry(profile, params, minTarget, preferredMax, emitter);
+        draft = fitDraftLengthBeforeWash(profile, params, draft, lengthPolicy, emitter);
 
         question = questionRepository.findById(questionId).orElseThrow();
         question.setContent(draft);
@@ -166,10 +172,16 @@ public class WorkspacePipelineV2Service {
 
         // ── STAGE 4: Wash ────────────────────────────────────────────────────
         sendProgress(emitter, STAGE_WASH, "초안 고도화를 위해 중간 번역 과정을 거치고 있습니다. 🌐");
-        String translatedEn = translationService.translateToEnglish(draft);
-
-        sendProgress(emitter, STAGE_WASH, "한국어로 다시 번역하며 표현을 더 자연스럽게 다듬고 있습니다. 🫧");
-        String washedKr = prepareWashed(translationService.translateToKorean(translatedEn));
+        String washedKr;
+        try {
+            String translatedEn = translationService.translateToEnglish(draft);
+            sendProgress(emitter, STAGE_WASH, "한국어로 다시 번역하며 표현을 더 자연스럽게 다듬고 있습니다. 🫧");
+            washedKr = prepareWashed(translationService.translateToKorean(translatedEn));
+        } catch (Exception e) {
+            log.warn("V2 wash failed, completing with original draft. questionId={} reason={}", questionId, e.getMessage());
+            completeWithWashFailed(emitter, questionId, draft, maxLength, minTarget);
+            return;
+        }
 
         question = questionRepository.findById(questionId).orElseThrow();
         question.setWashedKr(washedKr);
@@ -179,7 +191,7 @@ public class WorkspacePipelineV2Service {
 
         // ── STAGE 5: Patch Analysis ───────────────────────────────────────
         sendProgress(emitter, STAGE_PATCH, "원본과 번역본을 비교하며 오역을 검수하고 있습니다. 🔎");
-        finalizePatch(emitter, questionId, draft, washedKr, maxLength, minTarget, preferredMax);
+        finalizePatch(emitter, questionId, draft, washedKr, maxLength, minTarget, preferredMax, params);
     }
 
     // -------------------------------------------------------------------------
@@ -195,12 +207,11 @@ public class WorkspacePipelineV2Service {
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             DraftQualityResult quality = draftQualityCheckService.check(draft, profile, minTarget);
             if (quality.passed()) {
-                log.info("V2 draft passed quality check attempt={}", attempt == 1 ? 0 : attempt - 1);
                 return draft;
             }
 
-            log.info("V2 retry attempt={} lengthOk={} elementsOk={}", attempt,
-                    quality.lengthOk(), quality.elementsOk());
+            log.info("V2 quality retry {}/{} lengthOk={} elementsOk={}",
+                    attempt, MAX_RETRIES, quality.lengthOk(), quality.elementsOk());
             sendProgress(emitter, STAGE_DRAFT,
                     String.format("초안 품질을 개선하고 있습니다 (%d/%d). 🔄", attempt, MAX_RETRIES));
 
@@ -219,7 +230,164 @@ public class WorkspacePipelineV2Service {
         String title = resp.title != null ? resp.title.trim() : "";
         String text  = resp.text  != null ? resp.text.trim()  : "";
         if (title.isBlank()) return text;
-        return title + "\n\n" + text;
+        return "[" + title + "]" + "\n\n" + text;
+    }
+
+    private String fitDraftLengthBeforeWash(QuestionProfile profile, DraftParams params, String draft,
+                                            LengthPolicy policy, SseEmitter emitter) {
+        String candidate = normalizeLengthText(draft).trim();
+
+        for (int attempt = 1; attempt <= LENGTH_REWRITE_MAX_ATTEMPTS + 1; attempt++) {
+            int currentLength = countVisibleChars(candidate);
+            LengthDecision decision = decideLengthAction(currentLength, policy);
+            if (decision == LengthDecision.ACCEPT) {
+                log.debug("V2 draft length ok chars={} target={}-{}", currentLength, policy.minTarget(), policy.desiredTarget());
+                return candidate;
+            }
+
+            if (decision == LengthDecision.MINI_SHORTEN) {
+                String shortened = shortenWithMini(candidate, policy, params);
+                int shortenedLength = countVisibleChars(shortened);
+                if (!shortened.isBlank()
+                        && shortenedLength >= policy.minTarget()
+                        && shortenedLength <= policy.desiredTarget()) {
+                    log.info("V2 draft trimmed {}→{} chars (target={}-{})",
+                            currentLength, shortenedLength, policy.minTarget(), policy.desiredTarget());
+                    return shortened;
+                }
+
+                log.warn("V2 draft [attempt {}/{}] mini-trim {}→{} missed target={}-{}, rewriting",
+                        attempt, LENGTH_REWRITE_MAX_ATTEMPTS,
+                        currentLength, shortenedLength, policy.minTarget(), policy.desiredTarget());
+                candidate = !shortened.isBlank() ? shortened : candidate;
+                decision = LengthDecision.REWRITE;
+            }
+
+            if (attempt > LENGTH_REWRITE_MAX_ATTEMPTS) {
+                break;
+            }
+
+            log.warn("V2 draft [attempt {}/{}] rewriting chars={} target={}-{} limit={}",
+                    attempt, LENGTH_REWRITE_MAX_ATTEMPTS,
+                    countVisibleChars(candidate), policy.minTarget(), policy.desiredTarget(), policy.hardLimit());
+            sendProgress(emitter, STAGE_DRAFT,
+                    String.format("초안 글자수를 목표 범위에 맞춰 다시 작성하고 있습니다 (%d/%d).",
+                            attempt, LENGTH_REWRITE_MAX_ATTEMPTS));
+
+            List<ChatMessage> refineMessages = promptFactory.buildRefineMessagesV2(
+                    profile, params, candidate, buildLengthRewriteDirective(candidate, policy, decision));
+            WorkspaceDraftAiService.DraftResponse resp = strategyDraftGeneratorService.generate(refineMessages);
+            candidate = assembleDraft(resp);
+        }
+
+        int finalLength = countVisibleChars(candidate);
+        if (policy.hardLimit() > 0 && finalLength > policy.hardLimit()) {
+            log.warn("V2 draft hard-trim chars={} → limit={}", finalLength, policy.hardLimit());
+            return hardTrimToLimit(candidate, policy.hardLimit());
+        }
+
+        log.warn("V2 draft best-effort chars={} target={}-{} limit={}",
+                finalLength, policy.minTarget(), policy.desiredTarget(), policy.hardLimit());
+        return candidate;
+    }
+
+    private LengthDecision decideLengthAction(int currentLength, LengthPolicy policy) {
+        if (currentLength >= policy.minTarget() && currentLength <= policy.desiredTarget()) {
+            return LengthDecision.ACCEPT;
+        }
+        if (currentLength < policy.minTarget()) {
+            return LengthDecision.REWRITE;
+        }
+        double ratio = policy.desiredTarget() > 0
+                ? (double) currentLength / (double) policy.desiredTarget()
+                : Double.POSITIVE_INFINITY;
+        return ratio <= MINI_SHORTEN_MAX_RATIO
+                ? LengthDecision.MINI_SHORTEN
+                : LengthDecision.REWRITE;
+    }
+
+    private String shortenWithMini(String text, LengthPolicy policy, DraftParams params) {
+        int currentLength = countVisibleChars(text);
+        try {
+            WorkspaceDraftAiService.DraftResponse shortened = workspaceDraftAiService.shortenToLimit(
+                    params.company(),
+                    params.position(),
+                    params.companyContext(),
+                    text,
+                    policy.desiredTarget(),
+                    params.experienceContext(),
+                    params.othersContext());
+            return shortened != null && shortened.text != null
+                    ? normalizeLengthText(shortened.text).trim()
+                    : "";
+        } catch (Exception e) {
+            log.warn("V2 draft mini-trim failed chars={} reason={}", currentLength, e.getMessage());
+            return "";
+        }
+    }
+
+    private String buildLengthRewriteDirective(String text, LengthPolicy policy, LengthDecision reason) {
+        int currentLength = countVisibleChars(text);
+        return """
+                The previous draft failed the length policy. This is a full rewrite, not a minor shorten.
+                Failure reason: %s
+                Current length: %d visible characters
+                Required body range: %d to %d visible characters
+                Hard limit: %d visible characters
+
+                Rewrite from the same facts and question intent.
+                Use a compact structure from the start.
+                Use only one main example.
+                Keep the title separate and do not repeat it in the body.
+                The body must land inside the required range before translation.
+                """.formatted(
+                reason,
+                currentLength,
+                policy.minTarget(),
+                policy.desiredTarget(),
+                policy.hardLimit());
+    }
+
+    private String formatRatio(int currentLength, int targetLength) {
+        if (targetLength <= 0) {
+            return "n/a";
+        }
+        return String.format("%.2f", (double) currentLength / (double) targetLength);
+    }
+
+    private String enforceUpperLimit(String text, int maxLength, int minTarget, int preferredMax,
+                                     DraftParams params, String stage) {
+        String normalized = normalizeLengthText(text).trim();
+        int currentLength = countVisibleChars(normalized);
+        if (maxLength <= 0 || currentLength <= maxLength) {
+            return normalized;
+        }
+
+        log.warn("V2 {} over limit chars={} maxLength={}, shortening", stage, currentLength, maxLength);
+        try {
+            WorkspaceDraftAiService.DraftResponse shortened = workspaceDraftAiService.shortenToLimit(
+                    params.company(),
+                    params.position(),
+                    params.companyContext(),
+                    normalized,
+                    maxLength,
+                    params.experienceContext(),
+                    params.othersContext());
+
+            String candidate = shortened != null && shortened.text != null
+                    ? normalizeLengthText(shortened.text).trim()
+                    : "";
+            int candidateLength = countVisibleChars(candidate);
+            if (!candidate.isBlank() && candidateLength <= maxLength) {
+                return candidate;
+            }
+
+            log.warn("V2 {} shorten insufficient {}chars, hard-trimming to {}", stage, candidateLength, maxLength);
+            return hardTrimToLimit(!candidate.isBlank() ? candidate : normalized, maxLength);
+        } catch (Exception e) {
+            log.warn("V2 {} shorten failed chars={} limit={} reason={}", stage, currentLength, maxLength, e.getMessage());
+            return hardTrimToLimit(normalized, maxLength);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -227,7 +395,8 @@ public class WorkspacePipelineV2Service {
     // -------------------------------------------------------------------------
 
     private void finalizePatch(SseEmitter emitter, Long questionId, String originalDraft,
-                                String washedKr, int maxLength, int minTarget, int preferredMax) throws Exception {
+                                String washedKr, int maxLength, int minTarget, int preferredMax,
+                                DraftParams params) throws Exception {
         int findingTarget = Math.max(1, washedKr.length() / 300);
         DraftAnalysisResult analysis;
         try {
@@ -255,6 +424,17 @@ public class WorkspacePipelineV2Service {
                 ? analysis.getHumanPatchedText()
                 : washedKr;
 
+        String warningMessage = null;
+        int finalLength = countVisibleChars(responseDraft);
+        if (finalLength < minTarget || (maxLength > 0 && finalLength > maxLength)) {
+            warningMessage = String.format(
+                    "세탁본은 %d자입니다. 번역 전 초안이 목표 범위를 통과했으므로 세탁본을 그대로 사용합니다.",
+                    finalLength);
+            log.warn("V2 washed {}chars outside target [{}-{}]", finalLength, minTarget, maxLength);
+        } else {
+            log.info("V2 washed {}chars ok (target [{}-{}])", finalLength, minTarget, maxLength);
+        }
+
         Map<String, Object> result = new HashMap<>();
         result.put("draft",       responseDraft);   // 프론트: 세탁본 표시용
         result.put("sourceDraft", originalDraft);   // 프론트: 원본 초안
@@ -262,6 +442,23 @@ public class WorkspacePipelineV2Service {
         result.put("aiReviewReport",  analysis.getAiReviewReport());
         result.put("minTarget",  minTarget);
         result.put("maxLength",  maxLength);
+        result.put("warningMessage", warningMessage);
+
+        workspaceTaskCache.setComplete(questionId, result);
+        sendStage(emitter, STAGE_DONE);
+        sendSse(emitter, "complete", result);
+    }
+
+    private void completeWithWashFailed(SseEmitter emitter, Long questionId,
+                                        String draft, int maxLength, int minTarget) throws Exception {
+        Map<String, Object> result = new HashMap<>();
+        result.put("draft",          draft);
+        result.put("sourceDraft",    draft);
+        result.put("mistranslations", List.of());
+        result.put("aiReviewReport", null);
+        result.put("minTarget",      minTarget);
+        result.put("maxLength",      maxLength);
+        result.put("warningMessage", "번역 서비스에 일시적인 오류가 발생했습니다. AI 초안을 그대로 사용합니다. 번역 세탁은 '재번역' 버튼으로 다시 시도할 수 있습니다.");
 
         workspaceTaskCache.setComplete(questionId, result);
         sendStage(emitter, STAGE_DONE);
@@ -363,6 +560,75 @@ public class WorkspacePipelineV2Service {
                 .replaceAll("\n{3,}", "\n\n");
     }
 
+    private LengthPolicy resolveLengthPolicy(int maxLength, Integer targetChars) {
+        if (maxLength <= 0) {
+            return new LengthPolicy(1, 1, 1, false);
+        }
+
+        if (targetChars != null && targetChars > 0) {
+            int desired = Math.min(Math.max(1, targetChars), maxLength);
+            int lower   = Math.max(1, (int) Math.ceil(desired * REQUESTED_TARGET_MIN_RATIO));
+            return new LengthPolicy(Math.min(lower, desired), desired, maxLength, true);
+        }
+
+        int lower   = Math.max(1, (int) Math.ceil(maxLength * TARGET_MIN_RATIO));
+        int desired = Math.max(lower, Math.min(maxLength, (int) Math.round(maxLength * DEFAULT_DESIRED_TARGET_RATIO)));
+        return new LengthPolicy(lower, desired, maxLength, false);
+    }
+
+    private String normalizeLengthText(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace("\r\n", "\n").replace('\r', '\n');
+    }
+
+    private int countVisibleChars(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+
+        String normalized = normalizeLengthText(text);
+        int count = 0;
+        for (int i = 0; i < normalized.length();) {
+            int codePoint = normalized.codePointAt(i);
+            i += Character.charCount(codePoint);
+
+            if (codePoint == '\n') {
+                count++;
+                continue;
+            }
+
+            if (Character.isISOControl(codePoint)) {
+                continue;
+            }
+
+            if (Character.getType(codePoint) == Character.FORMAT) {
+                continue;
+            }
+
+            count++;
+        }
+        return count;
+    }
+
+    private String hardTrimToLimit(String text, int maxLength) {
+        String normalized = normalizeLengthText(text).trim();
+        if (maxLength <= 0 || countVisibleChars(normalized) <= maxLength) {
+            return normalized;
+        }
+
+        int endIndex = normalized.offsetByCodePoints(0, maxLength);
+        String trimmed = normalized.substring(0, endIndex).trim();
+        int breakpoint = Math.max(
+                Math.max(trimmed.lastIndexOf("\n"), trimmed.lastIndexOf(".")),
+                Math.max(trimmed.lastIndexOf("!"), trimmed.lastIndexOf("?")));
+        if (breakpoint >= Math.max(0, maxLength - 80)) {
+            return trimmed.substring(0, breakpoint + 1).trim();
+        }
+        return trimmed;
+    }
+
     // -------------------------------------------------------------------------
     // SSE 헬퍼
     // -------------------------------------------------------------------------
@@ -424,6 +690,19 @@ public class WorkspacePipelineV2Service {
             future.cancel(false);
             scheduler.shutdownNow();
         }
+    }
+
+    private record LengthPolicy(
+            int minTarget,
+            int desiredTarget,
+            int hardLimit,
+            boolean hasRequestedTarget
+    ) {}
+
+    private enum LengthDecision {
+        ACCEPT,
+        MINI_SHORTEN,
+        REWRITE
     }
 
     private static class SseConnectionClosedException extends RuntimeException {

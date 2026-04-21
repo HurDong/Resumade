@@ -239,8 +239,13 @@ public interface WorkspaceDraftAiService {
             "Write in Korean.",
             "Keep the bracketed title if one exists in the input.",
             "Preserve the original facts, tone, and strongest concrete achievements as much as possible.",
+            "This is structure-preserving compression, not summarization or rewriting from scratch.",
+            "Preserve the same core claim, same main experience, same evidence order, and same conclusion unless the input itself is invalid.",
+            "Do not replace the selected experience with a different one.",
+            "Do not move the conclusion, action, or result into a different narrative role.",
             "Keep project origin or provenance attached at first mention whenever the supplied context supports it.",
             "Shorten by removing repetition, generic filler, and lower-priority detail before cutting core evidence.",
+            "Delete first: repeated modifiers, generic promises, ceremonial openings, over-explained background, and low-priority adjectives.",
             "Preserve a natural Korean self-introduction narrative instead of converting the text into report-like labels or list items.",
             "Do not introduce parenthetical meta labels such as (역할: ...), (결정: ...), (실행: ...), or (결과: ...).",
             "Do not introduce commentator phrasing like '이 사례는 ~를 보여줍니다' while shortening.",
@@ -264,10 +269,13 @@ public interface WorkspaceDraftAiService {
             {{others}}
 
             Goal:
-            Rewrite the current text so it stays within the hard limit while preserving the strongest facts, role fit, and concrete outcomes.
+            Compress the current text so it stays within the hard limit while preserving the existing structure, strongest facts, role fit, and concrete outcomes.
 
             Requirements:
             - Never exceed the hard limit, even by 1 character
+            - Preserve the same core claim, same main experience, same evidence order, and same conclusion
+            - Do not summarize into a different answer
+            - Do not change the selected project, problem, action, or result
             - Keep factual consistency with the supplied experience data
             - Prefer deleting repetitive or lower-priority detail over weakening the core point
             - Keep the text natural and interview-verifiable

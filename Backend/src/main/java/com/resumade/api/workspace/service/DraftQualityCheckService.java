@@ -44,7 +44,7 @@ public class DraftQualityCheckService {
         }
 
         // Tier-1: 글자수 체크 (서버사이드)
-        int currentChars = countChars(draft);
+        int currentChars = countVisibleChars(draft);
         if (currentChars < minTargetChars) {
             log.info("DraftQualityCheck: Tier-1 FAIL currentChars={} minTarget={}", currentChars, minTargetChars);
             return DraftQualityResult.lengthFail(currentChars, minTargetChars);
@@ -114,5 +114,34 @@ public class DraftQualityCheckService {
             trimmed = trimmed.replaceAll("```\\s*$", "").strip();
         }
         return trimmed;
+    }
+
+    private int countVisibleChars(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+
+        String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
+        int count = 0;
+        for (int i = 0; i < normalized.length();) {
+            int codePoint = normalized.codePointAt(i);
+            i += Character.charCount(codePoint);
+
+            if (codePoint == '\n') {
+                count++;
+                continue;
+            }
+
+            if (Character.isISOControl(codePoint)) {
+                continue;
+            }
+
+            if (Character.getType(codePoint) == Character.FORMAT) {
+                continue;
+            }
+
+            count++;
+        }
+        return count;
     }
 }
