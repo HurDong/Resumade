@@ -6,6 +6,9 @@ export interface SseEventMessage {
 
 interface StreamSseOptions {
   url: string;
+  method?: "GET" | "POST";
+  headers?: HeadersInit;
+  body?: BodyInit | null;
   signal?: AbortSignal;
   onOpen?: (response: Response) => void;
   onEvent: (message: SseEventMessage) => void;
@@ -13,16 +16,21 @@ interface StreamSseOptions {
 
 export async function streamSse({
   url,
+  method = "GET",
+  headers,
+  body,
   signal,
   onOpen,
   onEvent,
 }: StreamSseOptions) {
   const response = await fetch(url, {
-    method: "GET",
+    method,
     headers: {
       Accept: "text/event-stream",
       "Cache-Control": "no-cache",
+      ...headers,
     },
+    body,
     cache: "no-store",
     signal,
   });

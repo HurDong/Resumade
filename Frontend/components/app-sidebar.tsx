@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { LayoutDashboard, Archive, PenTool, Moon, Sun, Library, LogOut, ChevronUp, Bell, BellOff } from "lucide-react"
+import { LayoutDashboard, Archive, PenTool, Moon, Sun, Library, LogOut, ChevronUp, Bell, BellOff, Waves } from "lucide-react"
 import { useTheme } from "next-themes"
 import { isSoundMuted, setSoundMuted } from "@/lib/audio/completion-sound"
 
@@ -50,6 +50,12 @@ const navigation = [
     href: "/workspace",
     icon: PenTool,
     description: "작성 및 편집",
+  },
+  {
+    title: "WASH",
+    href: "/wash",
+    icon: Waves,
+    description: "초안 세탁",
   },
 ]
 
