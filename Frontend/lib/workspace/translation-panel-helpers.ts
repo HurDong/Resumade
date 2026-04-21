@@ -10,7 +10,7 @@ export function getTranslationProcessingMeta(
     return { target: null as TranslationProcessingTarget, label: "" };
   }
 
-  if (pipelineStage === "RAG" || pipelineStage === "DRAFT") {
+  if (pipelineStage === "ANALYSIS" || pipelineStage === "RAG" || pipelineStage === "DRAFT") {
     return {
       target: "draft" as TranslationProcessingTarget,
       label: getPipelineLabel(pipelineStage),
@@ -161,6 +161,7 @@ function escapeAttr(str: string): string {
 }
 
 function getPipelineLabel(pipelineStage: PipelineStage) {
+  if (pipelineStage === "ANALYSIS") return "문항 분석 중";
   if (pipelineStage === "RAG") return "경험 컨텍스트 준비 중";
   if (pipelineStage === "DRAFT") return "초안 다듬는 중";
   if (pipelineStage === "WASH") return "세탁본 생성 중";

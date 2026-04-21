@@ -388,6 +388,7 @@ const parseLengthTarget = (raw: string, maxLength: number): number | null => {
 }
 
 const PIPELINE_STEPS = [
+  { id: "ANALYSIS", label: "문항 분석" },
   { id: "RAG", label: "경험 매칭" },
   { id: "DRAFT", label: "초안 생성" },
   { id: "WASH", label: "세탁 번역" },
@@ -404,6 +405,14 @@ const getPipelineState = (
       activeStepId: "PATCH",
       description: "모든 파이프라인 단계가 완료되었습니다.",
       isComplete: true,
+    }
+  }
+
+  if (stage === "ANALYSIS") {
+    return {
+      activeStepId: "ANALYSIS",
+      description: "문항의 의도와 요구 구조를 분석하고 있습니다.",
+      isComplete: false,
     }
   }
 
@@ -440,21 +449,21 @@ const getPipelineState = (
   }
 
   const normalized = (message || "").toLowerCase()
-  if (normalized.includes("patch") || normalized.includes("review") || normalized.includes("analysis")) {
+  if (normalized.includes("patch") || normalized.includes("review") || normalized.includes("휴먼 패치") || normalized.includes("검수") || normalized.includes("오역")) {
     return {
       activeStepId: "PATCH",
       description: "세탁본의 의미 손실과 어색한 표현을 검토하고 있습니다.",
       isComplete: false,
     }
   }
-  if (normalized.includes("wash") || normalized.includes("translate") || normalized.includes("translation")) {
+  if (normalized.includes("wash") || normalized.includes("translate") || normalized.includes("translation") || normalized.includes("세탁") || normalized.includes("번역")) {
     return {
       activeStepId: "WASH",
       description: "영어 번역 후 역번역으로 세탁본을 만들고 있습니다.",
       isComplete: false,
     }
   }
-  if (normalized.includes("draft") || normalized.includes("writing")) {
+  if (normalized.includes("draft") || normalized.includes("writing") || normalized.includes("초안")) {
     return {
       activeStepId: "DRAFT",
       description: "경험 근거를 바탕으로 초안을 생성하고 있습니다.",
@@ -470,6 +479,7 @@ const getPipelineState = (
 }
 // ── Batch progress card ───────────────────────────────────────────────────────
 const BATCH_STAGE_LABELS: Record<string, string> = {
+  ANALYSIS: "문항 분석 중",
   RAG:   "경험 매칭 중",
   DRAFT: "초안 생성 중",
   WASH:  "번역 세탁 중",
@@ -530,6 +540,7 @@ function BatchProgressCard({
 
 // ── Batch stage badge ────────────────────────────────────────────────────────
 const BATCH_STAGE_CONFIG: Record<string, { label: string; className: string }> = {
+  ANALYSIS: { label: "문항 분석", className: "bg-cyan-100 text-cyan-700 border-cyan-200" },
   RAG:   { label: "매칭 중", className: "bg-blue-100 text-blue-700 border-blue-200" },
   DRAFT: { label: "초안 생성", className: "bg-violet-100 text-violet-700 border-violet-200" },
   WASH:  { label: "번역 세탁", className: "bg-amber-100 text-amber-700 border-amber-200" },

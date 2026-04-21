@@ -952,17 +952,49 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 }));
 
-function parseSseMessage(raw: string) {
+type ParsedSseObject = {
+  stage?: unknown;
+  message?: unknown;
+  data?: unknown;
+};
+
+function parseSsePayload(raw: string): string | ParsedSseObject | null {
   if (!raw) {
     return "";
   }
 
   try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "string" ? parsed : raw;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === "string") {
+      return parsed;
+    }
+    if (parsed && typeof parsed === "object") {
+      return parsed as ParsedSseObject;
+    }
+    return parsed == null ? "" : String(parsed);
   } catch {
     return raw;
   }
+}
+
+function parseSseMessage(raw: string) {
+  const parsed = parseSsePayload(raw);
+  if (!parsed) {
+    return "";
+  }
+  if (typeof parsed === "string") {
+    return parsed;
+  }
+  if (typeof parsed.message === "string") {
+    return parsed.message;
+  }
+  if (typeof parsed.data === "string") {
+    return parsed.data;
+  }
+  if (typeof parsed.stage === "string") {
+    return parsed.stage;
+  }
+  return "";
 }
 
 function parseSseJson(raw: string) {
@@ -974,8 +1006,19 @@ function parseSseJson(raw: string) {
 }
 
 function parsePipelineStage(raw: string): PipelineStage | null {
-  const stage = parseSseMessage(raw).trim().toUpperCase();
-  if (stage === "RAG" || stage === "DRAFT" || stage === "WASH" || stage === "PATCH" || stage === "DONE") {
+  const parsed = parseSsePayload(raw);
+  const rawStage = typeof parsed === "object" && parsed && typeof parsed.stage === "string"
+    ? parsed.stage
+    : parseSseMessage(raw);
+  const stage = rawStage.trim().toUpperCase();
+  if (
+    stage === "ANALYSIS" ||
+    stage === "RAG" ||
+    stage === "DRAFT" ||
+    stage === "WASH" ||
+    stage === "PATCH" ||
+    stage === "DONE"
+  ) {
     return stage;
   }
   return null;
@@ -995,7 +1038,9 @@ function inferStageFromProgress(current: PipelineStage, message: string): Pipeli
   if (
     normalized.includes("patch") ||
     normalized.includes("review") ||
-    normalized.includes("analysis")
+    normalized.includes("휴먼 패치") ||
+    normalized.includes("오역") ||
+    normalized.includes("검수")
   ) {
     return "PATCH";
   }
@@ -1003,19 +1048,36 @@ function inferStageFromProgress(current: PipelineStage, message: string): Pipeli
   if (
     normalized.includes("wash") ||
     normalized.includes("translate") ||
-    normalized.includes("translation")
+    normalized.includes("translation") ||
+    normalized.includes("세탁") ||
+    normalized.includes("번역")
   ) {
     return current === "DONE" ? current : "WASH";
   }
 
-  if (normalized.includes("draft") || normalized.includes("writing")) {
+  if (normalized.includes("draft") || normalized.includes("writing") || normalized.includes("초안")) {
     if (current === "PATCH" || current === "DONE") {
       return current;
     }
     return "DRAFT";
   }
 
-  if (normalized.includes("rag") || normalized.includes("context")) {
+  if (
+    normalized.includes("analysis") ||
+    normalized.includes("문항") ||
+    normalized.includes("분석")
+  ) {
+    if (current === "IDLE" || current === "RAG") {
+      return "ANALYSIS";
+    }
+  }
+
+  if (
+    normalized.includes("rag") ||
+    normalized.includes("context") ||
+    normalized.includes("경험") ||
+    normalized.includes("컨텍스트")
+  ) {
     if (current === "IDLE") {
       return "RAG";
     }
@@ -1069,6 +1131,10 @@ async function runWorkspaceSse({
         }
 
         if (eventName === "progress") {
+          const parsedStage = parsePipelineStage(data);
+          if (parsedStage) {
+            get().setPipelineStage(parsedStage);
+          }
           get().updateProgress(parseSseMessage(data));
           return;
         }
@@ -1199,7 +1265,11 @@ async function runBatchQuestionSse(
         }
 
         if (eventName === "progress") {
-          setBatchQuestion(set, questionId, { message: parseSseMessage(data) });
+          const stage = parsePipelineStage(data);
+          setBatchQuestion(set, questionId, {
+            ...(stage ? { stage } : {}),
+            message: parseSseMessage(data),
+          });
           return;
         }
 

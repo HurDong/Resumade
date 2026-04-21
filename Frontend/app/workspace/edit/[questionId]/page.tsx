@@ -1313,7 +1313,7 @@ export default function FinalEditorPage() {
                       text={normalizeDisplayText(data.originalDraft ?? "")}
                       activeParagraphIdx={activeParagraphIdx}
                       activeSentenceText={activeSentenceText}
-                      className="text-[12.5px] leading-7 text-foreground/70 select-none"
+                      className="text-[12.5px] leading-7 text-foreground/70 select-text cursor-text"
                     />
                   </div>
                 </div>

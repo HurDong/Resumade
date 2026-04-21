@@ -306,7 +306,7 @@ export function TranslationPanel() {
               content={originalContent}
               renderHtml={true}
               className="border-none bg-muted/5 shadow-none"
-              contentClassName="min-h-[200px] whitespace-pre-wrap text-sm font-medium italic leading-relaxed text-muted-foreground/70"
+              contentClassName="min-h-[200px] whitespace-pre-wrap text-sm font-medium italic leading-relaxed text-muted-foreground/70 select-text cursor-text"
               overlay={
                 processingTarget === "draft"
                   ? {

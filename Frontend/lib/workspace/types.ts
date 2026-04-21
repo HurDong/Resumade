@@ -111,7 +111,7 @@ export interface ContextItem {
   relevanceScore: number;
 }
 
-export type PipelineStage = "IDLE" | "RAG" | "DRAFT" | "WASH" | "PATCH" | "DONE";
+export type PipelineStage = "IDLE" | "ANALYSIS" | "RAG" | "DRAFT" | "WASH" | "PATCH" | "DONE";
 
 export type StoryType =
   | "TURNING_POINT"
