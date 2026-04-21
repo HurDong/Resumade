@@ -41,6 +41,9 @@ public class AiConfig {
     @Value("${openai.models.workspace-draft:gpt-5-mini}")
     private String workspaceDraftModelName;
 
+    @Value("${openai.models.workspace-utility:gpt-5-mini}")
+    private String workspaceUtilityModelName;
+
     @Value("${openai.models.workspace-patch:gpt-5-mini}")
     private String workspacePatchModelName;
 
@@ -64,8 +67,8 @@ public class AiConfig {
 
     @PostConstruct
     public void logSelectedModels() {
-        log.info("OpenAI models - experience: {}, workspace-draft: {}, workspace-patch: {}, jd-text: {}, jd-vision: {}",
-                experienceModelName, workspaceDraftModelName, workspacePatchModelName, jdTextModelName, jdVisionModelName);
+        log.info("OpenAI models - experience: {}, workspace-draft: {}, workspace-utility: {}, workspace-patch: {}, jd-text: {}, jd-vision: {}",
+                experienceModelName, workspaceDraftModelName, workspaceUtilityModelName, workspacePatchModelName, jdTextModelName, jdVisionModelName);
     }
 
     @Bean
@@ -82,19 +85,29 @@ public class AiConfig {
                 .build();
     }
 
+    @Bean(name = "workspaceUtilityAiService")
+    public WorkspaceDraftAiService workspaceUtilityAiService() {
+        return AiServices.builder(WorkspaceDraftAiService.class)
+                .chatLanguageModel(buildChatModel(workspaceUtilityModelName))
+                .build();
+    }
+
     @Bean
     @Primary
     public WorkspaceDraftAiService workspaceDraftAiService(
             ObjectMapper objectMapper,
             @org.springframework.beans.factory.annotation.Qualifier("legacyWorkspaceDraftAiService")
-            WorkspaceDraftAiService legacyWorkspaceDraftAiService
+            WorkspaceDraftAiService legacyWorkspaceDraftAiService,
+            @org.springframework.beans.factory.annotation.Qualifier("workspaceUtilityAiService")
+            WorkspaceDraftAiService workspaceUtilityAiService
     ) {
         return new OpenAiResponsesWorkspaceDraftService(
                 openAiApiKey,
                 workspaceDraftModelName,
                 openAiTimeout,
                 objectMapper,
-                legacyWorkspaceDraftAiService
+                legacyWorkspaceDraftAiService,
+                workspaceUtilityAiService
         );
     }
 

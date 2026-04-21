@@ -39,6 +39,7 @@ openai:
     experience: ${OPENAI_EXPERIENCE_MODEL:gpt-4o-mini}
     workspace-plan: ${OPENAI_WORKSPACE_PLAN_MODEL:${OPENAI_WORKSPACE_DRAFT_MODEL:gpt-5.1}}
     workspace-draft: ${OPENAI_WORKSPACE_DRAFT_MODEL:gpt-5.1}
+    workspace-utility: ${OPENAI_WORKSPACE_UTILITY_MODEL:gpt-5-mini}
     workspace-patch: ${OPENAI_WORKSPACE_PATCH_MODEL:gpt-4o-mini}
     jd-text: ${OPENAI_JD_TEXT_MODEL:gpt-4o-mini}
     jd-vision: ${OPENAI_JD_VISION_MODEL:gpt-5.4-mini}
@@ -56,7 +57,7 @@ gemini:
     jd-vision: ${GEMINI_JD_VISION_MODEL:gemini-2.5-flash-lite}
 
 translation:
-  provider: ${TRANSLATION_PROVIDER:google-cloud}
+  provider: ${TRANSLATION_PROVIDER:deepl}
   fallback-provider: ${TRANSLATION_FALLBACK_PROVIDER:}
   google-cloud:
     api-key: ${GOOGLE_CLOUD_TRANSLATE_API_KEY:${GEMINI_API_KEY:}}
