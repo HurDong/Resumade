@@ -12,6 +12,7 @@ import com.resumade.api.workspace.domain.WorkspaceQuestionRepository;
 import com.resumade.api.workspace.dto.DraftAnalysisResult;
 import com.resumade.api.workspace.dto.SentencePairAnalysisResult;
 import com.resumade.api.workspace.dto.TitleSuggestionResponse;
+import com.resumade.api.workspace.prompt.ClassificationResult;
 import com.resumade.api.workspace.prompt.DraftParams;
 import com.resumade.api.workspace.prompt.PromptFactory;
 import com.resumade.api.workspace.prompt.QuestionCategory;
@@ -633,7 +634,7 @@ public class WorkspaceService {
 
             // storyIds가 있으면 서사 컨텍스트 구축, 없으면 기존 RAG/필터링 컨텍스트 사용
             String context = buildContext(initialQuestion, questionId, allExperiences, category, storyIds);
-            String writingGuideContext = buildWritingGuideContext(storyIds);
+            String writingGuideContext = buildWritingGuideContext(storyIds, category);
 
             paceProcessing();
             sendProgress(emitter, STAGE_DRAFT, "선택한 경험과 요청 사항을 반영해 초안을 다시 생성하고 있습니다. ✍️");
@@ -814,8 +815,9 @@ public class WorkspaceService {
 
             sendProgress(emitter, STAGE_RAG, "자기소개서 생성을 위해 기업 분석 데이터와 문항을 준비하고 있어요. 🧭");
 
-            // ── [STEP 1] 문항 카테고리 분류 ──────────────────────────────────
-            QuestionCategory category = questionClassifierService.classify(questionTitle);
+            // ── [STEP 1] 문항 카테고리 분류 (복합 문항이면 intent도 추출) ─────
+            ClassificationResult classification = questionClassifierService.classifyWithIntents(questionTitle);
+            QuestionCategory category = classification.primaryCategory();
             String companyContext = buildApplicationResearchContext(initialQuestion, category);
             sendProgress(emitter, STAGE_RAG,
                     String.format("문항 유형 분석 완료 (%s). 맞춤 전략을 적용합니다. 🎯", category.getDisplayName()));
@@ -832,7 +834,7 @@ public class WorkspaceService {
 
             // storyIds가 있으면 서사 컨텍스트 구축, 없으면 기존 RAG/필터링 컨텍스트 사용
             String context = buildContext(initialQuestion, questionId, allExperiences, category, storyIds);
-            String writingGuideContext = buildWritingGuideContext(storyIds);
+            String writingGuideContext = buildWritingGuideContext(storyIds, category);
 
             paceProcessing();
             sendProgress(emitter, STAGE_DRAFT, "엄선한 경험 데이터를 바탕으로 새로운 초안을 생성 중입니다. ✍️");
@@ -878,7 +880,8 @@ public class WorkspaceService {
                     context,
                     others,
                     directiveForPrompt,
-                    writingGuideContext);
+                    writingGuideContext,
+                    classification.allIntents());
 
             WorkspaceDraftAiService.DraftResponse draftResponse = generateDraftWithStrategy(category, draftParams);
             String assembledDraft = assembleDraftText(draftResponse);
@@ -1032,18 +1035,7 @@ public class WorkspaceService {
             List<Experience> allExperiences = experienceRepository.findAll();
             String others = buildOthersContext(question, questionId, allExperiences);
             String context = buildFilteredContext(question, questionId, allExperiences, category);
-            draft = applyTitleLine(
-                    draft,
-                    resolveImprovedTitleLine(
-                            draft,
-                            company,
-                            position,
-                            questionTitle,
-                            category,
-                            companyContext,
-                            context,
-                            others,
-                            false));
+            draft = collapseRepeatedLeadingTitleLines(draft);
             if (!draft.equals(question.getContent())) {
                 question.setContent(draft);
                 questionRepository.save(question);
@@ -2292,8 +2284,11 @@ public class WorkspaceService {
     private String applyTitleLine(String text, String titleLine) {
         String normalizedText = normalizeLengthText(text);
         String normalizedTitleLine = normalizeTitleLine(titleLine);
-        if (normalizedText == null || normalizedText.isBlank() || normalizedTitleLine.isBlank()) {
+        if (normalizedText == null || normalizedText.isBlank()) {
             return normalizedText == null ? null : normalizeTitleSpacing(normalizedText).trim();
+        }
+        if (!isBracketTitleLine(normalizedTitleLine)) {
+            return collapseRepeatedLeadingTitleLines(normalizedText);
         }
 
         String[] lines = normalizedText.split("\n", -1);
@@ -2312,7 +2307,7 @@ public class WorkspaceService {
         if (isBracketTitleLine(lines[firstNonBlankLineIndex].trim())) {
             String previousTitleLine = lines[firstNonBlankLineIndex].trim();
             lines[firstNonBlankLineIndex] = normalizedTitleLine;
-            String updated = normalizeTitleSpacing(String.join("\n", lines)).trim();
+            String updated = collapseRepeatedLeadingTitleLines(String.join("\n", lines));
             log.debug("TRACE_TITLE applyTitleLine mode=replace previousTitle={} newTitle={} resultChars={} snippet={}",
                     safeSnippet(previousTitleLine, 80),
                     safeSnippet(normalizedTitleLine, 80),
@@ -2321,12 +2316,111 @@ public class WorkspaceService {
             return updated;
         }
 
-        String updated = normalizeTitleSpacing(normalizedTitleLine + "\n\n" + normalizedText.trim()).trim();
+        if (hasSameTitleCore(lines[firstNonBlankLineIndex].trim(), normalizedTitleLine)) {
+            String previousTitleLine = lines[firstNonBlankLineIndex].trim();
+            lines[firstNonBlankLineIndex] = normalizedTitleLine;
+            String updated = collapseRepeatedLeadingTitleLines(String.join("\n", lines));
+            log.debug("TRACE_TITLE applyTitleLine mode=normalize previousTitle={} newTitle={} resultChars={} snippet={}",
+                    safeSnippet(previousTitleLine, 80),
+                    safeSnippet(normalizedTitleLine, 80),
+                    countResumeCharacters(updated),
+                    safeSnippet(updated, 160));
+            return updated;
+        }
+
+        String updated = collapseRepeatedLeadingTitleLines(normalizedTitleLine + "\n\n" + normalizedText.trim());
         log.debug("TRACE_TITLE applyTitleLine mode=prepend newTitle={} resultChars={} snippet={}",
                 safeSnippet(normalizedTitleLine, 80),
                 countResumeCharacters(updated),
                 safeSnippet(updated, 160));
         return updated;
+    }
+
+    private String collapseRepeatedLeadingTitleLines(String text) {
+        if (text == null) {
+            return null;
+        }
+
+        String normalized = normalizeLengthText(normalizeTitleSpacing(text)).trim();
+        if (normalized.isBlank()) {
+            return normalized;
+        }
+
+        String[] lines = normalized.split("\n", -1);
+        int firstNonBlankLineIndex = -1;
+        for (int index = 0; index < lines.length; index++) {
+            if (!lines[index].trim().isBlank()) {
+                firstNonBlankLineIndex = index;
+                break;
+            }
+        }
+
+        if (firstNonBlankLineIndex < 0) {
+            return normalized;
+        }
+
+        String firstKey = titleLineComparisonKey(lines[firstNonBlankLineIndex]);
+        if (firstKey.isBlank()) {
+            return normalized;
+        }
+
+        List<String> cleaned = new ArrayList<>();
+        boolean changed = false;
+        boolean scanningLeadingTitleBlock = true;
+        boolean pendingBlankAfterSkippedTitle = false;
+
+        for (int index = 0; index < lines.length; index++) {
+            String line = lines[index];
+            String trimmed = line.trim();
+
+            if (index <= firstNonBlankLineIndex) {
+                cleaned.add(line);
+                continue;
+            }
+
+            if (scanningLeadingTitleBlock && trimmed.isBlank()) {
+                if (!pendingBlankAfterSkippedTitle) {
+                    cleaned.add(line);
+                } else {
+                    changed = true;
+                }
+                continue;
+            }
+
+            if (scanningLeadingTitleBlock && firstKey.equals(titleLineComparisonKey(trimmed))) {
+                changed = true;
+                pendingBlankAfterSkippedTitle = true;
+                continue;
+            }
+
+            scanningLeadingTitleBlock = false;
+            pendingBlankAfterSkippedTitle = false;
+            cleaned.add(line);
+        }
+
+        return changed ? normalizeTitleSpacing(String.join("\n", cleaned)).trim() : normalized;
+    }
+
+    private boolean hasSameTitleCore(String existingLine, String titleLine) {
+        String existingKey = titleLineComparisonKey(existingLine);
+        String titleKey = titleLineComparisonKey(titleLine);
+        return !existingKey.isBlank() && existingKey.equals(titleKey);
+    }
+
+    private String titleLineComparisonKey(String line) {
+        if (line == null) {
+            return "";
+        }
+
+        String trimmed = line.trim()
+                .replaceAll("^\\*\\*", "")
+                .replaceAll("\\*\\*$", "")
+                .trim();
+        if (isBracketTitleLine(trimmed)) {
+            trimmed = extractBracketTitleCore(trimmed);
+        }
+
+        return normalizeTitleComparison(trimmed);
     }
 
     private String summarizeDraftForOverlap(String draft) {
@@ -2371,6 +2465,24 @@ public class WorkspaceService {
             String directive,
             String writingGuideContext
     ) {
+        return buildDraftParams(company, position, questionTitle, companyContext,
+                maxLength, minTargetChars, maxTargetChars, context, others, directive, writingGuideContext, null);
+    }
+
+    private DraftParams buildDraftParams(
+            String company,
+            String position,
+            String questionTitle,
+            String companyContext,
+            int maxLength,
+            int minTargetChars,
+            int maxTargetChars,
+            String context,
+            String others,
+            String directive,
+            String writingGuideContext,
+            java.util.List<String> additionalIntents
+    ) {
         return DraftParams.builder()
                 .company(company)
                 .position(position)
@@ -2383,6 +2495,7 @@ public class WorkspaceService {
                 .othersContext(others)
                 .directive(directive)
                 .writingGuideContext(writingGuideContext)
+                .additionalIntents(additionalIntents)
                 .build();
     }
 
@@ -4332,6 +4445,15 @@ public class WorkspaceService {
         if (storyIds != null && !storyIds.isEmpty()) {
             return buildStoryContext(storyIds);
         }
+        // PERSONAL_GROWTH 문항은 storyIds 미선택 시 전체 personal story를 자동 로드
+        if (category == QuestionCategory.PERSONAL_GROWTH) {
+            List<Long> allStoryIds = personalStoryRepository.findAll()
+                    .stream().map(com.resumade.api.experience.domain.PersonalStory::getId).toList();
+            if (!allStoryIds.isEmpty()) {
+                log.info("buildContext: PERSONAL_GROWTH auto-loading all {} personal stories", allStoryIds.size());
+                return buildStoryContext(allStoryIds);
+            }
+        }
         return buildFilteredContext(question, questionId, allExperiences, category);
     }
 
@@ -4356,10 +4478,16 @@ public class WorkspaceService {
         return sb.toString();
     }
 
-    private String buildWritingGuideContext(List<Long> storyIds) {
-        if (storyIds == null || storyIds.isEmpty()) return null;
-        List<com.resumade.api.experience.domain.PersonalStory> guides = personalStoryRepository.findAllById(storyIds)
-                .stream()
+    private String buildWritingGuideContext(List<Long> storyIds, QuestionCategory category) {
+        List<com.resumade.api.experience.domain.PersonalStory> source;
+        if (storyIds == null || storyIds.isEmpty()) {
+            // PERSONAL_GROWTH일 때만 전체 서사에서 WRITING_GUIDE를 자동 탐색
+            if (category != QuestionCategory.PERSONAL_GROWTH) return null;
+            source = personalStoryRepository.findAll();
+        } else {
+            source = personalStoryRepository.findAllById(storyIds);
+        }
+        List<com.resumade.api.experience.domain.PersonalStory> guides = source.stream()
                 .filter(s -> s.getType() == com.resumade.api.experience.domain.PersonalStory.StoryType.WRITING_GUIDE)
                 .toList();
         if (guides.isEmpty()) return null;
