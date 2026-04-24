@@ -71,6 +71,10 @@ public class Experience {
     @OrderBy("displayOrder ASC, id ASC")
     private final List<ExperienceFacet> facets = new ArrayList<>();
 
+    @OneToMany(mappedBy = "experience", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("displayOrder ASC, id ASC")
+    private final List<ExperienceUnit> units = new ArrayList<>();
+
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -157,5 +161,23 @@ public class Experience {
 
         facet.attachTo(this);
         facets.add(facet);
+    }
+
+    public void replaceUnits(List<ExperienceUnit> nextUnits) {
+        units.clear();
+        if (nextUnits == null || nextUnits.isEmpty()) {
+            return;
+        }
+
+        nextUnits.forEach(this::addUnit);
+    }
+
+    public void addUnit(ExperienceUnit unit) {
+        if (unit == null) {
+            return;
+        }
+
+        unit.attachTo(this);
+        units.add(unit);
     }
 }

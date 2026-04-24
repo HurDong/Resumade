@@ -8,6 +8,7 @@ import com.resumade.api.experience.document.ExperienceDocument;
 import com.resumade.api.experience.document.ExperienceDocumentRepository;
 import com.resumade.api.experience.domain.Experience;
 import com.resumade.api.experience.domain.ExperienceFacet;
+import com.resumade.api.experience.domain.ExperienceUnit;
 import com.resumade.api.experience.domain.ExperienceRepository;
 import com.resumade.api.experience.dto.ExperienceExtractionResult;
 import com.resumade.api.experience.dto.ExperienceFacetResponse;
@@ -21,6 +22,8 @@ import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.IndexOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -53,6 +56,8 @@ public class ExperienceService {
     private final ExperienceRepository experienceRepository;
     private final ExperienceDocumentRepository experienceDocumentRepository;
     private final ExperienceAiService experienceAiService;
+    private final ExperienceUnitFactory experienceUnitFactory;
+    private final ElasticsearchOperations elasticsearchOperations;
     private final ObjectMapper objectMapper;
 
     @Value("${openai.api.key:demo}")
@@ -88,6 +93,7 @@ public class ExperienceService {
                 .originalFileName(firstNonBlank(file.getOriginalFilename(), snapshot.title()))
                 .build();
         experience.replaceFacets(buildFacetEntities(snapshot.facets()));
+        experience.replaceUnits(experienceUnitFactory.buildUnits(experience));
 
         Experience savedExperience = experienceRepository.save(experience);
         reindexExperience(savedExperience);
@@ -137,6 +143,7 @@ public class ExperienceService {
                     sanitizedRawContent
             );
             experience.replaceFacets(buildFacetEntities(snapshot.facets()));
+            experience.replaceUnits(experienceUnitFactory.buildUnits(experience));
             Experience saved = experienceRepository.save(experience);
             reindexExperience(saved);
 
@@ -197,6 +204,7 @@ public class ExperienceService {
                 normalizedRawContent
         );
         experience.replaceFacets(buildFacetEntities(snapshot.facets()));
+        experience.replaceUnits(experienceUnitFactory.buildUnits(experience));
 
         Experience saved = experienceRepository.save(experience);
         reindexExperience(saved);
@@ -219,6 +227,30 @@ public class ExperienceService {
 
         experienceRepository.deleteById(id);
         log.info("Deleted experience id: {}", id);
+    }
+
+    @Transactional
+    public void reindexAll() {
+        resetExperienceIndex();
+        List<Experience> allExperiences = experienceRepository.findAllWithFacets();
+        for (Experience experience : allExperiences) {
+            experience.replaceUnits(experienceUnitFactory.buildUnits(experience));
+            Experience saved = experienceRepository.save(experience);
+            reindexExperience(saved);
+        }
+    }
+
+    private void resetExperienceIndex() {
+        try {
+            IndexOperations indexOperations = elasticsearchOperations.indexOps(ExperienceDocument.class);
+            if (indexOperations.exists()) {
+                indexOperations.delete();
+            }
+            indexOperations.createWithMapping();
+            log.info("Recreated Elasticsearch index for experience unit documents.");
+        } catch (Exception e) {
+            log.warn("Failed to recreate experience Elasticsearch index. Continuing with document-level reindex.", e);
+        }
     }
 
     private void validateSupportedFileType(MultipartFile file) {
@@ -690,6 +722,7 @@ public class ExperienceService {
     }
 
     private void reindexExperience(Experience experience) {
+        experienceRepository.flush();
         try {
             experienceDocumentRepository.deleteByExperienceId(experience.getId());
         } catch (Exception e) {
@@ -716,28 +749,53 @@ public class ExperienceService {
 
         List<ExperienceDocument> esDocuments = new ArrayList<>();
         for (IndexSource source : indexSources) {
-            Document document = Document.from(source.content());
-            List<TextSegment> segments = DocumentSplitters.recursive(500, 50).split(document);
+            String text = source.content();
+            Embedding embedding = embeddingModel.embed(text).content();
 
-            for (TextSegment segment : segments) {
-                String text = segment.text();
-                Embedding embedding = embeddingModel.embed(text).content();
-
-                esDocuments.add(ExperienceDocument.builder()
-                        .experienceId(experience.getId())
-                        .facetId(source.facetId())
-                        .facetTitle(source.facetTitle())
-                        .chunkText(text)
-                        .embedding(embedding.vector())
-                        .build());
-            }
+            esDocuments.add(ExperienceDocument.builder()
+                    .id(source.documentId())
+                    .experienceId(experience.getId())
+                    .facetId(source.facetId())
+                    .unitId(source.unitId())
+                    .facetTitle(source.facetTitle())
+                    .unitType(source.unitType())
+                    .intentTags(source.intentTags())
+                    .techStack(source.techStack())
+                    .jobKeywords(source.jobKeywords())
+                    .questionTypes(source.questionTypes())
+                    .chunkText(text)
+                    .embedding(embedding.vector())
+                    .build());
         }
 
         experienceDocumentRepository.saveAll(esDocuments);
-        log.info("Indexed {} chunks for experience id {}", esDocuments.size(), experience.getId());
+        log.info("Indexed {} units for experience id {}", esDocuments.size(), experience.getId());
     }
 
     private List<IndexSource> buildIndexSources(Experience experience) {
+        List<ExperienceUnit> units = experience.getUnits();
+        if (units == null || units.isEmpty()) {
+            return List.of();
+        }
+
+        return units.stream()
+                .filter(unit -> unit != null && unit.getId() != null)
+                .map(unit -> new IndexSource(
+                        "unit-" + unit.getId(),
+                        unit.getFacet() == null ? null : unit.getFacet().getId(),
+                        unit.getFacet() == null ? "" : sanitizeInlineText(unit.getFacet().getTitle()),
+                        unit.getId(),
+                        unit.getUnitType().name(),
+                        readJsonArray(unit.getIntentTags()),
+                        readJsonArray(unit.getTechStack()),
+                        readJsonArray(unit.getJobKeywords()),
+                        readJsonArray(unit.getQuestionTypes()),
+                        buildUnitNarrative(experience, unit)
+                ))
+                .collect(Collectors.toList());
+    }
+
+    private List<IndexSource> buildIndexSourcesLegacy(Experience experience) {
         List<String> overallTechStack = readJsonArray(experience.getOverallTechStack());
         List<String> jobKeywords = readJsonArray(experience.getJobKeywords());
         List<String> questionTypes = readJsonArray(experience.getQuestionTypes());
@@ -758,6 +816,21 @@ public class ExperienceService {
                         buildFacetNarrative(experience, facet, overallTechStack, jobKeywords, questionTypes, rawContent)
                 ))
                 .collect(Collectors.toList());
+    }
+
+    private String buildUnitNarrative(Experience experience, ExperienceUnit unit) {
+        StringBuilder sb = new StringBuilder();
+        appendIfPresent(sb, "Project", experience.getTitle());
+        appendIfPresent(sb, "Summary", experience.getDescription());
+        appendIfPresent(sb, "Role", experience.getRole());
+        appendIfPresent(sb, "Facet", unit.getFacet() == null ? "" : unit.getFacet().getTitle());
+        appendIfPresent(sb, "Unit type", unit.getUnitType().name());
+        appendIfPresent(sb, "Unit detail", unit.getText());
+        appendIfPresent(sb, "Tech stack", joinList(readJsonArray(unit.getTechStack())));
+        appendIfPresent(sb, "Job keywords", joinList(readJsonArray(unit.getJobKeywords())));
+        appendIfPresent(sb, "Question types", joinList(readJsonArray(unit.getQuestionTypes())));
+        appendIfPresent(sb, "Intent tags", joinList(readJsonArray(unit.getIntentTags())));
+        return sb.toString();
     }
 
     private String buildProjectNarrative(
@@ -1365,6 +1438,31 @@ public class ExperienceService {
         }
     }
 
-    private record IndexSource(Long facetId, String facetTitle, String content) {
+    private record IndexSource(
+            String documentId,
+            Long facetId,
+            String facetTitle,
+            Long unitId,
+            String unitType,
+            List<String> intentTags,
+            List<String> techStack,
+            List<String> jobKeywords,
+            List<String> questionTypes,
+            String content
+    ) {
+        private IndexSource(Long facetId, String facetTitle, String content) {
+            this(
+                    facetId == null ? "exp-legacy" : "facet-legacy-" + facetId,
+                    facetId,
+                    facetTitle,
+                    null,
+                    null,
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    content
+            );
+        }
     }
 }

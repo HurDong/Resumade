@@ -22,8 +22,11 @@ public class ExperienceContextResponse {
         private String id;
         private Long experienceId;
         private Long facetId;
+        private Long unitId;
+        private String unitType;
         private String experienceTitle;
         private String facetTitle;
+        private List<String> intentTags;
         private String relevantPart;
         private int relevanceScore;
     }

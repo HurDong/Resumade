@@ -11,7 +11,10 @@ import com.resumade.api.experience.document.ExperienceDocumentRepository;
 import com.resumade.api.experience.domain.Experience;
 import com.resumade.api.experience.domain.ExperienceFacet;
 import com.resumade.api.experience.domain.ExperienceRepository;
+import com.resumade.api.experience.domain.ExperienceUnit;
+import com.resumade.api.experience.domain.ExperienceUnitRepository;
 import com.resumade.api.workspace.dto.ExperienceContextResponse;
+import com.resumade.api.workspace.prompt.ExperienceNeed;
 import com.resumade.api.workspace.prompt.QuestionCategory;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -73,6 +76,7 @@ public class ExperienceVectorRetrievalService {
     );
 
     private final ExperienceRepository experienceRepository;
+    private final ExperienceUnitRepository experienceUnitRepository;
     private final ExperienceDocumentRepository documentRepository;
     private final ElasticsearchClient elasticsearchClient;
 
@@ -158,8 +162,49 @@ public class ExperienceVectorRetrievalService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public List<ExperienceContextResponse.ContextItem> search(
+            List<ExperienceNeed> experienceNeeds,
+            int limit,
+            Set<Long> excludedExperienceIds,
+            QuestionCategory category
+    ) {
+        List<String> queries = experienceNeeds == null
+                ? List.of()
+                : experienceNeeds.stream()
+                .filter(Objects::nonNull)
+                .map(need -> joinNonBlank(" ",
+                        need.unit(),
+                        need.query(),
+                        need.intentTags() == null ? "" : String.join(" ", need.intentTags())))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .toList();
+
+        if (queries.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        String primary = queries.get(0);
+        List<String> supporting = queries.size() <= 1 ? List.of() : queries.subList(1, queries.size());
+        return search(primary, limit, excludedExperienceIds, supporting, category);
+    }
+
     private Map<String, SearchUnit> loadAvailableUnits(Set<Long> excludedExperienceIds) {
         Map<String, SearchUnit> units = new LinkedHashMap<>();
+        for (ExperienceUnit experienceUnit : experienceUnitRepository.findAllWithExperienceAndFacet()) {
+            if (experienceUnit == null
+                    || experienceUnit.getExperience() == null
+                    || isExcluded(experienceUnit.getExperience().getId(), excludedExperienceIds)) {
+                continue;
+            }
+            SearchUnit unit = SearchUnit.forUnit(experienceUnit);
+            units.put(unit.unitKey(), unit);
+        }
+        if (!units.isEmpty()) {
+            return units;
+        }
+
         for (Experience experience : experienceRepository.findAllWithFacets()) {
             if (experience == null || isExcluded(experience.getId(), excludedExperienceIds)) {
                 continue;
@@ -194,7 +239,7 @@ public class ExperienceVectorRetrievalService {
             }
 
             ExperienceDocument document = hit.source();
-            String unitKey = SearchUnit.unitKey(document.getExperienceId(), document.getFacetId());
+            String unitKey = SearchUnit.unitKey(document.getExperienceId(), document.getFacetId(), document.getUnitId());
             SearchUnit unit = units.get(unitKey);
             if (unit == null) {
                 continue;
@@ -442,11 +487,14 @@ public class ExperienceVectorRetrievalService {
         }
 
         return ExperienceContextResponse.ContextItem.builder()
-                .id(unit.facetId() != null ? "facet-" + unit.facetId() : "exp-" + unit.experienceId())
+                .id(unit.unitId() != null ? "unit-" + unit.unitId() : unit.facetId() != null ? "facet-" + unit.facetId() : "exp-" + unit.experienceId())
                 .experienceId(unit.experienceId())
                 .facetId(unit.facetId())
+                .unitId(unit.unitId())
+                .unitType(unit.unitType())
                 .experienceTitle(title)
                 .facetTitle(unit.facetTitle())
+                .intentTags(readJsonArray(unit.intentTagsCorpus()))
                 .relevantPart(buildRelevantPart(candidate))
                 .relevanceScore((int) Math.round(candidate.finalScore()))
                 .build();
@@ -459,6 +507,10 @@ public class ExperienceVectorRetrievalService {
 
         if (!safeText(unit.facetTitle()).isBlank()) {
             segments.add("Facet: " + unit.facetTitle());
+        }
+
+        if (!safeText(unit.unitType()).isBlank()) {
+            segments.add("Unit: " + unit.unitType());
         }
 
         String role = safeText(experience.getRole());
@@ -596,17 +648,33 @@ public class ExperienceVectorRetrievalService {
         }
     }
 
-    private record SearchUnit(String unitKey, Long experienceId, Long facetId, Experience experience, ExperienceFacet facet) {
+    private record SearchUnit(String unitKey, Long experienceId, Long facetId, Long unitId,
+                              Experience experience, ExperienceFacet facet, ExperienceUnit experienceUnit) {
+        private static SearchUnit forUnit(ExperienceUnit unit) {
+            Experience experience = unit.getExperience();
+            ExperienceFacet facet = unit.getFacet();
+            Long facetId = facet == null ? null : facet.getId();
+            return new SearchUnit(unitKey(experience.getId(), facetId, unit.getId()),
+                    experience.getId(), facetId, unit.getId(), experience, facet, unit);
+        }
+
         private static SearchUnit forProject(Experience experience) {
-            return new SearchUnit(unitKey(experience.getId(), null), experience.getId(), null, experience, null);
+            return new SearchUnit(unitKey(experience.getId(), null, null), experience.getId(), null, null, experience, null, null);
         }
 
         private static SearchUnit forFacet(Experience experience, ExperienceFacet facet) {
-            return new SearchUnit(unitKey(experience.getId(), facet.getId()), experience.getId(), facet.getId(), experience, facet);
+            return new SearchUnit(unitKey(experience.getId(), facet.getId(), null), experience.getId(), facet.getId(), null, experience, facet, null);
         }
 
-        private static String unitKey(Long experienceId, Long facetId) {
+        private static String unitKey(Long experienceId, Long facetId, Long unitId) {
+            if (unitId != null) {
+                return "unit:" + unitId;
+            }
             return facetId != null ? "facet:" + facetId : "exp:" + experienceId;
+        }
+
+        private String unitType() {
+            return experienceUnit == null || experienceUnit.getUnitType() == null ? "" : experienceUnit.getUnitType().name();
         }
 
         private String facetTitle() {
@@ -614,7 +682,7 @@ public class ExperienceVectorRetrievalService {
         }
 
         private String titleCorpus() {
-            return joinNonBlank(" ", safe(experience.getTitle()), facetTitle());
+            return joinNonBlank(" ", safe(experience.getTitle()), facetTitle(), unitType());
         }
 
         private String categoryCorpus() {
@@ -622,6 +690,9 @@ public class ExperienceVectorRetrievalService {
         }
 
         private String descriptionCorpus() {
+            if (experienceUnit != null) {
+                return joinNonBlank(" ", safe(experience.getDescription()), safe(experienceUnit.getText()));
+            }
             return joinNonBlank(" ",
                     safe(experience.getDescription()),
                     joinJson(facet == null ? null : facet.getSituation()),
@@ -630,10 +701,16 @@ public class ExperienceVectorRetrievalService {
         }
 
         private String roleCorpus() {
+            if (experienceUnit != null && "ROLE".equals(unitType())) {
+                return joinNonBlank(" ", safe(experience.getRole()), safe(experienceUnit.getText()));
+            }
             return joinNonBlank(" ", safe(experience.getRole()), joinJson(facet == null ? null : facet.getRole()));
         }
 
         private String rawCorpus() {
+            if (experienceUnit != null) {
+                return joinNonBlank(" ", safe(experienceUnit.getText()), intentTagsCorpus());
+            }
             return joinNonBlank(" ",
                     safe(experience.getRawContent()),
                     joinJson(facet == null ? null : facet.getSituation()),
@@ -644,6 +721,13 @@ public class ExperienceVectorRetrievalService {
         }
 
         private String techStackCorpus() {
+            if (experienceUnit != null) {
+                return joinNonBlank(" ",
+                        joinJson(experienceUnit.getTechStack()),
+                        joinJson(experienceUnit.getJobKeywords()),
+                        joinJson(experienceUnit.getQuestionTypes()),
+                        intentTagsCorpus());
+            }
             return joinNonBlank(" ",
                     joinJson(experience.getTechStack()),
                     joinJson(experience.getOverallTechStack()),
@@ -653,6 +737,9 @@ public class ExperienceVectorRetrievalService {
         }
 
         private String resultCorpus() {
+            if (experienceUnit != null && "RESULT".equals(unitType())) {
+                return joinNonBlank(" ", joinJson(experience.getMetrics()), safe(experienceUnit.getText()));
+            }
             return joinNonBlank(" ", joinJson(experience.getMetrics()), joinJson(facet == null ? null : facet.getResults()));
         }
 
@@ -661,6 +748,9 @@ public class ExperienceVectorRetrievalService {
         }
 
         private String detailPreview() {
+            if (experienceUnit != null) {
+                return safe(experienceUnit.getText());
+            }
             return joinNonBlank(" ",
                     joinJson(facet == null ? null : facet.getSituation()),
                     joinJson(facet == null ? null : facet.getJudgment()),
@@ -669,11 +759,21 @@ public class ExperienceVectorRetrievalService {
         }
 
         private String techStackPreview() {
+            if (experienceUnit != null) {
+                return truncate(joinJson(experienceUnit.getTechStack()), 100);
+            }
             return truncate(joinNonBlank(", ", joinJson(facet == null ? null : facet.getTechStack()), joinJson(experience.getTechStack())), 100);
         }
 
         private String resultPreview() {
+            if (experienceUnit != null && "RESULT".equals(unitType())) {
+                return truncate(safe(experienceUnit.getText()), 110);
+            }
             return truncate(joinNonBlank(", ", joinJson(facet == null ? null : facet.getResults()), joinJson(experience.getMetrics())), 110);
+        }
+
+        private String intentTagsCorpus() {
+            return experienceUnit == null ? "" : joinJson(experienceUnit.getIntentTags());
         }
 
         private static String joinJson(String raw) {

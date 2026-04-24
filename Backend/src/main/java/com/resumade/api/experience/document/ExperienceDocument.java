@@ -26,8 +26,26 @@ public class ExperienceDocument {
     @Field(type = FieldType.Long)
     private Long facetId;
 
+    @Field(type = FieldType.Long)
+    private Long unitId;
+
     @Field(type = FieldType.Keyword)
     private String facetTitle;
+
+    @Field(type = FieldType.Keyword)
+    private String unitType;
+
+    @Field(type = FieldType.Keyword)
+    private java.util.List<String> intentTags;
+
+    @Field(type = FieldType.Keyword)
+    private java.util.List<String> techStack;
+
+    @Field(type = FieldType.Keyword)
+    private java.util.List<String> jobKeywords;
+
+    @Field(type = FieldType.Keyword)
+    private java.util.List<String> questionTypes;
 
     @Field(type = FieldType.Text, analyzer = "standard") 
     private String chunkText;
@@ -36,10 +54,30 @@ public class ExperienceDocument {
     private float[] embedding;
 
     @Builder
-    public ExperienceDocument(Long experienceId, Long facetId, String facetTitle, String chunkText, float[] embedding) {
+    public ExperienceDocument(
+            String id,
+            Long experienceId,
+            Long facetId,
+            Long unitId,
+            String facetTitle,
+            String unitType,
+            java.util.List<String> intentTags,
+            java.util.List<String> techStack,
+            java.util.List<String> jobKeywords,
+            java.util.List<String> questionTypes,
+            String chunkText,
+            float[] embedding
+    ) {
+        this.id = id;
         this.experienceId = experienceId;
         this.facetId = facetId;
+        this.unitId = unitId;
         this.facetTitle = facetTitle;
+        this.unitType = unitType;
+        this.intentTags = intentTags;
+        this.techStack = techStack;
+        this.jobKeywords = jobKeywords;
+        this.questionTypes = questionTypes;
         this.chunkText = chunkText;
         this.embedding = embedding;
     }

@@ -56,6 +56,12 @@ public class ExperienceController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("/reindex-all")
+    public ResponseEntity<Void> reindexAll() {
+        experienceService.reindexAll();
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("/{id}/reclassify")
     public ResponseEntity<ExperienceResponse> reclassifySingle(@PathVariable Long id) {
         ExperienceResponse response = experienceService.reclassifySingle(id);
