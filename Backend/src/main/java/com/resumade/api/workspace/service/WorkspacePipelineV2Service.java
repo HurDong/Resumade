@@ -16,6 +16,7 @@ import com.resumade.api.workspace.dto.DraftQualityResult;
 import com.resumade.api.workspace.prompt.DraftParams;
 import com.resumade.api.workspace.prompt.PromptFactory;
 import com.resumade.api.workspace.prompt.QuestionCategory;
+import com.resumade.api.workspace.prompt.QuestionDraftPlan;
 import com.resumade.api.workspace.prompt.QuestionProfile;
 import dev.langchain4j.data.message.ChatMessage;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -80,8 +82,10 @@ public class WorkspacePipelineV2Service {
     private final PersonalStoryRepository          personalStoryRepository;
     private final ExperienceVectorRetrievalService experienceVectorRetrievalService;
     private final QuestionAnalysisService          questionAnalysisService;
+    private final QuestionDraftPlannerService      questionDraftPlannerService;
     private final PromptFactory                    promptFactory;
     private final StrategyDraftGeneratorService    strategyDraftGeneratorService;
+    private final DraftCriticRewriteService        draftCriticRewriteService;
     private final DraftQualityCheckService         draftQualityCheckService;
     private final TranslationService               translationService;
     private final WorkspaceDraftAiService          workspaceDraftAiService;
@@ -157,6 +161,11 @@ public class WorkspacePipelineV2Service {
         int    maxLength     = question.getMaxLength();
 
         sendComment(emitter, "flush buffer");
+
+        if (runPlanBasedDraftPipeline(question, questionId, company, position, questionTitle,
+                maxLength, useDirective, targetChars, storyIds, emitter)) {
+            return;
+        }
 
         // ── STAGE 1: Question Analysis ─────────────────────────────────────
         sendProgress(emitter, STAGE_ANALYSIS, "문항의 의도와 요구 구조를 분석하고 있습니다. 🧠");
@@ -240,6 +249,85 @@ public class WorkspacePipelineV2Service {
         // ── STAGE 5: Patch Analysis ───────────────────────────────────────
         sendProgress(emitter, STAGE_PATCH, "원본과 번역본을 비교하며 오역을 검수하고 있습니다. 🔎");
         finalizePatch(emitter, questionId, draft, washedKr, maxLength, minTarget, preferredMax, params);
+    }
+
+    private boolean runPlanBasedDraftPipeline(
+            WorkspaceQuestion question,
+            Long questionId,
+            String company,
+            String position,
+            String questionTitle,
+            int maxLength,
+            boolean useDirective,
+            Integer targetChars,
+            List<Long> storyIds,
+            SseEmitter emitter
+    ) throws Exception {
+        LengthPolicy lengthPolicy = resolveLengthPolicy(maxLength, targetChars);
+        int minTarget = lengthPolicy.minTarget();
+        int preferredMax = lengthPolicy.desiredTarget();
+        int draftHardLimit = Math.max(1, (int) Math.round(maxLength * PRE_WASH_LENGTH_FACTOR));
+        String directive = buildDirective(question, useDirective, maxLength, targetChars);
+
+        sendProgress(emitter, STAGE_ANALYSIS, "문항 의도와 답변 설계안을 생성하고 있습니다.");
+        QuestionDraftPlan plan = questionDraftPlannerService.plan(
+                company, position, questionTitle, draftHardLimit, minTarget, preferredMax, directive);
+        QuestionProfile profile = plan.toProfile();
+        log.info("V2 plan: category={} compound={} paragraphs={} needs={} questionId={}",
+                profile.primaryCategory(), profile.isCompound(), plan.paragraphCount(), plan.experienceNeeds().size(), questionId);
+
+        sendProgress(emitter, STAGE_RAG, "설계안에 맞는 경험 단위를 검색하고 있습니다.");
+        String companyContext = buildCompanyContext(question);
+        String experienceContext = buildExperienceContext(question, questionId, plan, storyIds);
+        String othersContext = buildOthersContext(question, questionId);
+
+        DraftParams params = DraftParams.builder()
+                .company(company)
+                .position(position)
+                .questionTitle(questionTitle)
+                .companyContext(companyContext)
+                .experienceContext(experienceContext)
+                .othersContext(othersContext)
+                .directive(directive)
+                .draftPlanContext(toPlanJson(plan))
+                .maxLength(draftHardLimit)
+                .minTarget(minTarget)
+                .maxTarget(preferredMax)
+                .build();
+
+        sendProgress(emitter, STAGE_DRAFT, "답변 설계안과 경험 근거를 바탕으로 초안을 작성하고 있습니다.");
+        WorkspaceDraftAiService.DraftResponse generated = strategyDraftGeneratorService.generate(
+                promptFactory.buildDraftPlanMessages(plan, params));
+
+        sendProgress(emitter, STAGE_DRAFT, "질문 충족도와 문단 압축 상태를 검수해 필요한 부분만 고치고 있습니다.");
+        WorkspaceDraftAiService.DraftResponse rewritten = draftCriticRewriteService.rewrite(params, generated);
+        if (rewritten != null && rewritten.text != null && countVisibleChars(rewritten.text) > draftHardLimit) {
+            rewritten.text = hardTrimToLimit(rewritten.text, draftHardLimit);
+        }
+        String draft = assembleDraft(rewritten);
+
+        saveDraft(questionId, draft);
+        sendSse(emitter, "draft_intermediate", draft);
+
+        sendProgress(emitter, STAGE_WASH, "초안 문체를 번역 왕복으로 세탁하고 있습니다.");
+        String washedKr;
+        try {
+            String translatedEn = translationService.translateToEnglish(draft);
+            washedKr = prepareWashed(translationService.translateToKorean(translatedEn));
+        } catch (Exception e) {
+            log.warn("V2 wash failed, completing with original draft. questionId={} reason={}", questionId, e.getMessage());
+            completeWithWashFailed(emitter, questionId, draft, maxLength, minTarget);
+            return true;
+        }
+
+        question = questionRepository.findById(questionId).orElseThrow();
+        question.setWashedKr(washedKr);
+        questionRepository.save(question);
+        questionSnapshotService.saveSnapshot(questionId, SnapshotType.WASHED, washedKr);
+        sendSse(emitter, "washed_intermediate", washedKr);
+
+        completeWithoutPatch(emitter, questionId, draft, washedKr, maxLength, minTarget, preferredMax);
+        return true;
     }
 
     private void runRefinement(Long questionId, String userDirective, Integer targetChars,
@@ -606,6 +694,40 @@ public class WorkspacePipelineV2Service {
     // Patch Analysis
     // -------------------------------------------------------------------------
 
+    private void completeWithoutPatch(SseEmitter emitter, Long questionId, String originalDraft,
+                                      String washedKr, int maxLength, int minTarget, int preferredMax) throws Exception {
+        WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
+        question.setMistranslations("[]");
+        question.setAiReview(null);
+        questionRepository.save(question);
+
+        String warningMessage = null;
+        int finalLength = countVisibleChars(washedKr);
+        if (finalLength < minTarget || (maxLength > 0 && finalLength > maxLength)) {
+            warningMessage = String.format(
+                    "세탁본이 %d자입니다. 번역 후 길이가 목표 범위를 벗어나 세탁본을 그대로 사용합니다.",
+                    finalLength);
+            log.warn("V2 washed {}chars outside target [{}-{}]", finalLength, minTarget, maxLength);
+        } else {
+            log.info("V2 washed {}chars ok (target [{}-{}])", finalLength, minTarget, maxLength);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("draft", washedKr);
+        result.put("washedDraft", washedKr);
+        result.put("sourceDraft", originalDraft);
+        result.put("mistranslations", List.of());
+        result.put("aiReviewReport", null);
+        result.put("minTarget", minTarget);
+        result.put("maxLength", maxLength);
+        result.put("preferredMax", preferredMax);
+        result.put("warningMessage", warningMessage);
+
+        workspaceTaskCache.setComplete(questionId, result);
+        sendStage(emitter, STAGE_DONE);
+        sendSse(emitter, "complete", result);
+    }
+
     private void finalizePatch(SseEmitter emitter, Long questionId, String originalDraft,
                                 String washedKr, int maxLength, int minTarget, int preferredMax,
                                 DraftParams params) throws Exception {
@@ -665,6 +787,7 @@ public class WorkspacePipelineV2Service {
                                         String draft, int maxLength, int minTarget) throws Exception {
         Map<String, Object> result = new HashMap<>();
         result.put("draft",          draft);
+        result.put("washedDraft",    draft);
         result.put("sourceDraft",    draft);
         result.put("mistranslations", List.of());
         result.put("aiReviewReport", null);
@@ -718,6 +841,54 @@ public class WorkspacePipelineV2Service {
     }
 
     private String buildExperienceContext(WorkspaceQuestion question, Long questionId,
+                                          QuestionDraftPlan plan, List<Long> storyIds) {
+        if (storyIds != null && !storyIds.isEmpty()) {
+            return buildPersonalStoryContext(storyIds);
+        }
+
+        QuestionProfile profile = plan.toProfile();
+        if (profile.primaryCategory() == QuestionCategory.PERSONAL_GROWTH) {
+            List<Long> allStoryIds = personalStoryRepository.findAllByOrderByIdAsc().stream()
+                    .map(PersonalStory::getId)
+                    .toList();
+            if (!allStoryIds.isEmpty()) {
+                return buildPersonalStoryContext(allStoryIds);
+            }
+        }
+
+        var results = experienceVectorRetrievalService.search(
+                plan.experienceNeeds(), 6, Set.of(), profile.primaryCategory());
+
+        if (!results.isEmpty()) {
+            Map<String, List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem>> grouped = new LinkedHashMap<>();
+            for (var item : results) {
+                String key = item.getExperienceId() + ":" + item.getFacetId();
+                grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(item);
+            }
+
+            return grouped.values().stream()
+                    .map(items -> {
+                        var first = items.get(0);
+                        String header = first.getFacetTitle() != null && !first.getFacetTitle().isBlank()
+                                ? String.format("[%s | Facet: %s]", first.getExperienceTitle(), first.getFacetTitle())
+                                : String.format("[%s]", first.getExperienceTitle());
+                        String body = items.stream()
+                                .map(item -> {
+                                    String unitLabel = item.getUnitType() == null || item.getUnitType().isBlank()
+                                            ? "UNIT"
+                                            : item.getUnitType();
+                                    return "- " + unitLabel + ": " + item.getRelevantPart();
+                                })
+                                .collect(Collectors.joining("\n"));
+                        return header + "\n" + body;
+                    })
+                    .collect(Collectors.joining("\n---\n"));
+        }
+
+        return buildCompactExperienceFallback();
+    }
+
+    private String buildExperienceContext(WorkspaceQuestion question, Long questionId,
                                            QuestionProfile profile, List<Long> storyIds) {
         if (storyIds != null && !storyIds.isEmpty()) {
             return buildPersonalStoryContext(storyIds);
@@ -754,6 +925,45 @@ public class WorkspacePipelineV2Service {
         return experienceRepository.findAll().stream()
                 .map(Experience::getRawContent)
                 .collect(Collectors.joining("\n---\n"));
+    }
+
+    private String buildCompactExperienceFallback() {
+        List<Experience> experiences = experienceRepository.findAllWithFacets();
+        if (experiences.isEmpty()) {
+            return "No experience context available.";
+        }
+
+        return experiences.stream()
+                .limit(2)
+                .map(experience -> {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("[").append(firstNonBlank(experience.getTitle(), "Untitled Experience")).append("]\n");
+                    if (experience.getDescription() != null && !experience.getDescription().isBlank()) {
+                        sb.append("Summary: ").append(experience.getDescription()).append("\n");
+                    }
+                    if (experience.getRole() != null && !experience.getRole().isBlank()) {
+                        sb.append("Role: ").append(experience.getRole()).append("\n");
+                    }
+                    if (experience.getFacets() != null && !experience.getFacets().isEmpty()) {
+                        var facet = experience.getFacets().get(0);
+                        sb.append("Representative facet: ").append(facet.getTitle()).append("\n");
+                        appendFallbackFacetLine(sb, "Situation", facet.getSituation());
+                        appendFallbackFacetLine(sb, "Action", facet.getActions());
+                        appendFallbackFacetLine(sb, "Result", facet.getResults());
+                    }
+                    return sb.toString().trim();
+                })
+                .collect(Collectors.joining("\n---\n"));
+    }
+
+    private void appendFallbackFacetLine(StringBuilder sb, String label, String rawJsonArray) {
+        String value = rawJsonArray == null ? "" : rawJsonArray
+                .replaceAll("[\\[\\]\"]", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (!value.isBlank()) {
+            sb.append(label).append(": ").append(value).append("\n");
+        }
     }
 
     private String buildPersonalStoryContext(List<Long> storyIds) {
@@ -834,6 +1044,14 @@ public class WorkspacePipelineV2Service {
             return second;
         }
         return "";
+    }
+
+    private String toPlanJson(QuestionDraftPlan plan) {
+        try {
+            return objectMapper.writeValueAsString(plan);
+        } catch (Exception e) {
+            return String.valueOf(plan);
+        }
     }
 
     // -------------------------------------------------------------------------

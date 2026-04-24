@@ -85,6 +85,61 @@ public class PromptFactory {
         return messages;
     }
 
+    public List<ChatMessage> buildDraftPlanMessages(QuestionDraftPlan plan, DraftParams params) {
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(SystemMessage.from("""
+                You are RESUMADE's Korean cover-letter draft writer.
+                Follow the provided AnswerContract and DraftBlueprint as the authority.
+                Do not use a fixed category template when the blueprint merges multiple intents.
+                Use only facts from Relevant Experience Data, Company/JD context, and user directives.
+                If the evidence is weak, write conservatively rather than inventing metrics.
+                Respect paragraphCount. For short answers, merge situation, action, result, and lesson into one paragraph.
+                Return ONLY valid JSON: {"title":"specific title","text":"body only"}
+                """));
+        messages.add(UserMessage.from("""
+                Company: %s
+                Position: %s
+                Question: %s
+
+                <DraftPlan>
+                %s
+                </DraftPlan>
+
+                <Context>
+                ## Company & JD Analysis
+                %s
+
+                ## Relevant Experience Data
+                %s
+
+                ## Other questions already written
+                %s
+                </Context>
+
+                <LengthPolicy>
+                Hard character limit for text: %d
+                Target range for text: %d ~ %d characters
+                </LengthPolicy>
+
+                <UserDirective>
+                %s
+                </UserDirective>
+                """.formatted(
+                nullSafe(params.company()),
+                nullSafe(params.position()),
+                nullSafe(params.questionTitle()),
+                nullSafe(params.draftPlanContext()),
+                nullSafe(params.companyContext()),
+                nullSafe(params.experienceContext()),
+                nullSafe(params.othersContext()),
+                params.maxLength(),
+                params.minTarget(),
+                params.maxTarget(),
+                nullSafe(params.directive())
+        )));
+        return messages;
+    }
+
     /**
      * [v2 refine] QuestionProfile + retryDirective 기반 리파인 메시지.
      */

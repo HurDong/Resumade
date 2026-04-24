@@ -39,6 +39,8 @@ public record DraftParams(
         /** 사용자 추가 지시사항 (배치 전략 + 개인 directive 병합본) */
         String directive,
 
+        String draftPlanContext,
+
         /**
          * 성장과정 라이프스토리와 별도로 전달되는 작성 가이드라인.
          * 강조 역량·성장 흐름·문체 지침·금지 항목 등을 포함.
@@ -68,6 +70,7 @@ public record DraftParams(
         private String experienceContext;
         private String othersContext;
         private String directive;
+        private String draftPlanContext;
         private String writingGuideContext;
         private List<String> additionalIntents;
 
@@ -81,6 +84,7 @@ public record DraftParams(
         public Builder experienceContext(String ctx)                     { this.experienceContext = ctx; return this; }
         public Builder othersContext(String othersContext)               { this.othersContext = othersContext; return this; }
         public Builder directive(String directive)                       { this.directive = directive; return this; }
+        public Builder draftPlanContext(String draftPlanContext)         { this.draftPlanContext = draftPlanContext; return this; }
         public Builder writingGuideContext(String writingGuideContext)   { this.writingGuideContext = writingGuideContext; return this; }
         public Builder additionalIntents(List<String> additionalIntents) { this.additionalIntents = additionalIntents; return this; }
 
@@ -88,7 +92,7 @@ public record DraftParams(
             return new DraftParams(
                     company, position, questionTitle, companyContext,
                     maxLength, minTarget, maxTarget,
-                    experienceContext, othersContext, directive, writingGuideContext,
+                    experienceContext, othersContext, directive, draftPlanContext, writingGuideContext,
                     additionalIntents
             );
         }
