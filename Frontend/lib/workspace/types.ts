@@ -65,8 +65,6 @@ export interface WorkspaceQuestion {
   isCompleted: boolean;
   /** 유저가 직접 지정한 카테고리. null이면 AI 자동 분류 사용 */
   category: QuestionCategory | null;
-  /** 성장과정 문항에서 선택된 인생 서사 ID 목록 */
-  selectedStoryIds?: number[];
 }
 
 export interface BatchPlanAssignment {
@@ -113,36 +111,11 @@ export interface ContextItem {
 
 export type PipelineStage = "IDLE" | "ANALYSIS" | "RAG" | "DRAFT" | "WASH" | "PATCH" | "DONE";
 
-export type StoryType =
-  | "TURNING_POINT"
-  | "VALUE"
-  | "ENVIRONMENT"
-  | "INFLUENCE"
-  | "FAILURE_RECOVERY"
-  | "MILESTONE"
-  | "WRITING_GUIDE";
-
-export const STORY_TYPE_LABELS: Record<StoryType, string> = {
-  TURNING_POINT: "전환점",
-  VALUE: "가치관",
-  ENVIRONMENT: "성장 환경",
-  INFLUENCE: "영향받은 인물/경험",
-  FAILURE_RECOVERY: "실패와 극복",
-  MILESTONE: "인생 이정표",
-  WRITING_GUIDE: "작성 가이드",
-};
-
 export interface PersonalStory {
   id: number;
-  type: StoryType;
-  period: string;
   content: string;
-  keywords: string[];
 }
 
 export interface StoryUpsertRequest {
-  type: StoryType;
-  period: string;
   content: string;
-  keywords: string[];
 }

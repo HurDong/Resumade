@@ -35,3 +35,39 @@ export async function POST(request: Request) {
     },
   })
 }
+
+export async function PUT(request: Request) {
+  const body = await request.text()
+
+  const response = await fetch(`${getRequiredServerBackendOrigin()}/api/personal-stories`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": request.headers.get("content-type") ?? "application/json",
+    },
+    body,
+  })
+
+  const responseBody = await response.text()
+
+  return new Response(responseBody, {
+    status: response.status,
+    headers: {
+      "Content-Type": response.headers.get("content-type") ?? "application/json",
+    },
+  })
+}
+
+export async function DELETE() {
+  const response = await fetch(`${getRequiredServerBackendOrigin()}/api/personal-stories`, {
+    method: "DELETE",
+  })
+
+  const responseBody = await response.text()
+
+  return new Response(responseBody, {
+    status: response.status,
+    headers: {
+      "Content-Type": response.headers.get("content-type") ?? "application/json",
+    },
+  })
+}

@@ -50,7 +50,9 @@ public interface PromptStrategy {
     private static String buildStructureOverrideBlock(QuestionProfile profile) {
         StringBuilder sb = new StringBuilder();
         sb.append("<Question_Strategy_Override>\n");
-        sb.append("IMPORTANT: The following strategy OVERRIDES the Draft_Structure above for this specific question.\n\n");
+        sb.append("IMPORTANT: The following strategy adapts the category Draft_Structure for this specific question.\n");
+        sb.append("Keep the primary category as the answer spine, and integrate secondary requirements only at the point where the question asks for them.\n");
+        sb.append("Do not let a secondary requirement replace the primary category unless the framing note explicitly says it is dominant.\n\n");
         sb.append(profile.framingNote()).append("\n");
         if (!profile.requiredElements().isEmpty()) {
             sb.append("\nRequired elements (also listed in Required_Elements block):\n");

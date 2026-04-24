@@ -166,11 +166,11 @@ public class PromptFactory {
     private static String injectRequiredElements(String userMsg, List<String> elements) {
         StringBuilder block = new StringBuilder();
         block.append("\n\n<Required_Elements>\n");
-        block.append("이 문항에서 반드시 다뤄야 할 요소입니다. 각 요소를 하나의 유기적 서사 안에 자연스럽게 통합하세요:\n");
+        block.append("이 문항에서 반드시 다뤄야 할 보조/추가 요구사항입니다. primary category의 중심 흐름을 유지한 채, 문항이 요구한 위치에서 자연스럽게 통합하세요:\n");
         for (int i = 0; i < elements.size(); i++) {
             block.append(i + 1).append(". ").append(elements.get(i)).append("\n");
         }
-        block.append("→ 항목별 소제목·단락 분리 없이 하나의 흐름으로 작성하세요.\n");
+        block.append("→ 항목별 소제목·단락 분리 없이 하나의 흐름으로 작성하세요. 보조 요구사항이 중심 흐름을 대체하면 안 됩니다.\n");
         block.append("</Required_Elements>");
 
         int idx = userMsg.indexOf("<Output_Format>");

@@ -4450,7 +4450,7 @@ public class WorkspaceService {
         }
         // PERSONAL_GROWTH 문항은 storyIds 미선택 시 전체 personal story를 자동 로드
         if (category == QuestionCategory.PERSONAL_GROWTH) {
-            List<Long> allStoryIds = personalStoryRepository.findAll()
+            List<Long> allStoryIds = personalStoryRepository.findAllByOrderByIdAsc()
                     .stream().map(com.resumade.api.experience.domain.PersonalStory::getId).toList();
             if (!allStoryIds.isEmpty()) {
                 log.info("buildContext: PERSONAL_GROWTH auto-loading all {} personal stories", allStoryIds.size());
@@ -4463,18 +4463,23 @@ public class WorkspaceService {
     private String buildStoryContext(List<Long> storyIds) {
         List<com.resumade.api.experience.domain.PersonalStory> stories = personalStoryRepository.findAllById(storyIds)
                 .stream()
-                .filter(s -> s.getType() != com.resumade.api.experience.domain.PersonalStory.StoryType.WRITING_GUIDE)
+                .filter(s -> !com.resumade.api.experience.domain.PersonalStory.WRITING_GUIDE_LEGACY_TYPE.equals(s.getType()))
+                .sorted(java.util.Comparator.comparing(com.resumade.api.experience.domain.PersonalStory::getId))
                 .toList();
         if (stories.isEmpty()) {
             return "No personal stories selected.";
         }
 
-        StringBuilder sb = new StringBuilder("### SELECTED PERSONAL STORIES ###\n\n");
+        StringBuilder sb = new StringBuilder("### LIFE STORY CONTEXT ###\n");
+        sb.append("Use this as one continuous life story, not as separate answer candidates.\n");
+        sb.append("When the question asks for a specific value, period, failure, turning point, or strength, keep the full arc and expand only the matching point in detail.\n\n");
         for (var story : stories) {
-            sb.append("[").append(story.getType().name()).append("] ").append(story.getPeriod()).append("\n");
-            sb.append("Content: ").append(story.getContent()).append("\n");
-            if (story.getKeywords() != null && !story.getKeywords().isEmpty()) {
-                sb.append("Keywords: ").append(String.join(", ", story.getKeywords())).append("\n");
+            if (com.resumade.api.experience.domain.PersonalStory.LIFE_STORY_TYPE.equals(story.getType())) {
+                sb.append("[FULL_LIFE_STORY]\n");
+                sb.append(story.getContent()).append("\n");
+            } else {
+                sb.append("[LEGACY_STORY_CHUNK]\n");
+                sb.append(story.getContent()).append("\n");
             }
             sb.append("---\n");
         }
@@ -4482,24 +4487,7 @@ public class WorkspaceService {
     }
 
     private String buildWritingGuideContext(List<Long> storyIds, QuestionCategory category) {
-        List<com.resumade.api.experience.domain.PersonalStory> source;
-        if (storyIds == null || storyIds.isEmpty()) {
-            // PERSONAL_GROWTH일 때만 전체 서사에서 WRITING_GUIDE를 자동 탐색
-            if (category != QuestionCategory.PERSONAL_GROWTH) return null;
-            source = personalStoryRepository.findAll();
-        } else {
-            source = personalStoryRepository.findAllById(storyIds);
-        }
-        List<com.resumade.api.experience.domain.PersonalStory> guides = source.stream()
-                .filter(s -> s.getType() == com.resumade.api.experience.domain.PersonalStory.StoryType.WRITING_GUIDE)
-                .toList();
-        if (guides.isEmpty()) return null;
-
-        StringBuilder sb = new StringBuilder();
-        for (var guide : guides) {
-            sb.append(guide.getContent()).append("\n\n");
-        }
-        return sb.toString().trim();
+        return null;
     }
 
     private record RequestedLengthDirective(int minimum, int preferredTarget) {

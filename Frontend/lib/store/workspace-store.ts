@@ -193,7 +193,6 @@ const defaultQuestion: WorkspaceQuestion = {
   userDirective: "",
   batchStrategyDirective: "",
   isCompleted: false,
-  selectedStoryIds: [],
   category: null,
 };
 
@@ -606,14 +605,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const requestedLengthTarget = options?.lengthTarget ?? activeQ.lengthTarget;
     const normalizedTarget = normalizeLengthTarget(requestedLengthTarget, activeQ.maxLength);
     const targetQuery = normalizedTarget ? `&targetChars=${normalizedTarget}` : "";
-    const storyQuery = activeQ.selectedStoryIds && activeQ.selectedStoryIds.length > 0
-      ? `&storyIds=${activeQ.selectedStoryIds.join(",")}`
-      : "";
-
     registerBackgroundTask(activeQ.dbId, get().applicationId, "generate");
     await runWorkspaceSse({
       url: toApiUrl(
-        `/api/workspace/v2/stream/${activeQ.dbId}?useDirective=${useDirective}${targetQuery}${storyQuery}`
+        `/api/workspace/v2/stream/${activeQ.dbId}?useDirective=${useDirective}${targetQuery}`
       ),
       set,
       get,
@@ -642,16 +637,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const requestedLengthTarget = options?.lengthTarget ?? activeQ.lengthTarget;
     const normalizedTarget = normalizeLengthTarget(requestedLengthTarget, activeQ.maxLength);
     const targetQuery = normalizedTarget ? `&targetChars=${normalizedTarget}` : "";
-    const storyQuery = activeQ.selectedStoryIds && activeQ.selectedStoryIds.length > 0
-      ? `&storyIds=${activeQ.selectedStoryIds.join(",")}`
-      : "";
-
     registerBackgroundTask(activeQ.dbId, get().applicationId, "refine");
     await runWorkspaceSse({
       url: toApiUrl(
         `/api/workspace/refine-stream/${activeQ.dbId}?directive=${encodeURIComponent(
           directive
-        )}${targetQuery}${storyQuery}`
+        )}${targetQuery}`
       ),
       set,
       get,

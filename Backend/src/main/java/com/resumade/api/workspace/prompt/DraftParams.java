@@ -40,7 +40,7 @@ public record DraftParams(
         String directive,
 
         /**
-         * WRITING_GUIDE 타입 서사에서 추출한 작성 가이드라인.
+         * 성장과정 라이프스토리와 별도로 전달되는 작성 가이드라인.
          * 강조 역량·성장 흐름·문체 지침·금지 항목 등을 포함.
          * PersonalGrowth 문항 전용. 다른 카테고리에서는 null.
          */

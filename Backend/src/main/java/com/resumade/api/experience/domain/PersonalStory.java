@@ -21,22 +21,18 @@ import java.time.LocalDateTime;
 @EntityListeners(AuditingEntityListener.class)
 public class PersonalStory {
 
+    public static final String LIFE_STORY_TYPE = "LIFE_STORY";
+    public static final String WRITING_GUIDE_LEGACY_TYPE = "WRITING_GUIDE";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private StoryType type;
-
-    @Column(length = 100)
-    private String period; // 시기 (예: "고등학생 시절", "대학교 2학년")
+    private String type;
 
     @Column(nullable = false, columnDefinition = "TEXT")
-    private String content; // 서사 본문
-
-    @Column(columnDefinition = "JSON")
-    private String keywords; // 핵심 키워드 (JSON 배열 문자열)
+    private String content;
 
     @CreatedDate
     @Column(updatable = false)
@@ -46,27 +42,13 @@ public class PersonalStory {
     private LocalDateTime updatedAt;
 
     @Builder
-    public PersonalStory(StoryType type, String period, String content, String keywords) {
+    public PersonalStory(String type, String content) {
         this.type = type;
-        this.period = period;
         this.content = content;
-        this.keywords = keywords;
     }
 
-    public void update(StoryType type, String period, String content, String keywords) {
+    public void update(String type, String content) {
         this.type = type;
-        this.period = period;
         this.content = content;
-        this.keywords = keywords;
-    }
-
-    public enum StoryType {
-        TURNING_POINT,    // 전환점
-        VALUE,             // 가치관
-        ENVIRONMENT,       // 성장 환경
-        INFLUENCE,         // 영향받은 인물/경험
-        FAILURE_RECOVERY, // 실패와 극복
-        MILESTONE,         // 인생 이정표
-        WRITING_GUIDE      // 작성 가이드 (강조 역량·성장 흐름·문체 지침 — AI 프롬프트에 직접 주입)
     }
 }

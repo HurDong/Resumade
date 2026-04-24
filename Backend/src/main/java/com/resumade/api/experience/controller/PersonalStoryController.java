@@ -19,33 +19,30 @@ public class PersonalStoryController {
     private final PersonalStoryService service;
 
     @GetMapping
-    public ResponseEntity<List<PersonalStoryResponse>> getAllStories() {
-        return ResponseEntity.ok(service.getAllStories());
+    public ResponseEntity<PersonalStoryResponse> getLifeStory() {
+        return ResponseEntity.ok(service.getLifeStory());
     }
 
     @PostMapping
-    public ResponseEntity<PersonalStoryResponse> createStory(@RequestBody PersonalStoryResponse.UpsertRequest request) {
-        return ResponseEntity.ok(service.createStory(request));
+    public ResponseEntity<PersonalStoryResponse> saveLifeStory(@RequestBody PersonalStoryResponse.UpsertRequest request) {
+        return ResponseEntity.ok(service.saveLifeStory(request));
     }
 
-    @PutMapping("/{id}")
-    public ResponseEntity<PersonalStoryResponse> updateStory(
-            @PathVariable Long id,
-            @RequestBody PersonalStoryResponse.UpsertRequest request
-    ) {
-        return ResponseEntity.ok(service.updateStory(id, request));
+    @PutMapping
+    public ResponseEntity<PersonalStoryResponse> updateLifeStory(@RequestBody PersonalStoryResponse.UpsertRequest request) {
+        return ResponseEntity.ok(service.saveLifeStory(request));
     }
 
     @PostMapping("/bulk")
-    public ResponseEntity<List<PersonalStoryResponse>> bulkCreate(
+    public ResponseEntity<PersonalStoryResponse> importLifeStory(
             @RequestBody List<PersonalStoryResponse.UpsertRequest> requests
     ) {
-        return ResponseEntity.ok(service.bulkCreate(requests));
+        return ResponseEntity.ok(service.importLifeStory(requests));
     }
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteStory(@PathVariable Long id) {
-        service.deleteStory(id);
+    @DeleteMapping
+    public ResponseEntity<Void> clearLifeStory() {
+        service.clearLifeStory();
         return ResponseEntity.noContent().build();
     }
 }

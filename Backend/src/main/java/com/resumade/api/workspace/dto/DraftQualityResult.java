@@ -35,4 +35,8 @@ public record DraftQualityResult(
                 + (rawLlmFeedback != null && !rawLlmFeedback.isBlank() ? "\n\n추가 피드백: " + rawLlmFeedback : "");
         return new DraftQualityResult(false, true, false, directive);
     }
+
+    public static DraftQualityResult categoryFail(String directive) {
+        return new DraftQualityResult(false, true, false, directive);
+    }
 }

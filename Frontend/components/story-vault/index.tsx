@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
-import { Plus, UserRound, Upload, Loader2 } from "lucide-react"
+import { useCallback, useEffect, useState } from "react"
+import { Loader2, Save, ScrollText, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
@@ -14,65 +14,82 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { type PersonalStory, STORY_TYPE_LABELS } from "@/lib/workspace/types"
-import { StoryForm } from "./story-form"
-import { StoryCard } from "./story-card"
+import type { PersonalStory } from "@/lib/workspace/types"
+
+const LIFE_STORY_PLACEHOLDER = `고등학교 시절부터 현재까지의 성장 흐름을 하나의 이야기로 적어주세요.
+
+예시 흐름:
+- 처음 개발에 관심을 갖게 된 계기
+- 어떤 경험을 지나며 관점이 바뀌었는지
+- 실패나 시행착오를 통해 만든 기준
+- 최근 프로젝트에서 그 기준이 어떻게 이어졌는지
+
+문항이 특정 지점을 요구하면 AI가 이 전체 흐름 안에서 해당 부분만 더 자세히 풀어냅니다.`
 
 export function StoryVault() {
-  const [stories, setStories] = useState<PersonalStory[]>([])
+  const [lifeStory, setLifeStory] = useState<PersonalStory | null>(null)
+  const [draft, setDraft] = useState("")
   const [isLoading, setIsLoading] = useState(true)
-  const [isFormOpen, setIsFormOpen] = useState(false)
-  const [editingStory, setEditingStory] = useState<PersonalStory | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [isBulkOpen, setIsBulkOpen] = useState(false)
   const [bulkJson, setBulkJson] = useState("")
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false)
 
-  const fetchStories = useCallback(async () => {
+  const fetchLifeStory = useCallback(async () => {
     try {
       setIsLoading(true)
       const response = await fetch("/api/personal-stories")
-      if (!response.ok) throw new Error("서사 목록을 불러오는 데 실패했습니다.")
-      const data = await response.json()
-      setStories(data)
+      if (!response.ok) throw new Error("라이프스토리를 불러오는 데 실패했습니다.")
+      const data: PersonalStory = await response.json()
+      setLifeStory(data)
+      setDraft(data.content ?? "")
     } catch (error) {
-      console.error("Failed to fetch stories:", error)
-      toast.error("오류 발생", { description: "서림 목록을 불러오는 중 문제가 발생했습니다." })
+      console.error("Failed to fetch life story:", error)
+      toast.error("오류 발생", { description: "라이프스토리를 불러오는 중 문제가 발생했습니다." })
     } finally {
       setIsLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    fetchStories()
-  }, [fetchStories])
+    fetchLifeStory()
+  }, [fetchLifeStory])
 
-  const handleOpenAddForm = () => {
-    setEditingStory(null)
-    setIsFormOpen(true)
-  }
-
-  const handleEdit = (story: PersonalStory) => {
-    setEditingStory(story)
-    setIsFormOpen(true)
-  }
-
-  const handleDelete = async (id: number) => {
-    if (!confirm("정말 이 서사를 삭제하시겠습니까?")) return
-
+  const handleSave = async () => {
     try {
-      const response = await fetch(`/api/personal-stories/${id}`, { method: "DELETE" })
-      if (!response.ok) throw new Error("삭제에 실패했습니다.")
-      
-      setStories(prev => prev.filter(s => s.id !== id))
-      toast.success("삭제 완료", { description: "인생 서사가 보관소에서 제거되었습니다." })
+      setIsSaving(true)
+      const response = await fetch("/api/personal-stories", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: draft }),
+      })
+      if (!response.ok) throw new Error("라이프스토리 저장에 실패했습니다.")
+      const saved: PersonalStory = await response.json()
+      setLifeStory(saved)
+      setDraft(saved.content ?? "")
+      toast.success("저장 완료", { description: "성장과정 라이프스토리를 업데이트했습니다." })
     } catch (error) {
-      toast.error("삭제 실패", { description: "서사를 삭제하는 중 오류가 발생했습니다." })
+      toast.error("저장 실패", { description: error instanceof Error ? error.message : "저장 중 문제가 발생했습니다." })
+    } finally {
+      setIsSaving(false)
     }
   }
 
-  const handleFormSuccess = () => {
-    setIsFormOpen(false)
-    fetchStories()
+  const handleClear = async () => {
+    if (!confirm("저장된 라이프스토리를 비울까요?")) return
+    try {
+      setIsDeleting(true)
+      const response = await fetch("/api/personal-stories", { method: "DELETE" })
+      if (!response.ok) throw new Error("라이프스토리 삭제에 실패했습니다.")
+      setLifeStory(null)
+      setDraft("")
+      toast.success("삭제 완료", { description: "라이프스토리를 비웠습니다." })
+    } catch (error) {
+      toast.error("삭제 실패", { description: error instanceof Error ? error.message : "삭제 중 문제가 발생했습니다." })
+    } finally {
+      setIsDeleting(false)
+    }
   }
 
   const handleBulkImport = async () => {
@@ -85,30 +102,30 @@ export function StoryVault() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(parsed),
       })
-      if (!response.ok) throw new Error("일괄 저장에 실패했습니다.")
-      const saved: PersonalStory[] = await response.json()
-      toast.success("일괄 가져오기 완료", { description: `${saved.length}개의 서사가 저장되었습니다.` })
+      if (!response.ok) throw new Error("라이프스토리 가져오기에 실패했습니다.")
+      const saved: PersonalStory = await response.json()
+      setLifeStory(saved)
+      setDraft(saved.content ?? "")
+      toast.success("가져오기 완료", { description: "JSON 내용을 하나의 라이프스토리로 저장했습니다." })
       setBulkJson("")
       setIsBulkOpen(false)
-      fetchStories()
-    } catch (e) {
-      toast.error("가져오기 실패", { description: e instanceof Error ? e.message : "JSON 형식을 확인해 주세요." })
+    } catch (error) {
+      toast.error("가져오기 실패", { description: error instanceof Error ? error.message : "JSON 형식을 확인해 주세요." })
     } finally {
       setIsBulkSubmitting(false)
     }
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
-      <section className="flex items-center justify-between">
+    <div className="mx-auto max-w-5xl space-y-6">
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">인생 서사 보관소</h2>
-          <p className="text-muted-foreground">
-            성장과정의 재료가 되는 삶의 전환점과 가치관 형성 경험을 기록하세요.
+          <h2 className="text-2xl font-bold tracking-tight">라이프스토리</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            성장과정 문항에 사용할 전체 생애 흐름을 하나의 문서로 관리합니다.
           </p>
         </div>
-        <div className="flex gap-2">
-          {/* JSON 일괄 가져오기 */}
+        <div className="flex flex-wrap gap-2">
           <Dialog open={isBulkOpen} onOpenChange={setIsBulkOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="gap-2">
@@ -118,84 +135,66 @@ export function StoryVault() {
             </DialogTrigger>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
-                <DialogTitle>서사 일괄 가져오기</DialogTitle>
+                <DialogTitle>JSON을 라이프스토리로 가져오기</DialogTitle>
                 <DialogDescription>
-                  아래 형식의 JSON 배열을 붙여넣으면 한 번에 저장됩니다.
-                  <code className="mt-2 block rounded bg-muted p-2 text-xs leading-relaxed">
-                    {`[{"type":"TURNING_POINT","period":"고등학교 시절","content":"...","keywords":["도전"]},\n {"type":"WRITING_GUIDE","period":null,"content":"[강조 역량]\\n- ...","keywords":[]}]`}
-                  </code>
+                  기존 조각 JSON 배열을 붙여넣으면 content 값을 순서대로 이어 하나의 라이프스토리로 저장합니다.
                 </DialogDescription>
               </DialogHeader>
               <Textarea
                 value={bulkJson}
-                onChange={(e) => setBulkJson(e.target.value)}
-                placeholder='[{"type":"TURNING_POINT","period":"...","content":"...","keywords":["..."]}]'
-                className="min-h-[240px] font-mono text-xs"
+                onChange={(event) => setBulkJson(event.target.value)}
+                placeholder='[{"content":"고등학교 시절 ..."}, {"content":"대학교 시절 ..."}]'
+                className="min-h-[260px] font-mono text-xs"
               />
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="ghost" onClick={() => setIsBulkOpen(false)}>취소</Button>
                 <Button onClick={handleBulkImport} disabled={isBulkSubmitting || !bulkJson.trim()}>
                   {isBulkSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
-                  저장하기
+                  가져오기
                 </Button>
               </div>
             </DialogContent>
           </Dialog>
-
-          {/* 단건 추가 */}
-          <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={handleOpenAddForm} className="gap-2">
-                <Plus className="size-4" />
-                서사 추가하기
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>{editingStory ? "서사 수정" : "새로운 인생 서사 등록"}</DialogTitle>
-                <DialogDescription>
-                  구체적인 정황과 그때 느낀 감정, 변화된 생각을 적어두면 AI가 더 진정성 있는 글을 써줍니다.
-                </DialogDescription>
-              </DialogHeader>
-              <StoryForm
-                initialData={editingStory}
-                onSuccess={handleFormSuccess}
-                onCancel={() => setIsFormOpen(false)}
-              />
-            </DialogContent>
-          </Dialog>
+          <Button variant="outline" className="gap-2 text-destructive hover:text-destructive" onClick={handleClear} disabled={isDeleting || (!lifeStory && !draft.trim())}>
+            {isDeleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+            비우기
+          </Button>
+          <Button className="gap-2" onClick={handleSave} disabled={isSaving || isLoading}>
+            {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            저장
+          </Button>
         </div>
       </section>
 
-      {isLoading ? (
-        <div className="flex h-64 items-center justify-center">
-          <Loader2 className="size-8 animate-spin text-muted-foreground/50" />
-        </div>
-      ) : stories.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center border-dashed p-12 text-center">
-          <div className="rounded-full bg-muted p-4">
-            <UserRound className="size-8 text-muted-foreground/50" />
+      <Card className="overflow-hidden border-border/70">
+        <CardHeader className="border-b bg-muted/20">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-rose-100 text-rose-600">
+              <ScrollText className="size-5" />
+            </div>
+            <div>
+              <CardTitle className="text-base">전체 라이프스토리</CardTitle>
+              <CardDescription>
+                세부 카테고리 없이 이 문서 전체가 성장과정 RAG 컨텍스트로 들어갑니다.
+              </CardDescription>
+            </div>
           </div>
-          <CardTitle className="mt-4">저장된 서사가 없습니다</CardTitle>
-          <CardDescription className="max-w-xs">
-            첫 번째 인생 서사 소재를 등록하여 성장과정 문항 작성을 준비하세요.
-          </CardDescription>
-          <Button onClick={handleOpenAddForm} variant="outline" className="mt-6">
-            첫 서사 등록하기
-          </Button>
-        </Card>
-      ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {stories.map(story => (
-            <StoryCard 
-              key={story.id} 
-              story={story} 
-              onEdit={() => handleEdit(story)}
-              onDelete={() => handleDelete(story.id)}
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="flex h-[420px] items-center justify-center">
+              <Loader2 className="size-7 animate-spin text-muted-foreground/50" />
+            </div>
+          ) : (
+            <Textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={LIFE_STORY_PLACEHOLDER}
+              className="min-h-[560px] resize-y rounded-none border-0 p-6 text-sm leading-7 shadow-none focus-visible:ring-0"
             />
-          ))}
-        </div>
-      )}
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

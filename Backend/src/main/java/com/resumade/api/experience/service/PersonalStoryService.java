@@ -1,95 +1,99 @@
 package com.resumade.api.experience.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.resumade.api.experience.domain.PersonalStory;
 import com.resumade.api.experience.domain.PersonalStoryRepository;
 import com.resumade.api.experience.dto.PersonalStoryResponse;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * {@link PersonalStory} 엔티티에 대한 CRUD 및 비즈니스 로직을 담당하는 서비스.
  */
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PersonalStoryService {
 
     private final PersonalStoryRepository repository;
-    private final ObjectMapper objectMapper;
 
-    @Transactional(readOnly = true)
-    public List<PersonalStoryResponse> getAllStories() {
-        return repository.findAll().stream()
-                .map(story -> PersonalStoryResponse.from(story, parseKeywords(story.getKeywords())))
-                .collect(Collectors.toList());
+    @Transactional
+    public PersonalStoryResponse getLifeStory() {
+        return PersonalStoryResponse.from(ensureSingleLifeStory());
     }
 
     @Transactional
-    public PersonalStoryResponse createStory(PersonalStoryResponse.UpsertRequest request) {
-        PersonalStory story = PersonalStory.builder()
-                .type(request.getType())
-                .period(request.getPeriod())
-                .content(request.getContent())
-                .keywords(serializeKeywords(request.getKeywords()))
-                .build();
-        
-        PersonalStory saved = repository.save(story);
-        return PersonalStoryResponse.from(saved, request.getKeywords());
-    }
-
-    @Transactional
-    public PersonalStoryResponse updateStory(Long id, PersonalStoryResponse.UpsertRequest request) {
-        PersonalStory story = repository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Story not found: " + id));
-        
+    public PersonalStoryResponse saveLifeStory(PersonalStoryResponse.UpsertRequest request) {
+        PersonalStory story = ensureSingleLifeStory();
         story.update(
-                request.getType(),
-                request.getPeriod(),
-                request.getContent(),
-                serializeKeywords(request.getKeywords())
+                PersonalStory.LIFE_STORY_TYPE,
+                normalizeContent(request == null ? null : request.getContent())
         );
-        
-        return PersonalStoryResponse.from(story, request.getKeywords());
+        return PersonalStoryResponse.from(story);
     }
 
     @Transactional
-    public List<PersonalStoryResponse> bulkCreate(List<PersonalStoryResponse.UpsertRequest> requests) {
-        return requests.stream()
-                .map(this::createStory)
-                .collect(Collectors.toList());
+    public PersonalStoryResponse importLifeStory(List<PersonalStoryResponse.UpsertRequest> requests) {
+        String content = requests == null ? "" : requests.stream()
+                .map(PersonalStoryResponse.UpsertRequest::getContent)
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .reduce((left, right) -> left + "\n\n" + right)
+                .orElse("");
+        return replaceLifeStory(content);
     }
 
     @Transactional
-    public void deleteStory(Long id) {
-        repository.deleteById(id);
+    public PersonalStoryResponse replaceLifeStory(String content) {
+        repository.deleteAll(repository.findAllByOrderByIdAsc());
+        PersonalStory saved = repository.save(PersonalStory.builder()
+                .type(PersonalStory.LIFE_STORY_TYPE)
+                .content(normalizeContent(content))
+                .build());
+        return PersonalStoryResponse.from(saved);
     }
 
-    private List<String> parseKeywords(String json) {
-        if (json == null || json.isBlank()) return Collections.emptyList();
-        try {
-            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
-        } catch (JsonProcessingException e) {
-            log.warn("Failed to parse keywords JSON: {}", json, e);
-            return Collections.emptyList();
-        }
+    @Transactional
+    public void clearLifeStory() {
+        repository.deleteAll(repository.findAllByOrderByIdAsc());
     }
 
-    private String serializeKeywords(List<String> keywords) {
-        if (keywords == null || keywords.isEmpty()) return "[]";
-        try {
-            return objectMapper.writeValueAsString(keywords);
-        } catch (JsonProcessingException e) {
-            log.warn("Failed to serialize keywords: {}", keywords, e);
-            return "[]";
+    private PersonalStory ensureSingleLifeStory() {
+        List<PersonalStory> all = repository.findAllByOrderByIdAsc();
+        if (all.isEmpty()) {
+            return repository.save(PersonalStory.builder()
+                    .type(PersonalStory.LIFE_STORY_TYPE)
+                    .content("")
+                    .build());
         }
+
+        PersonalStory lifeStory = all.stream()
+                .filter(story -> PersonalStory.LIFE_STORY_TYPE.equals(story.getType()))
+                .findFirst()
+                .orElse(null);
+        String content = lifeStory != null && lifeStory.getContent() != null && !lifeStory.getContent().isBlank()
+                ? lifeStory.getContent()
+                : buildLegacyLifeStoryContent(all);
+
+        repository.deleteAll(all);
+        return repository.save(PersonalStory.builder()
+                .type(PersonalStory.LIFE_STORY_TYPE)
+                .content(normalizeContent(content))
+                .build());
+    }
+
+    private String buildLegacyLifeStoryContent(List<PersonalStory> stories) {
+        return stories.stream()
+                .filter(story -> !PersonalStory.WRITING_GUIDE_LEGACY_TYPE.equals(story.getType()))
+                .map(PersonalStory::getContent)
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .reduce((left, right) -> left + "\n\n" + right)
+                .orElse("");
+    }
+
+    private String normalizeContent(String content) {
+        return content == null ? "" : content.trim();
     }
 }

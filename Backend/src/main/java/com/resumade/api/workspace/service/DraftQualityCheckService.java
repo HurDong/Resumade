@@ -3,6 +3,7 @@ package com.resumade.api.workspace.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.resumade.api.workspace.dto.DraftQualityResult;
+import com.resumade.api.workspace.prompt.QuestionCategory;
 import com.resumade.api.workspace.prompt.QuestionProfile;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +55,11 @@ public class DraftQualityCheckService {
             return DraftQualityResult.ok();
         }
 
+        DraftQualityResult categoryResult = checkCategoryFit(draft, profile);
+        if (!categoryResult.passed()) {
+            return categoryResult;
+        }
+
         // Tier-2: requiredElements 충족 체크 (복합 문항만)
         List<String> required = profile.requiredElements();
         if (required.isEmpty()) {
@@ -97,6 +103,62 @@ public class DraftQualityCheckService {
             log.warn("DraftQualityCheck: Tier-2 parse failed, treating as passed. reason={}", e.getMessage());
             return DraftQualityResult.ok();
         }
+    }
+
+    private DraftQualityResult checkCategoryFit(String draft, QuestionProfile profile) {
+        if (profile == null || profile.primaryCategory() != QuestionCategory.PERSONAL_GROWTH || explicitlyRequiresProject(profile)) {
+            return DraftQualityResult.ok();
+        }
+
+        String normalized = draft.toLowerCase();
+        int technicalSignals = countOccurrences(normalized,
+                "spring", "redis", "kafka", "mongodb", "websocket", "stomp", "aws", "ec2", "rds",
+                "서버", "배포", "모니터링", "장애", "프로젝트", "기술", "구현", "개발", "데이터베이스",
+                "api", "시스템", "운영", "설계");
+        boolean hasLifeArcSignal = containsAny(normalized,
+                "처음", "고등학교", "대학교", "학창", "시절", "계기", "관심", "바뀌", "형성",
+                "이어졌", "과정", "흐름", "가치관", "태도", "기준", "습관");
+
+        if (technicalSignals >= 8 || (technicalSignals >= 5 && !hasLifeArcSignal)) {
+            return DraftQualityResult.categoryFail("""
+                    성장과정 문항인데 본문이 기술/프로젝트 성과 중심으로 흐르고 있습니다.
+                    다시 작성하세요:
+                    - 처음부터 현재까지의 성장과정 라이프스토리 흐름을 중심축으로 삼으세요.
+                    - 학교생활/학창시절/전공 선택/관심 변화/가치관 형성의 흐름을 먼저 보여주세요.
+                    - 이 문항이 프로젝트를 명시적으로 요구하지 않는다면 프로젝트, 기술 스택, 배포, 장애 대응, 수치 성과를 본문 중심에 두지 마세요.
+                    - 꼭 필요한 경우에만 문항 요구 지점의 디테일한 사례로 1~2문장 사용하고, 바로 다시 성장 흐름과 태도 형성으로 돌아오세요.
+                    - 스택명 나열과 운영 책임 설명은 제거하거나 크게 줄이세요.
+                    """);
+        }
+
+        return DraftQualityResult.ok();
+    }
+
+    private boolean explicitlyRequiresProject(QuestionProfile profile) {
+        String joined = String.join(" ",
+                profile.requiredElements().stream().map(String::toLowerCase).toList());
+        String framing = profile.framingNote() == null ? "" : profile.framingNote().toLowerCase();
+        String text = joined + " " + framing;
+        return containsAny(text, "프로젝트", "개발 경험", "기술 경험", "수행 경험", "구현", "성과");
+    }
+
+    private boolean containsAny(String text, String... terms) {
+        for (String term : terms) {
+            if (text.contains(term)) return true;
+        }
+        return false;
+    }
+
+    private int countOccurrences(String text, String... terms) {
+        int count = 0;
+        for (String term : terms) {
+            int index = 0;
+            while ((index = text.indexOf(term, index)) >= 0) {
+                count++;
+                index += term.length();
+            }
+        }
+        return count;
     }
 
     /** 자소서 글자수 카운트 — 공백·줄바꿈 포함, 제목 줄 제외 */

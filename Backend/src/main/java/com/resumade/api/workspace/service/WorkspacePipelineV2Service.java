@@ -3,6 +3,8 @@ package com.resumade.api.workspace.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.resumade.api.experience.domain.Experience;
 import com.resumade.api.experience.domain.ExperienceRepository;
+import com.resumade.api.experience.domain.PersonalStory;
+import com.resumade.api.experience.domain.PersonalStoryRepository;
 import com.resumade.api.experience.service.ExperienceVectorRetrievalService;
 import com.resumade.api.infra.sse.Utf8SseSupport;
 import com.resumade.api.workspace.domain.QuestionSnapshotRepository;
@@ -43,12 +45,13 @@ import java.util.stream.Collectors;
  *   <li>RAG — companyContext + experienceContext 구축</li>
  *   <li>Draft 생성 — PromptFactory.buildMessagesV2() + StrategyDraftGeneratorService</li>
  *   <li>2-Tier 품질 검수 — DraftQualityCheckService (최대 2회 retry)</li>
+ *   <li>Title rewrite — 완성 본문 기반 제목 전용 LLM 호출</li>
  *   <li>Wash — KO → EN → KO 번역 세탁</li>
  *   <li>Patch Analysis — 오역 감지 + 하이라이팅</li>
  * </ol>
  *
- * <p>기존 WorkspaceService.processHumanPatch()의 복잡한 로직(길이 확장 루프 12회,
- * 제목 하드코딩 검증 등)을 제거하고 명확한 2-Tier retry로 대체합니다.
+ * <p>기존 WorkspaceService.processHumanPatch()의 복잡한 길이 확장 루프는 명확한 2-Tier retry로 대체하고,
+ * 제목은 본문 완성 후 별도 LLM 호출로 정제합니다.
  */
 @Slf4j
 @Service
@@ -74,6 +77,7 @@ public class WorkspacePipelineV2Service {
 
     private final WorkspaceQuestionRepository      questionRepository;
     private final ExperienceRepository             experienceRepository;
+    private final PersonalStoryRepository          personalStoryRepository;
     private final ExperienceVectorRetrievalService experienceVectorRetrievalService;
     private final QuestionAnalysisService          questionAnalysisService;
     private final PromptFactory                    promptFactory;
@@ -81,6 +85,7 @@ public class WorkspacePipelineV2Service {
     private final DraftQualityCheckService         draftQualityCheckService;
     private final TranslationService               translationService;
     private final WorkspaceDraftAiService          workspaceDraftAiService;
+    private final WorkspaceTitleService            workspaceTitleService;
     private final WorkspacePatchAiService          workspacePatchAiService;
     private final QuestionSnapshotService          questionSnapshotService;
     private final WorkspaceTaskCache               workspaceTaskCache;
@@ -106,6 +111,29 @@ public class WorkspacePipelineV2Service {
                 sendSse(emitter, "error", resolveErrorMessage(e));
             } catch (SseConnectionClosedException ignored) {
                 log.info("V2 stream already closed while reporting error");
+            }
+            completeQuietly(emitter);
+        } finally {
+            heartbeat.stop();
+        }
+    }
+
+    @Transactional
+    public void processRefinementV2(Long questionId, String directive, Integer targetChars,
+                                    List<Long> storyIds, SseEmitter emitter) {
+        HeartbeatHandle heartbeat = startHeartbeat(emitter);
+        workspaceTaskCache.setRunning(questionId);
+        try {
+            runRefinement(questionId, directive, targetChars, storyIds, emitter);
+        } catch (SseConnectionClosedException e) {
+            log.info("V2 refinement stream closed by client questionId={}", questionId);
+        } catch (Exception e) {
+            log.error("V2 refinement pipeline failed questionId={}", questionId, e);
+            workspaceTaskCache.setError(questionId, resolveErrorMessage(e));
+            try {
+                sendSse(emitter, "error", resolveErrorMessage(e));
+            } catch (SseConnectionClosedException ignored) {
+                log.info("V2 refinement stream already closed while reporting error");
             }
             completeQuietly(emitter);
         } finally {
@@ -174,6 +202,19 @@ public class WorkspacePipelineV2Service {
             return;
         }
 
+        sendProgress(emitter, STAGE_DRAFT, "완성된 본문을 바탕으로 제목을 별도 생성하고 있습니다. 🏷️");
+        draft = workspaceTitleService.rewriteTitleFromDraft(new WorkspaceTitleService.TitleRewriteRequest(
+                draft,
+                company,
+                position,
+                questionTitle,
+                profile.primaryCategory(),
+                profile,
+                companyContext,
+                experienceContext,
+                othersContext,
+                directive));
+
         saveDraft(questionId, draft);
         sendSse(emitter, "draft_intermediate", draft);
 
@@ -198,6 +239,104 @@ public class WorkspacePipelineV2Service {
 
         // ── STAGE 5: Patch Analysis ───────────────────────────────────────
         sendProgress(emitter, STAGE_PATCH, "원본과 번역본을 비교하며 오역을 검수하고 있습니다. 🔎");
+        finalizePatch(emitter, questionId, draft, washedKr, maxLength, minTarget, preferredMax, params);
+    }
+
+    private void runRefinement(Long questionId, String userDirective, Integer targetChars,
+                               List<Long> storyIds, SseEmitter emitter) throws Exception {
+
+        WorkspaceQuestion question = questionRepository.findById(questionId)
+                .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
+
+        String currentDraft = firstNonBlank(question.getWashedKr(), question.getContent());
+        if (currentDraft.isBlank()) {
+            throw new IllegalStateException("No existing draft to refine for question: " + questionId);
+        }
+
+        String company       = question.getApplication().getCompanyName();
+        String position      = question.getApplication().getPosition();
+        String questionTitle = question.getTitle();
+        int    maxLength     = question.getMaxLength();
+
+        sendComment(emitter, "flush buffer");
+
+        sendProgress(emitter, STAGE_ANALYSIS, "문항의 의도와 현재 초안의 수정 방향을 분석하고 있습니다. 🧠");
+        QuestionProfile profile = questionAnalysisService.analyze(questionTitle);
+        log.info("V2 refinement analysis: category={} compound={} elements={} questionId={}",
+                profile.primaryCategory(), profile.isCompound(),
+                profile.requiredElements().size(), questionId);
+        sendProgress(emitter, STAGE_ANALYSIS,
+                String.format("문항 분석 완료 (%s%s). v2 다듬기 전략을 적용합니다. 🎯",
+                        profile.primaryCategory().getDisplayName(),
+                        profile.isCompound() ? " · 복합 문항" : ""));
+
+        sendProgress(emitter, STAGE_RAG, "기업 데이터와 경험 볼트에서 다듬기에 필요한 근거를 다시 확인하고 있습니다. 🧭");
+        String companyContext    = buildCompanyContext(question);
+        String experienceContext = buildExperienceContext(question, questionId, profile, storyIds);
+        String othersContext     = buildOthersContext(question, questionId);
+
+        LengthPolicy lengthPolicy = resolveLengthPolicy(maxLength, targetChars);
+        int minTarget    = lengthPolicy.minTarget();
+        int preferredMax = lengthPolicy.desiredTarget();
+
+        String directive = buildRefinementDirective(question, userDirective, maxLength, targetChars);
+        sendProgress(emitter, STAGE_RAG, "기존 초안과 겹치지 않는 보강 포인트를 선별했습니다. 🧩");
+
+        sendProgress(emitter, STAGE_DRAFT, "현재 초안을 기준으로 요청 사항을 반영해 다시 다듬고 있습니다. ✍️");
+        DraftParams params = DraftParams.builder()
+                .company(company).position(position).questionTitle(questionTitle)
+                .companyContext(companyContext).experienceContext(experienceContext)
+                .othersContext(othersContext).directive(directive)
+                .maxLength((int) Math.round(maxLength * PRE_WASH_LENGTH_FACTOR)).minTarget(minTarget).maxTarget(preferredMax)
+                .build();
+
+        String draft = refineWithRetry(profile, params, currentDraft, minTarget, preferredMax, emitter);
+        try {
+            draft = fitDraftLengthBeforeWash(profile, params, draft, lengthPolicy, emitter);
+        } catch (DraftLengthFitException e) {
+            draft = e.bestDraft();
+            saveDraft(questionId, draft, userDirective);
+            sendSse(emitter, "draft_intermediate", draft);
+            completeWithDraftLengthFailed(emitter, questionId, draft, maxLength, minTarget, preferredMax, e.getMessage());
+            return;
+        }
+
+        sendProgress(emitter, STAGE_DRAFT, "다듬은 본문을 바탕으로 제목을 다시 정리하고 있습니다. 🏷️");
+        draft = workspaceTitleService.rewriteTitleFromDraft(new WorkspaceTitleService.TitleRewriteRequest(
+                draft,
+                company,
+                position,
+                questionTitle,
+                profile.primaryCategory(),
+                profile,
+                companyContext,
+                experienceContext,
+                othersContext,
+                directive));
+
+        saveDraft(questionId, draft, userDirective);
+        sendSse(emitter, "draft_intermediate", draft);
+
+        sendProgress(emitter, STAGE_WASH, "다듬은 초안을 번역 세탁하고 있습니다. 🌐");
+        String washedKr;
+        try {
+            String translatedEn = translationService.translateToEnglish(draft);
+            sendProgress(emitter, STAGE_WASH, "한국어로 다시 번역하며 표현을 자연스럽게 정리하고 있습니다. 🫧");
+            washedKr = prepareWashed(translationService.translateToKorean(translatedEn));
+        } catch (Exception e) {
+            log.warn("V2 refinement wash failed, completing with refined draft. questionId={} reason={}", questionId, e.getMessage());
+            completeWithWashFailed(emitter, questionId, draft, maxLength, minTarget);
+            return;
+        }
+
+        question = questionRepository.findById(questionId).orElseThrow();
+        question.setWashedKr(washedKr);
+        question.setFinalText(null);
+        questionRepository.save(question);
+        questionSnapshotService.saveSnapshot(questionId, SnapshotType.WASHED, washedKr);
+        sendSse(emitter, "washed_intermediate", washedKr);
+
+        sendProgress(emitter, STAGE_PATCH, "원본과 세탁본을 비교하며 오역을 검수하고 있습니다. 🔎");
         finalizePatch(emitter, questionId, draft, washedKr, maxLength, minTarget, preferredMax, params);
     }
 
@@ -232,6 +371,36 @@ public class WorkspacePipelineV2Service {
         return draft;
     }
 
+    private String refineWithRetry(QuestionProfile profile, DraftParams params, String currentDraft,
+                                   int minTarget, int preferredMax, SseEmitter emitter) {
+        List<ChatMessage> messages = promptFactory.buildRefineMessagesV2(
+                profile,
+                params,
+                currentDraft,
+                "Revise the current draft according to the user directive while preserving verified facts.");
+        WorkspaceDraftAiService.DraftResponse resp = strategyDraftGeneratorService.generate(messages);
+        String draft = assembleDraft(resp);
+
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            DraftQualityResult quality = draftQualityCheckService.check(draft, profile, minTarget, preferredMax);
+            if (quality.passed()) {
+                return draft;
+            }
+
+            log.info("V2 refinement quality retry {}/{} lengthOk={} elementsOk={}",
+                    attempt, MAX_RETRIES, quality.lengthOk(), quality.elementsOk());
+            sendProgress(emitter, STAGE_DRAFT,
+                    String.format("다듬은 초안의 품질을 다시 보강하고 있습니다 (%d/%d). 🔄", attempt, MAX_RETRIES));
+
+            List<ChatMessage> refineMessages = promptFactory.buildRefineMessagesV2(
+                    profile, params, draft, quality.retryDirective());
+            resp = strategyDraftGeneratorService.generate(refineMessages);
+            draft = assembleDraft(resp);
+        }
+
+        return draft;
+    }
+
     private String assembleDraft(WorkspaceDraftAiService.DraftResponse resp) {
         if (resp == null) return "";
         String title = resp.title != null ? resp.title.trim() : "";
@@ -243,6 +412,14 @@ public class WorkspacePipelineV2Service {
     private void saveDraft(Long questionId, String draft) {
         WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
         question.setContent(draft);
+        questionSnapshotService.saveSnapshot(questionId, SnapshotType.DRAFT_GENERATED, draft);
+        questionRepository.save(question);
+    }
+
+    private void saveDraft(Long questionId, String draft, String userDirective) {
+        WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
+        question.setContent(draft);
+        question.setUserDirective(userDirective);
         questionSnapshotService.saveSnapshot(questionId, SnapshotType.DRAFT_GENERATED, draft);
         questionRepository.save(question);
     }
@@ -543,10 +720,16 @@ public class WorkspacePipelineV2Service {
     private String buildExperienceContext(WorkspaceQuestion question, Long questionId,
                                            QuestionProfile profile, List<Long> storyIds) {
         if (storyIds != null && !storyIds.isEmpty()) {
-            // 사용자가 직접 선택한 스토리
-            return experienceRepository.findAllById(storyIds).stream()
-                    .map(Experience::getRawContent)
-                    .collect(Collectors.joining("\n---\n"));
+            return buildPersonalStoryContext(storyIds);
+        }
+
+        if (profile.primaryCategory() == QuestionCategory.PERSONAL_GROWTH) {
+            List<Long> allStoryIds = personalStoryRepository.findAllByOrderByIdAsc().stream()
+                    .map(PersonalStory::getId)
+                    .toList();
+            if (!allStoryIds.isEmpty()) {
+                return buildPersonalStoryContext(allStoryIds);
+            }
         }
 
         // RAG: profile.ragKeywords를 supporting queries로 사용
@@ -571,6 +754,30 @@ public class WorkspacePipelineV2Service {
         return experienceRepository.findAll().stream()
                 .map(Experience::getRawContent)
                 .collect(Collectors.joining("\n---\n"));
+    }
+
+    private String buildPersonalStoryContext(List<Long> storyIds) {
+        List<PersonalStory> stories = personalStoryRepository.findAllById(storyIds).stream()
+                .filter(story -> !PersonalStory.WRITING_GUIDE_LEGACY_TYPE.equals(story.getType()))
+                .sorted(java.util.Comparator.comparing(PersonalStory::getId))
+                .toList();
+        if (stories.isEmpty()) {
+            return "No personal life story context available.";
+        }
+
+        StringBuilder sb = new StringBuilder("### LIFE STORY CONTEXT ###\n");
+        sb.append("Use this as one continuous life story, not as separate answer candidates.\n");
+        sb.append("Preserve the overall arc. If the question asks for a value, failure, turning point, strength, or period, expand only that matching point in detail and then return to the full arc.\n\n");
+        for (PersonalStory story : stories) {
+            if (PersonalStory.LIFE_STORY_TYPE.equals(story.getType())) {
+                sb.append("[FULL_LIFE_STORY]\n");
+            } else {
+                sb.append("[LEGACY_STORY_CHUNK]\n");
+            }
+            sb.append(story.getContent()).append("\n");
+            sb.append("---\n");
+        }
+        return sb.toString();
     }
 
     private String buildOthersContext(WorkspaceQuestion currentQuestion, Long questionId) {
@@ -599,6 +806,34 @@ public class WorkspacePipelineV2Service {
             parts.add(String.format("목표 글자 수: %d자", targetChars));
         }
         return parts.isEmpty() ? "No extra user directive." : String.join("\n", parts);
+    }
+
+    private String buildRefinementDirective(WorkspaceQuestion question, String userDirective,
+                                            int maxLength, Integer targetChars) {
+        List<String> parts = new ArrayList<>();
+        if (question.getBatchStrategyDirective() != null && !question.getBatchStrategyDirective().isBlank()) {
+            parts.add(question.getBatchStrategyDirective().trim());
+        }
+        if (userDirective != null && !userDirective.isBlank()) {
+            parts.add(userDirective.trim());
+        }
+        if (targetChars != null) {
+            parts.add(String.format("목표 글자 수: %d자", targetChars));
+        }
+        parts.add(String.format(
+                "다듬기 기준: 현재 초안의 검증된 사실은 유지하되, 문항 의도와 사용자 지시를 우선하여 구조·근거·문체를 다시 정리하세요. 최대 글자 수는 %d자입니다.",
+                maxLength));
+        return String.join("\n", parts);
+    }
+
+    private String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        if (second != null && !second.isBlank()) {
+            return second;
+        }
+        return "";
     }
 
     // -------------------------------------------------------------------------
