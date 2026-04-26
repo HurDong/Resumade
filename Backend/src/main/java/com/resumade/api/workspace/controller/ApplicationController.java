@@ -210,12 +210,12 @@ public class ApplicationController {
 
     @GetMapping
     public List<Application> getAllApplications() {
-        return applicationRepository.findAll();
+        return applicationRepository.findAllWithQuestions();
     }
 
     @GetMapping("/workspace-selector")
     public List<Application> getWorkspaceSelectorApplications() {
-        return applicationRepository.findAll().stream()
+        return applicationRepository.findAllWithQuestions().stream()
                 .filter(this::isWorkspaceSelectable)
                 .collect(Collectors.toList());
     }
@@ -280,7 +280,8 @@ public class ApplicationController {
             }
         }
 
-        return applicationRepository.saveAndFlush(application);
+        Application saved = applicationRepository.saveAndFlush(application);
+        return applicationRepository.findByIdWithQuestions(saved.getId()).orElse(saved);
     }
 
     private boolean hasAnyField(JsonNode updates, String... fieldNames) {
@@ -321,7 +322,7 @@ public class ApplicationController {
 
     @GetMapping("/{id}")
     public Application getApplication(@PathVariable Long id) {
-        return applicationRepository.findById(id).orElseThrow();
+        return applicationRepository.findByIdWithQuestions(id).orElseThrow();
     }
 
     @PostMapping("/{applicationId}/questions")
