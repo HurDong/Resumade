@@ -439,16 +439,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   fetchRAGContext: async (questionId, query) => {
     try {
-      const url = query
+      const pathname = query
         ? `/api/applications/questions/${questionId}/rag?query=${encodeURIComponent(query)}`
         : `/api/applications/questions/${questionId}/rag`;
 
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("Failed to fetch RAG context");
+      const response = await fetch(toApiUrl(pathname), { cache: "no-store" });
+      if (!response.ok) {
+        console.warn(`RAG context unavailable: ${response.status} ${response.statusText}`);
+        set({ extractedContext: [] });
+        return;
+      }
       const data = await response.json();
       set({ extractedContext: data.extractedContext || [] });
     } catch (err) {
-      console.error("RAG fetch failed", err);
+      console.warn("RAG context unavailable", err);
       set({ extractedContext: [] });
     }
   },
