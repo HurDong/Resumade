@@ -94,6 +94,12 @@ public class PromptFactory {
                 Use only facts from Relevant Experience Data, Company/JD context, and user directives.
                 If the evidence is weak, write conservatively rather than inventing metrics.
                 Respect paragraphCount. For short answers, merge situation, action, result, and lesson into one paragraph.
+                Treat questionIntent, answerPosture, evidencePolicy, and companyConnectionPolicy as hard constraints.
+                For GROWTH_NARRATIVE/LIFE_ARC_REFLECTION, write a compact life-arc: early trigger, school/activity continuation, attitude formed, current working style. Do not write a technology resume or achievement catalog.
+                For TRAIT_REFLECTION, show how the person's trait changes their choice and reaction in a real situation. Do not brag about broad job competency.
+                For WEAKNESS_RECOVERY, include a mild consequence, immediate correction, and current improvement habit.
+                If companyConnectionPolicy is NONE or LIGHT_FINAL_SENTENCE, do not promise direct company contribution. At most close with a modest working attitude.
+                Stay inside the target range. If the draft is under the lower bound, expand with concrete reflection, transition, or impact on people/workflow, not with filler.
                 Return ONLY valid JSON: {"title":"specific title","text":"body only"}
                 """));
         messages.add(UserMessage.from("""

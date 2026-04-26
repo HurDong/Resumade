@@ -99,6 +99,29 @@ class QuestionDraftPlannerServiceTest {
         assertThat(plan.experienceNeeds()).isNotEmpty();
     }
 
+    @Test
+    void fallbackTreatsGrowthAndSchoolActivitiesAsLifeArcReflection() {
+        QuestionDraftPlannerService service = new QuestionDraftPlannerService(modelReturning("not-json"), objectMapper);
+
+        QuestionDraftPlan plan = service.plan(
+                "ACME",
+                "IT",
+                "성장과정과 학교활동을 작성해 주세요.",
+                1300,
+                1040,
+                1170,
+                ""
+        );
+
+        assertThat(plan.primaryCategory().name()).isEqualTo("PERSONAL_GROWTH");
+        assertThat(plan.questionIntent()).isEqualTo("GROWTH_NARRATIVE");
+        assertThat(plan.answerPosture()).isEqualTo("LIFE_ARC_REFLECTION");
+        assertThat(plan.companyConnectionPolicy()).isEqualTo("LIGHT_FINAL_SENTENCE");
+        assertThat(plan.evidencePolicy()).contains("시간 흐름");
+        assertThat(plan.experienceNeeds()).extracting(need -> need.unit())
+                .contains("성장 출발점", "태도 형성");
+    }
+
     private ChatLanguageModel modelReturning(String responseText) {
         return new ChatLanguageModel() {
             @Override

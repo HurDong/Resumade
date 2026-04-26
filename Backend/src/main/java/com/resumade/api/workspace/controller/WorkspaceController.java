@@ -68,7 +68,8 @@ public class WorkspaceController {
             @RequestParam(required = false) Integer targetChars,
             @RequestParam(required = false) java.util.List<Long> storyIds) {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
-        executorService.execute(() -> workspaceService.processRefinement(questionId, directive, targetChars, storyIds, emitter));
+        executorService.execute(() ->
+                workspacePipelineV2Service.processRefinementV2(questionId, directive, targetChars, storyIds, emitter));
         return emitter;
     }
 

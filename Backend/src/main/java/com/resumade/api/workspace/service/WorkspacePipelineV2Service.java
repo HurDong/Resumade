@@ -72,8 +72,7 @@ public class WorkspacePipelineV2Service {
     private static final double REQUESTED_TARGET_MIN_RATIO = 0.90;
     private static final double DEFAULT_DESIRED_TARGET_RATIO = 0.90;
     private static final double MINI_SHORTEN_MAX_RATIO = 1.20;
-    // wash(KO→EN→KO 번역) 후 글자 수가 ~1.39x 팽창하므로 LLM에 요청할 글자수는 목표의 70%
-    private static final double PRE_WASH_LENGTH_FACTOR = 0.70;
+    private static final int    FINAL_LENGTH_RETRY_MAX_ATTEMPTS = 3;
     private static final int    LENGTH_REWRITE_MAX_ATTEMPTS = 5;
     private static final long   HEARTBEAT_INTERVAL  = 8L;
 
@@ -197,7 +196,7 @@ public class WorkspacePipelineV2Service {
                 .company(company).position(position).questionTitle(questionTitle)
                 .companyContext(companyContext).experienceContext(experienceContext)
                 .othersContext(othersContext).directive(directive)
-                .maxLength((int) Math.round(maxLength * PRE_WASH_LENGTH_FACTOR)).minTarget(minTarget).maxTarget(preferredMax)
+                .maxLength(maxLength).minTarget(minTarget).maxTarget(preferredMax)
                 .build();
 
         String draft = generateWithRetry(profile, params, minTarget, preferredMax, emitter);
@@ -266,15 +265,16 @@ public class WorkspacePipelineV2Service {
         LengthPolicy lengthPolicy = resolveLengthPolicy(maxLength, targetChars);
         int minTarget = lengthPolicy.minTarget();
         int preferredMax = lengthPolicy.desiredTarget();
-        int draftHardLimit = Math.max(1, (int) Math.round(maxLength * PRE_WASH_LENGTH_FACTOR));
+        int draftHardLimit = maxLength;
         String directive = buildDirective(question, useDirective, maxLength, targetChars);
 
         sendProgress(emitter, STAGE_ANALYSIS, "문항 의도와 답변 설계안을 생성하고 있습니다.");
         QuestionDraftPlan plan = questionDraftPlannerService.plan(
                 company, position, questionTitle, draftHardLimit, minTarget, preferredMax, directive);
         QuestionProfile profile = plan.toProfile();
-        log.info("V2 plan: category={} compound={} paragraphs={} needs={} questionId={}",
-                profile.primaryCategory(), profile.isCompound(), plan.paragraphCount(), plan.experienceNeeds().size(), questionId);
+        log.info("[초안V2-설계] questionId={} 카테고리={} 의도={} 작성자세={} 문단={} RAG요청={} 길이목표={}~{}자 hardLimit={}자",
+                questionId, profile.primaryCategory(), plan.questionIntent(), plan.answerPosture(),
+                plan.paragraphCount(), plan.experienceNeeds().size(), minTarget, preferredMax, maxLength);
 
         sendProgress(emitter, STAGE_RAG, "설계안에 맞는 경험 단위를 검색하고 있습니다.");
         String companyContext = buildCompanyContext(question);
@@ -306,19 +306,20 @@ public class WorkspacePipelineV2Service {
         }
         String draft = assembleDraft(rewritten);
 
-        saveDraft(questionId, draft);
-        sendSse(emitter, "draft_intermediate", draft);
-
-        sendProgress(emitter, STAGE_WASH, "초안 문체를 번역 왕복으로 세탁하고 있습니다.");
-        String washedKr;
+        sendProgress(emitter, STAGE_WASH, "초안 문체를 번역 왕복으로 세탁하고, 최종 글자 수를 검증하고 있습니다.");
+        WashedDraftCandidate bestCandidate;
         try {
-            String translatedEn = translationService.translateToEnglish(draft);
-            washedKr = prepareWashed(translationService.translateToKorean(translatedEn));
+            bestCandidate = washAndFitFinalLength(questionId, draft, params, lengthPolicy, emitter);
         } catch (Exception e) {
-            log.warn("V2 wash failed, completing with original draft. questionId={} reason={}", questionId, e.getMessage());
+            log.warn("[세탁-실패] questionId={} 번역 세탁 실패 - 원문 초안을 반환합니다. reason={}", questionId, e.getMessage());
             completeWithWashFailed(emitter, questionId, draft, maxLength, minTarget);
             return true;
         }
+
+        draft = bestCandidate.sourceDraft();
+        String washedKr = bestCandidate.washedDraft();
+        saveDraft(questionId, draft);
+        sendSse(emitter, "draft_intermediate", draft);
 
         question = questionRepository.findById(questionId).orElseThrow();
         question.setWashedKr(washedKr);
@@ -328,6 +329,106 @@ public class WorkspacePipelineV2Service {
 
         completeWithoutPatch(emitter, questionId, draft, washedKr, maxLength, minTarget, preferredMax);
         return true;
+    }
+
+    private WashedDraftCandidate washAndFitFinalLength(
+            Long questionId,
+            String initialDraft,
+            DraftParams params,
+            LengthPolicy policy,
+            SseEmitter emitter
+    ) throws Exception {
+        List<WashedDraftCandidate> candidateCache = new ArrayList<>();
+        WashedDraftCandidate best = washDraftCandidate(initialDraft, 0, policy);
+        candidateCache.add(best);
+        logWashedCandidate("초기 세탁", questionId, best, policy, true);
+
+        if (best.lengthOk()) {
+            log.info("[길이검증-통과] questionId={} 초기 후보가 목표 범위에 들어왔습니다. 최종={}자 목표={}~{}자",
+                    questionId, best.washedLength(), policy.minTarget(), policy.hardLimit());
+            return best;
+        }
+
+        for (int attempt = 1; attempt <= FINAL_LENGTH_RETRY_MAX_ATTEMPTS; attempt++) {
+            sendProgress(emitter, STAGE_DRAFT,
+                    String.format("세탁본 글자 수가 목표 범위를 벗어나 재작성하고 있습니다 (%d/%d). 현재 최선: %d자",
+                            attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS, best.washedLength()));
+            log.warn("[길이검증-재시도 {}/{}] questionId={} 현재최선={}자 목표={}~{}자 점수={} - 재작성 시작",
+                    attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS, questionId,
+                    best.washedLength(), policy.minTarget(), policy.hardLimit(), best.score());
+
+            WorkspaceDraftAiService.DraftResponse retryResponse = draftCriticRewriteService.rewriteForFinalLength(
+                    params,
+                    best.sourceDraft(),
+                    best.washedDraft(),
+                    best.washedLength(),
+                    attempt,
+                    FINAL_LENGTH_RETRY_MAX_ATTEMPTS);
+            String retryDraft = assembleDraft(retryResponse);
+            if (retryDraft.isBlank()) {
+                log.warn("[길이검증-재시도 {}/{}] questionId={} 재작성 결과가 비어 있어 후보를 건너뜁니다.",
+                        attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS, questionId);
+                continue;
+            }
+            if (countVisibleChars(retryDraft) > policy.hardLimit()) {
+                retryDraft = hardTrimToLimit(retryDraft, policy.hardLimit());
+                log.warn("[길이검증-재시도 {}/{}] questionId={} 원문 초안이 hardLimit을 넘어 {}자로 절단했습니다.",
+                        attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS, questionId, policy.hardLimit());
+            }
+
+            WashedDraftCandidate candidate;
+            try {
+                candidate = washDraftCandidate(retryDraft, attempt, policy);
+            } catch (Exception e) {
+                log.warn("[길이검증-재시도 {}/{}] questionId={} 재작성 후보 세탁 실패 - 다음 재시도로 넘어갑니다. reason={}",
+                        attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS, questionId, e.getMessage());
+                continue;
+            }
+
+            candidateCache.add(candidate);
+            boolean improved = candidate.isBetterThan(best);
+            if (improved) {
+                best = candidate;
+            }
+            logWashedCandidate("재시도 " + attempt, questionId, candidate, policy, improved);
+
+            if (candidate.lengthOk()) {
+                log.info("[길이검증-통과] questionId={} 재시도 {}/{}에서 목표 범위에 진입했습니다. 최종={}자 목표={}~{}자 후보수={}",
+                        questionId, attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS,
+                        candidate.washedLength(), policy.minTarget(), policy.hardLimit(), candidateCache.size());
+                return candidate;
+            }
+        }
+
+        log.warn("[길이검증-최선후보반환] questionId={} 모든 재시도 실패. 후보 {}개 중 최선={}자 score={} 목표={}~{}자",
+                questionId, candidateCache.size(), best.washedLength(), best.score(), policy.minTarget(), policy.hardLimit());
+        return best;
+    }
+
+    private WashedDraftCandidate washDraftCandidate(String sourceDraft, int attempt, LengthPolicy policy) throws Exception {
+        String translatedEn = translationService.translateToEnglish(sourceDraft);
+        String washedKr = prepareWashed(translationService.translateToKorean(translatedEn));
+        int sourceLength = countVisibleChars(sourceDraft);
+        int washedLength = countVisibleChars(washedKr);
+        boolean lengthOk = isFinalLengthOk(washedLength, policy);
+        int score = finalLengthScore(washedLength, policy);
+        return new WashedDraftCandidate(sourceDraft, washedKr, sourceLength, washedLength, score, attempt, lengthOk);
+    }
+
+    private void logWashedCandidate(
+            String label,
+            Long questionId,
+            WashedDraftCandidate candidate,
+            LengthPolicy policy,
+            boolean cachedAsBest
+    ) {
+        String status = candidate.lengthOk() ? "통과" : "실패";
+        String cache = cachedAsBest ? "최선후보 갱신" : "기존 최선 유지";
+        log.info("[길이후보-{}] questionId={} 상태={} 원문={}자 세탁본={}자 목표={}~{}자 선호={}자 score={} cache={}",
+                label, questionId, status,
+                candidate.sourceLength(), candidate.washedLength(),
+                policy.minTarget(), policy.hardLimit(), policy.desiredTarget(),
+                candidate.score(), cache);
     }
 
     private void runRefinement(Long questionId, String userDirective, Integer targetChars,
@@ -375,7 +476,7 @@ public class WorkspacePipelineV2Service {
                 .company(company).position(position).questionTitle(questionTitle)
                 .companyContext(companyContext).experienceContext(experienceContext)
                 .othersContext(othersContext).directive(directive)
-                .maxLength((int) Math.round(maxLength * PRE_WASH_LENGTH_FACTOR)).minTarget(minTarget).maxTarget(preferredMax)
+                .maxLength(maxLength).minTarget(minTarget).maxTarget(preferredMax)
                 .build();
 
         String draft = refineWithRetry(profile, params, currentDraft, minTarget, preferredMax, emitter);
@@ -577,7 +678,7 @@ public class WorkspacePipelineV2Service {
         log.warn("V2 draft length failed after retries chars={} bestChars={} target={}-{} limit={}",
                 finalLength, bestLength, policy.minTarget(), policy.desiredTarget(), policy.hardLimit());
         throw new DraftLengthFitException(String.format(
-                "초안이 세탁 전 목표 구간(%d-%d자)에 맞지 않아 세탁을 중단했습니다. 가장 가까운 초안(%d자)을 저장했습니다.",
+                "초안이 목표 구간(%d-%d자)에 맞지 않아 세탁을 중단했습니다. 가장 가까운 초안(%d자)을 저장했습니다.",
                 policy.minTarget(), policy.desiredTarget(), bestLength), bestCandidate);
     }
 
@@ -589,6 +690,21 @@ public class WorkspacePipelineV2Service {
             return length - policy.desiredTarget();
         }
         return 0;
+    }
+
+    private boolean isFinalLengthOk(int length, LengthPolicy policy) {
+        return length >= policy.minTarget()
+                && (policy.hardLimit() <= 0 || length <= policy.hardLimit());
+    }
+
+    private int finalLengthScore(int length, LengthPolicy policy) {
+        int outsidePenalty = 0;
+        if (length < policy.minTarget()) {
+            outsidePenalty = policy.minTarget() - length;
+        } else if (policy.hardLimit() > 0 && length > policy.hardLimit()) {
+            outsidePenalty = length - policy.hardLimit();
+        }
+        return (outsidePenalty * 1000) + Math.abs(length - policy.desiredTarget());
     }
 
     private LengthDecision decideLengthAction(int currentLength, LengthPolicy policy) {
@@ -698,26 +814,38 @@ public class WorkspacePipelineV2Service {
                                       String washedKr, int maxLength, int minTarget, int preferredMax) throws Exception {
         WorkspaceQuestion question = questionRepository.findById(questionId).orElseThrow();
         question.setMistranslations("[]");
-        question.setAiReview(null);
-        questionRepository.save(question);
 
         String warningMessage = null;
         int finalLength = countVisibleChars(washedKr);
+        boolean lengthOk = finalLength >= minTarget && (maxLength <= 0 || finalLength <= maxLength);
+        DraftAnalysisResult.AiReviewReport reviewReport = null;
         if (finalLength < minTarget || (maxLength > 0 && finalLength > maxLength)) {
             warningMessage = String.format(
-                    "세탁본이 %d자입니다. 번역 후 길이가 목표 범위를 벗어나 세탁본을 그대로 사용합니다.",
-                    finalLength);
+                    "세탁본이 %d자입니다. 목표 범위(%d-%d자)를 벗어나 길이 조건은 통과하지 못했습니다.",
+                    finalLength, minTarget, maxLength);
+            reviewReport = DraftAnalysisResult.AiReviewReport.builder()
+                    .summary(warningMessage)
+                    .build();
             log.warn("V2 washed {}chars outside target [{}-{}]", finalLength, minTarget, maxLength);
         } else {
+            reviewReport = DraftAnalysisResult.AiReviewReport.builder()
+                    .summary(String.format("글자 수 조건을 충족했습니다. 최종 세탁본은 %d자이며 목표 범위는 %d-%d자입니다.",
+                            finalLength, minTarget, maxLength))
+                    .build();
             log.info("V2 washed {}chars ok (target [{}-{}])", finalLength, minTarget, maxLength);
         }
+
+        question.setAiReview(objectMapper.writeValueAsString(reviewReport));
+        questionRepository.save(question);
 
         Map<String, Object> result = new HashMap<>();
         result.put("draft", washedKr);
         result.put("washedDraft", washedKr);
         result.put("sourceDraft", originalDraft);
         result.put("mistranslations", List.of());
-        result.put("aiReviewReport", null);
+        result.put("aiReviewReport", reviewReport);
+        result.put("lengthOk", lengthOk);
+        result.put("finalLength", finalLength);
         result.put("minTarget", minTarget);
         result.put("maxLength", maxLength);
         result.put("preferredMax", preferredMax);
@@ -726,6 +854,7 @@ public class WorkspacePipelineV2Service {
         workspaceTaskCache.setComplete(questionId, result);
         sendStage(emitter, STAGE_DONE);
         sendSse(emitter, "complete", result);
+        completeQuietly(emitter);
     }
 
     private void finalizePatch(SseEmitter emitter, Long questionId, String originalDraft,
@@ -781,6 +910,7 @@ public class WorkspacePipelineV2Service {
         workspaceTaskCache.setComplete(questionId, result);
         sendStage(emitter, STAGE_DONE);
         sendSse(emitter, "complete", result);
+        completeQuietly(emitter);
     }
 
     private void completeWithWashFailed(SseEmitter emitter, Long questionId,
@@ -798,6 +928,7 @@ public class WorkspacePipelineV2Service {
         workspaceTaskCache.setComplete(questionId, result);
         sendStage(emitter, STAGE_DONE);
         sendSse(emitter, "complete", result);
+        completeQuietly(emitter);
     }
 
     private void completeWithDraftLengthFailed(SseEmitter emitter, Long questionId,
@@ -816,6 +947,7 @@ public class WorkspacePipelineV2Service {
         workspaceTaskCache.setComplete(questionId, result);
         sendStage(emitter, STAGE_DONE);
         sendSse(emitter, "complete", result);
+        completeQuietly(emitter);
     }
 
     // -------------------------------------------------------------------------
@@ -856,8 +988,9 @@ public class WorkspacePipelineV2Service {
             }
         }
 
+        boolean reflectivePlan = isReflectiveNarrativePlan(plan);
         var results = experienceVectorRetrievalService.search(
-                plan.experienceNeeds(), 6, Set.of(), profile.primaryCategory());
+                plan.experienceNeeds(), reflectivePlan ? 4 : 6, Set.of(), profile.primaryCategory());
 
         if (!results.isEmpty()) {
             Map<String, List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem>> grouped = new LinkedHashMap<>();
@@ -867,12 +1000,14 @@ public class WorkspacePipelineV2Service {
             }
 
             return grouped.values().stream()
+                    .limit(reflectivePlan ? 2 : 4)
                     .map(items -> {
                         var first = items.get(0);
                         String header = first.getFacetTitle() != null && !first.getFacetTitle().isBlank()
                                 ? String.format("[%s | Facet: %s]", first.getExperienceTitle(), first.getFacetTitle())
                                 : String.format("[%s]", first.getExperienceTitle());
                         String body = items.stream()
+                                .limit(reflectivePlan ? 3 : 5)
                                 .map(item -> {
                                     String unitLabel = item.getUnitType() == null || item.getUnitType().isBlank()
                                             ? "UNIT"
@@ -886,6 +1021,24 @@ public class WorkspacePipelineV2Service {
         }
 
         return buildCompactExperienceFallback();
+    }
+
+    private boolean isReflectiveNarrativePlan(QuestionDraftPlan plan) {
+        if (plan == null) {
+            return false;
+        }
+        String marker = String.join(" ",
+                firstNonBlank(plan.questionIntent(), ""),
+                firstNonBlank(plan.answerPosture(), ""),
+                firstNonBlank(plan.evidencePolicy(), ""),
+                firstNonBlank(plan.companyConnectionPolicy(), ""));
+        return marker.contains("GROWTH_NARRATIVE")
+                || marker.contains("LIFE_ARC_REFLECTION")
+                || marker.contains("TRAIT_REFLECTION")
+                || marker.contains("WEAKNESS_RECOVERY")
+                || marker.contains("PERSONALITY_")
+                || marker.contains("WORK_STYLE")
+                || marker.contains("VALUES_REFLECTION");
     }
 
     private String buildExperienceContext(WorkspaceQuestion question, Long questionId,
@@ -1072,13 +1225,13 @@ public class WorkspacePipelineV2Service {
         }
 
         if (targetChars != null && targetChars > 0) {
-            int desired = (int) Math.round(Math.min(Math.max(1, targetChars), maxLength) * PRE_WASH_LENGTH_FACTOR);
+            int desired = (int) Math.round(Math.min(Math.max(1, targetChars), maxLength));
             int lower   = Math.max(1, (int) Math.ceil(desired * REQUESTED_TARGET_MIN_RATIO));
             return new LengthPolicy(Math.min(lower, desired), desired, maxLength, true);
         }
 
-        int lower   = Math.max(1, (int) Math.ceil(maxLength * TARGET_MIN_RATIO * PRE_WASH_LENGTH_FACTOR));
-        int desired = Math.max(lower, (int) Math.round(maxLength * DEFAULT_DESIRED_TARGET_RATIO * PRE_WASH_LENGTH_FACTOR));
+        int lower   = Math.max(1, (int) Math.ceil(maxLength * TARGET_MIN_RATIO));
+        int desired = Math.max(lower, (int) Math.round(maxLength * DEFAULT_DESIRED_TARGET_RATIO));
         return new LengthPolicy(lower, desired, maxLength, false);
     }
 
@@ -1204,6 +1357,29 @@ public class WorkspacePipelineV2Service {
             int hardLimit,
             boolean hasRequestedTarget
     ) {}
+
+    private record WashedDraftCandidate(
+            String sourceDraft,
+            String washedDraft,
+            int sourceLength,
+            int washedLength,
+            int score,
+            int attempt,
+            boolean lengthOk
+    ) {
+        private boolean isBetterThan(WashedDraftCandidate other) {
+            if (other == null) {
+                return true;
+            }
+            if (lengthOk != other.lengthOk) {
+                return lengthOk;
+            }
+            if (score != other.score) {
+                return score < other.score;
+            }
+            return attempt > other.attempt;
+        }
+    }
 
     private enum LengthDecision {
         ACCEPT,

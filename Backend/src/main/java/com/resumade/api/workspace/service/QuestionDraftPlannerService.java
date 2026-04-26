@@ -59,15 +59,26 @@ public class QuestionDraftPlannerService {
 
                 Rules:
                 - Categories are signals, not templates.
+                - questionIntent is more important than primaryCategory. Never force a question into a competency-proof shape only because no exact category exists.
                 - Pick one primaryCategory as the answer spine.
                 - Put secondary intents inside the right paragraph or sentence; do not create extra paragraphs only because categories are mixed.
                 - paragraphCount must follow length: short(<=350)=1, medium(351-650)=1 or 2, long(651-900)=2 or 3, extended(901+)=3 or 4.
                 - experienceNeeds must be concrete search queries for RAG units, not broad keywords.
                 - preferredUnitTypes must use SITUATION, ROLE, JUDGMENT, ACTION, RESULT, TECH_STACK, QUESTION_TYPE.
+                - For growth process / school activities, set questionIntent=GROWTH_NARRATIVE and answerPosture=LIFE_ARC_REFLECTION. The answer must feel like a short life arc: starting trigger -> repeated school/project/life experience -> formed attitude -> current way of working.
+                - For personality strengths, weaknesses, work style, values, or culture-fit questions, set answerPosture=TRAIT_REFLECTION. Explain how the person reacts in real situations, not how impressive their skills are.
+                - For GROWTH_NARRATIVE or TRAIT_REFLECTION, use at most one main experience and one supporting experience. Avoid technology-stack lists, achievement catalogs, and direct "I will contribute to the company" promises.
+                - For weakness questions, include a mild negative consequence, immediate correction, and ongoing improvement habit. Do not present a fatal flaw.
+                - companyConnectionPolicy must be NONE, LIGHT_FINAL_SENTENCE, ROLE_RELEVANT, or DIRECT_CONTRIBUTION_ALLOWED. Growth/personality/work-style questions should usually use NONE or LIGHT_FINAL_SENTENCE.
+                - The draft blueprint targetLength must stay inside the given target range. Do not intentionally underfill the answer.
 
                 JSON schema:
                 {
                   "primaryCategory": "MOTIVATION|EXPERIENCE|PROBLEM_SOLVING|COLLABORATION|PERSONAL_GROWTH|CULTURE_FIT|TREND_INSIGHT|DEFAULT",
+                  "questionIntent": "GROWTH_NARRATIVE|PERSONALITY_STRENGTH|PERSONALITY_WEAKNESS|WORK_STYLE|VALUES_REFLECTION|CULTURE_FIT_STYLE|JOB_COMPETENCY|PROJECT_EXPERIENCE|MOTIVATION|DEFAULT",
+                  "answerPosture": "LIFE_ARC_REFLECTION|TRAIT_REFLECTION|WEAKNESS_RECOVERY|COMPETENCY_PROOF|MOTIVATION_FIT",
+                  "evidencePolicy": "one Korean sentence about how many experiences and which facts to use",
+                  "companyConnectionPolicy": "NONE|LIGHT_FINAL_SENTENCE|ROLE_RELEVANT|DIRECT_CONTRIBUTION_ALLOWED",
                   "compound": true,
                   "primaryIntent": "one Korean sentence",
                   "secondaryIntents": ["Korean phrase"],
@@ -110,8 +121,8 @@ public class QuestionDraftPlannerService {
                 Company: %s
                 Position: %s
                 Question: %s
-                Draft hard limit before wash: %d characters
-                Draft target range before wash: %d to %d characters
+                Hard character limit: %d characters
+                Required target range: %d to %d Korean visible characters
                 User/batch directive: %s
                 """.formatted(nullSafe(company), nullSafe(position), nullSafe(question),
                 hardLimit, minTarget, desiredTarget, nullSafe(directive));
@@ -135,9 +146,13 @@ public class QuestionDraftPlannerService {
             needs = defaultExperienceNeeds(category, question);
         }
 
-        DraftBlueprint blueprint = readBlueprint(node.path("draftBlueprint"), desiredTarget, paragraphCount);
+        DraftBlueprint blueprint = readBlueprint(node.path("draftBlueprint"), minTarget, desiredTarget, paragraphCount);
         return new QuestionDraftPlan(
                 category,
+                firstNonBlank(node.path("questionIntent").asText(""), inferQuestionIntent(question)),
+                firstNonBlank(node.path("answerPosture").asText(""), inferAnswerPosture(question)),
+                firstNonBlank(node.path("evidencePolicy").asText(""), defaultEvidencePolicy(question)),
+                firstNonBlank(node.path("companyConnectionPolicy").asText(""), defaultCompanyConnectionPolicy(question)),
                 compound,
                 node.path("primaryIntent").asText(""),
                 readStringList(node.path("secondaryIntents")),
@@ -154,7 +169,7 @@ public class QuestionDraftPlannerService {
         );
     }
 
-    private DraftBlueprint readBlueprint(JsonNode node, int desiredTarget, int paragraphCount) {
+    private DraftBlueprint readBlueprint(JsonNode node, int minTarget, int desiredTarget, int paragraphCount) {
         List<DraftBlueprint.ParagraphPlan> paragraphs = new ArrayList<>();
         JsonNode paragraphNodes = node.path("paragraphs");
         if (paragraphNodes.isArray()) {
@@ -173,7 +188,11 @@ public class QuestionDraftPlannerService {
             }
         }
         paragraphs = normalizeBlueprintParagraphs(paragraphs, desiredTarget, paragraphCount);
-        return new DraftBlueprint(node.path("targetLength").asInt(desiredTarget), paragraphCount, paragraphs);
+        int requestedTarget = node.path("targetLength").asInt(desiredTarget);
+        int targetLength = requestedTarget < minTarget || requestedTarget > desiredTarget
+                ? desiredTarget
+                : requestedTarget;
+        return new DraftBlueprint(targetLength, paragraphCount, paragraphs);
     }
 
     private List<DraftBlueprint.ParagraphPlan> normalizeBlueprintParagraphs(
@@ -248,9 +267,13 @@ public class QuestionDraftPlannerService {
                 List.of("카테고리별 문단을 억지로 분리", "근거 없는 성과 수치"),
                 List.of("주요 의도가 글의 중심으로 드러남", "보조 의도는 행동과 결과 안에 자연스럽게 결합됨")
         );
-        DraftBlueprint blueprint = readBlueprint(objectMapper.createObjectNode(), desiredTarget, paragraphCount);
+        DraftBlueprint blueprint = readBlueprint(objectMapper.createObjectNode(), minTarget, desiredTarget, paragraphCount);
         return new QuestionDraftPlan(
                 category,
+                inferQuestionIntent(question),
+                inferAnswerPosture(question),
+                defaultEvidencePolicy(question),
+                defaultCompanyConnectionPolicy(question),
                 question != null && (question.contains("및") || question.contains("또는") || question.contains("함께")),
                 category.getDisplayName(),
                 List.of(),
@@ -269,6 +292,19 @@ public class QuestionDraftPlannerService {
 
     private List<ExperienceNeed> defaultExperienceNeeds(QuestionCategory category, String question) {
         String base = question == null || question.isBlank() ? category.getDisplayName() : question;
+        String intent = inferQuestionIntent(question);
+        if ("GROWTH_NARRATIVE".equals(intent)) {
+            return List.of(
+                    new ExperienceNeed("성장 출발점", base + " 처음 관심 계기 학창시절 학교활동", List.of("SITUATION", "JUDGMENT"), List.of("성장과정", "학교활동")),
+                    new ExperienceNeed("태도 형성", base + " 반복 경험 태도 변화 현재 일하는 방식", List.of("ACTION", "RESULT"), List.of("성장과정", "태도"))
+            );
+        }
+        if (intent.startsWith("PERSONALITY_") || "WORK_STYLE".equals(intent) || "VALUES_REFLECTION".equals(intent)) {
+            return List.of(
+                    new ExperienceNeed("성향이 드러난 상황", base + " 성격 성향 판단 선택 상황", List.of("SITUATION", "JUDGMENT"), List.of("성향", "일하는 방식")),
+                    new ExperienceNeed("반응과 영향", base + " 행동 결과 주변 영향 개선", List.of("ACTION", "RESULT"), List.of("성향", "반응"))
+            );
+        }
         return switch (category) {
             case PROBLEM_SOLVING -> List.of(
                     new ExperienceNeed("문제상황", base + " 문제 상황 원인 진단", List.of("SITUATION", "JUDGMENT"), List.of("문제해결")),
@@ -289,12 +325,68 @@ public class QuestionDraftPlannerService {
 
     private QuestionCategory inferCategory(String question) {
         String q = question == null ? "" : question;
+        if (containsAny(q, "성장", "학교활동", "학창", "교내외", "가치관", "인생")) return QuestionCategory.PERSONAL_GROWTH;
+        if (containsAny(q, "성격", "장점", "단점", "강점", "약점", "성향", "일하는 방식", "스타일")) return QuestionCategory.CULTURE_FIT;
         if (containsAny(q, "문제", "해결", "실패", "극복", "어려움")) return QuestionCategory.PROBLEM_SOLVING;
         if (containsAny(q, "협업", "팀", "갈등", "소통")) return QuestionCategory.COLLABORATION;
         if (containsAny(q, "지원동기", "입사", "회사")) return QuestionCategory.MOTIVATION;
-        if (containsAny(q, "성장", "가치관", "인생")) return QuestionCategory.PERSONAL_GROWTH;
         if (containsAny(q, "직무", "프로젝트", "기술", "역량")) return QuestionCategory.EXPERIENCE;
         return QuestionCategory.DEFAULT;
+    }
+
+    private String inferQuestionIntent(String question) {
+        String q = question == null ? "" : question;
+        if (containsAny(q, "성장", "학교활동", "학창", "교내외")) {
+            return "GROWTH_NARRATIVE";
+        }
+        if (containsAny(q, "단점", "약점", "보완점", "개선할 점")) {
+            return "PERSONALITY_WEAKNESS";
+        }
+        if (containsAny(q, "성격", "장점", "강점", "성향")) {
+            return "PERSONALITY_STRENGTH";
+        }
+        if (containsAny(q, "일하는 방식", "업무 스타일", "협업 스타일", "스타일")) {
+            return "WORK_STYLE";
+        }
+        if (containsAny(q, "가치관", "중요하게 생각", "신념")) {
+            return "VALUES_REFLECTION";
+        }
+        if (containsAny(q, "직무", "역량", "기술", "프로젝트")) {
+            return "JOB_COMPETENCY";
+        }
+        if (containsAny(q, "지원동기", "입사", "회사")) {
+            return "MOTIVATION";
+        }
+        return "DEFAULT";
+    }
+
+    private String inferAnswerPosture(String question) {
+        String intent = inferQuestionIntent(question);
+        return switch (intent) {
+            case "GROWTH_NARRATIVE" -> "LIFE_ARC_REFLECTION";
+            case "PERSONALITY_WEAKNESS" -> "WEAKNESS_RECOVERY";
+            case "PERSONALITY_STRENGTH", "WORK_STYLE", "VALUES_REFLECTION" -> "TRAIT_REFLECTION";
+            case "MOTIVATION" -> "MOTIVATION_FIT";
+            default -> "COMPETENCY_PROOF";
+        };
+    }
+
+    private String defaultEvidencePolicy(String question) {
+        String posture = inferAnswerPosture(question);
+        return switch (posture) {
+            case "LIFE_ARC_REFLECTION" -> "대표 성장 축 1개와 보조 학교활동 1개만 사용하고, 경험 목록이 아니라 시간 흐름과 태도 형성을 설명한다.";
+            case "TRAIT_REFLECTION" -> "성향이 드러난 대표 상황 1개를 중심으로 선택, 반응, 주변 영향만 설명한다.";
+            case "WEAKNESS_RECOVERY" -> "치명적이지 않은 단점 사례 1개, 즉시 조치, 현재 보완 습관을 사용한다.";
+            default -> "질문 의도와 직접 관련된 검증된 경험 단위를 사용한다.";
+        };
+    }
+
+    private String defaultCompanyConnectionPolicy(String question) {
+        String posture = inferAnswerPosture(question);
+        if ("LIFE_ARC_REFLECTION".equals(posture) || "TRAIT_REFLECTION".equals(posture) || "WEAKNESS_RECOVERY".equals(posture)) {
+            return "LIGHT_FINAL_SENTENCE";
+        }
+        return "ROLE_RELEVANT";
     }
 
     private boolean containsAny(String text, String... values) {

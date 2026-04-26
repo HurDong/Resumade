@@ -4,6 +4,10 @@ import java.util.List;
 
 public record QuestionDraftPlan(
         QuestionCategory primaryCategory,
+        String questionIntent,
+        String answerPosture,
+        String evidencePolicy,
+        String companyConnectionPolicy,
         boolean compound,
         String primaryIntent,
         List<String> secondaryIntents,
@@ -20,6 +24,12 @@ public record QuestionDraftPlan(
 ) {
     public QuestionDraftPlan {
         primaryCategory = primaryCategory == null ? QuestionCategory.DEFAULT : primaryCategory;
+        questionIntent = questionIntent == null || questionIntent.isBlank() ? primaryCategory.name() : questionIntent.trim();
+        answerPosture = answerPosture == null || answerPosture.isBlank() ? "COMPETENCY_PROOF" : answerPosture.trim();
+        evidencePolicy = evidencePolicy == null || evidencePolicy.isBlank() ? "USE_RELEVANT_VERIFIED_FACTS" : evidencePolicy.trim();
+        companyConnectionPolicy = companyConnectionPolicy == null || companyConnectionPolicy.isBlank()
+                ? "ROLE_RELEVANT"
+                : companyConnectionPolicy.trim();
         primaryIntent = primaryIntent == null ? "" : primaryIntent.trim();
         secondaryIntents = secondaryIntents == null ? List.of() : List.copyOf(secondaryIntents);
         lengthBand = lengthBand == null ? "medium" : lengthBand.trim();
