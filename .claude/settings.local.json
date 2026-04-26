@@ -1,6 +1,5 @@
 {
-  "disableAllHooks": true,
-  "disabledMcpjsonServers": ["Claude_Preview"],
+"disabledMcpjsonServers": ["Claude_Preview"],
   "enabledPlugins": {
     "claude-preview@builtin": false,
     "preview@builtin": false

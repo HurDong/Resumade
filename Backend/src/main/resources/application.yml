@@ -18,6 +18,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+    open-in-view: false
     show-sql: false
     properties:
       hibernate:
@@ -27,6 +28,11 @@ spring:
     redis:
       host: localhost
       port: 6380
+      repositories:
+        enabled: false
+    elasticsearch:
+      repositories:
+        enabled: false
 
   elasticsearch:
     uris: http://localhost:9200

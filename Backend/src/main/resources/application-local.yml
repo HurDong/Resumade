@@ -2,7 +2,13 @@ spring:
   main:
     lazy-initialization: true
   jpa:
+    hibernate:
+      ddl-auto: validate
     show-sql: false
     properties:
       hibernate:
         format_sql: false
+
+logging:
+  charset:
+    console: UTF-8
