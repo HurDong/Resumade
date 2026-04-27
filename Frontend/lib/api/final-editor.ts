@@ -9,6 +9,7 @@ export interface FinalEditorData {
   originalDraft: string
   washedDraft: string
   finalText: string | null
+  savedFinalText?: string | null
   selectedTitle: string | null
   companyName: string | null
   position: string | null

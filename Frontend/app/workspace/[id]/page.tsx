@@ -10,12 +10,13 @@ export default function WorkspaceDynamicPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ questionId?: string }>
+  searchParams: Promise<{ questionId?: string; q?: string }>
 }) {
   const resolvedParams = use(params)
   const resolvedSearch = use(searchParams)
   const id = resolvedParams.id
-  const initialQuestionDbId = resolvedSearch.questionId ? Number(resolvedSearch.questionId) : undefined
+  const requestedQuestionId = resolvedSearch.questionId ?? resolvedSearch.q
+  const initialQuestionDbId = requestedQuestionId ? Number(requestedQuestionId) : undefined
 
   return (
     <SidebarProvider>

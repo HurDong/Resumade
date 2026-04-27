@@ -15,5 +15,6 @@ public record FinalEditorResponse(
         String position,
         Long applicationId,
         LocalDateTime updatedAt,
-        List<TitleSuggestionResponse.TitleCandidate> titleCandidates
+        List<TitleSuggestionResponse.TitleCandidate> titleCandidates,
+        String savedFinalText
 ) {}

@@ -10,6 +10,7 @@ import com.resumade.api.workspace.domain.SnapshotType;
 import com.resumade.api.workspace.domain.WorkspaceQuestion;
 import com.resumade.api.workspace.domain.WorkspaceQuestionRepository;
 import com.resumade.api.workspace.dto.DraftAnalysisResult;
+import com.resumade.api.workspace.dto.ManualDraftRequest;
 import com.resumade.api.workspace.dto.SentencePairAnalysisResult;
 import com.resumade.api.workspace.dto.TitleSuggestionResponse;
 import com.resumade.api.workspace.prompt.ClassificationResult;
@@ -480,6 +481,28 @@ public class WorkspaceService {
     private final StrategyDraftGeneratorService strategyDraftGeneratorService;
     private final WorkspaceTaskCache workspaceTaskCache;
     private final com.resumade.api.experience.domain.PersonalStoryRepository personalStoryRepository;
+
+    @Transactional
+    public WorkspaceQuestion saveManualDraft(Long questionId, ManualDraftRequest request) {
+        WorkspaceQuestion question = questionRepository.findById(questionId)
+                .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
+
+        String nextContent = normalizeManualDraftContent(request != null ? request.content() : null);
+        String currentContent = normalizeManualDraftContent(question.getContent());
+
+        if (!currentContent.equals(nextContent)) {
+            question.setContent(nextContent);
+        }
+
+        return questionRepository.save(question);
+    }
+
+    private String normalizeManualDraftContent(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace("\r\n", "\n").replace("\r", "\n");
+    }
 
     @Transactional(readOnly = true)
     public List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> getMatchedExperiences(
@@ -1072,7 +1095,6 @@ public class WorkspaceService {
 
             question = questionRepository.findById(questionId).orElseThrow();
             question.setWashedKr(washedKr);
-            question.setFinalText(null); // 재세탁 시 이전 다림질 내용 초기화
             questionRepository.save(question);
             questionSnapshotService.saveSnapshot(questionId, SnapshotType.WASHED, washedKr);
             sendSse(emitter, "washed_intermediate", washedKr);

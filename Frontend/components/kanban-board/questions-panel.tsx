@@ -19,6 +19,7 @@ import {
   PenLine,
   Plus,
   Trash2,
+  Waves,
   X,
 } from "lucide-react"
 import {
@@ -36,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { type Application } from "@/lib/mock-data"
+import { isWorkspaceVisibleApplication } from "@/lib/workspace/workspace-visibility"
 
 type ParsedQuestion = { title: string; maxLength: number | null }
 
@@ -72,6 +74,7 @@ export function QuestionsPanel({
   const [parsedQuestions, setParsedQuestions] = useState<ParsedQuestion[]>([])
   const [isSavingBulk, setIsSavingBulk] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const canOpenWash = isWorkspaceVisibleApplication(application)
 
   const handleImportFileSelect = (file: File) => {
     setImportImage(file)
@@ -477,10 +480,22 @@ export function QuestionsPanel({
                         variant="secondary"
                         className="group/link size-9 shrink-0 rounded-full border-0 bg-primary/5 p-0 hover:bg-primary/10"
                         title="작업실로 이동"
-                        onClick={() => router.push(`/workspace/${application.id}?q=${question.id}`)}
+                        onClick={() => router.push(`/workspace/${application.id}?questionId=${question.id}`)}
                       >
                         <ExternalLink className="size-5 text-primary transition-transform group-hover/link:scale-110" />
                       </Button>
+
+                      {canOpenWash ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="group/wash size-9 shrink-0 rounded-full border-0 bg-amber-500/10 p-0 hover:bg-amber-500/15"
+                          title="WASH"
+                          onClick={() => router.push(`/wash?applicationId=${application.id}&questionId=${question.id}`)}
+                        >
+                          <Waves className="size-5 text-amber-600 transition-transform group-hover/wash:scale-110" />
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 </CardContent>

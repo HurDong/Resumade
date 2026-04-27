@@ -74,7 +74,8 @@ public class FinalEditorService {
                 position,
                 applicationId,
                 q.getUpdatedAt(),
-                titleCandidates
+                titleCandidates,
+                q.getFinalText()
         );
     }
 

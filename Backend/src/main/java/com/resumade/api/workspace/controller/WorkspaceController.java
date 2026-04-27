@@ -4,6 +4,7 @@ import com.resumade.api.infra.sse.Utf8SseSupport;
 import com.resumade.api.workspace.dto.ApplyTitleSuggestionRequest;
 import com.resumade.api.workspace.dto.BatchPlanRequest;
 import com.resumade.api.workspace.dto.BatchPlanResponse;
+import com.resumade.api.workspace.dto.ManualDraftRequest;
 import com.resumade.api.workspace.dto.TitleSuggestionResponse;
 import com.resumade.api.workspace.dto.UpdateCategoryRequest;
 import com.resumade.api.workspace.service.WorkspaceBatchPlanService;
@@ -122,5 +123,12 @@ public class WorkspaceController {
             @PathVariable Long questionId,
             @RequestBody UpdateCategoryRequest request) {
         return workspaceService.updateCategory(questionId, request.getCategory());
+    }
+
+    @PatchMapping("/questions/{questionId}/manual-draft")
+    public com.resumade.api.workspace.domain.WorkspaceQuestion saveManualDraft(
+            @PathVariable Long questionId,
+            @RequestBody ManualDraftRequest request) {
+        return workspaceService.saveManualDraft(questionId, request);
     }
 }
