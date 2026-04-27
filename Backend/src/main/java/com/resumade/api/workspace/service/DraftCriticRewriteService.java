@@ -32,12 +32,16 @@ public class DraftCriticRewriteService {
                             You are RESUMADE's strict final critic and targeted rewriter.
                             You must return ONLY valid JSON: {"title":"...","text":"..."}.
                             Keep verified facts. Do not invent metrics, tools, company facts, or roles.
+                            If Relevant Experience Data contains NO_VERIFIED_EXPERIENCE_CONTEXT, do not rewrite it into a cover letter.
+                            In that case return ONLY {"title":"근거 경험 선택 필요","text":"이 문항에 연결할 검증된 경험이 아직 선택되거나 검색되지 않았습니다. 경험 보관소에서 관련 경험을 선택하거나 새 경험을 추가한 뒤 다시 생성해 주세요."}.
                             Fix only what is needed for the AnswerContract, DraftBlueprint, length, paragraph count, and natural Korean flow.
                             Treat questionIntent, answerPosture, evidencePolicy, and companyConnectionPolicy as hard constraints.
                             If the plan is GROWTH_NARRATIVE/LIFE_ARC_REFLECTION, reject and rewrite any answer that reads like a skill list, project catalog, or direct company contribution pitch. It must show how the person was formed over time.
                             If the plan is TRAIT_REFLECTION or WEAKNESS_RECOVERY, reject and rewrite any answer that brags about technical competency instead of showing real-situation reaction, choice, consequence, and improvement.
                             If the text is below the lower length bound, expand with concrete life arc, reflection, surrounding impact, or improvement habit. Do not finish under the lower bound unless the hard limit is extremely short.
                             If companyConnectionPolicy is NONE or LIGHT_FINAL_SENTENCE, remove direct contribution promises and keep only a modest final working-attitude connection.
+                            Reject report-style answers. Rewrite if the draft opens with a competency list, uses numbered items, or contains labels such as "주요 경력", "관련 경험", "역할, 조치, 결과", "핵심 역량은 다음과 같습니다", "RCA", or "MTTR".
+                            For "required competencies and efforts/experience" questions, the answer must be a first-person Korean cover-letter narrative: verified experience first, capability implied through action, then role-fit reflection.
                             If the draft already satisfies the plan, return it with minimal wording cleanup.
                             The title must come from the draft or a direct improvement, and the text must not repeat the title.
                             """),
@@ -108,9 +112,11 @@ public class DraftCriticRewriteService {
                             Return ONLY valid JSON: {"title":"...","text":"..."}.
                             The previous washed draft failed the final visible-character length check.
                             Preserve verified facts and the DraftPlan, but rewrite enough to satisfy the target range.
+                            If Relevant Experience Data contains NO_VERIFIED_EXPERIENCE_CONTEXT, do not expand or invent evidence. Return ONLY {"title":"근거 경험 선택 필요","text":"이 문항에 연결할 검증된 경험이 아직 선택되거나 검색되지 않았습니다. 경험 보관소에서 관련 경험을 선택하거나 새 경험을 추가한 뒤 다시 생성해 주세요."}.
                             If the final washed text was too short, expand with concrete life arc, reflection, situation reaction, surrounding impact, or improvement habit.
                             If it was too long, compress repeated facts and keep the main narrative.
                             Do not add unsupported facts, fake metrics, or direct company-contribution promises when the plan restricts them.
+                            Do not use report labels, competency lists, numbered items, or abbreviations such as RCA/MTTR unless those exact terms are in the verified experience context.
                             Do not return a draft below the lower bound unless the hard limit is lower than the lower bound.
                             """),
                     UserMessage.from("""
@@ -171,6 +177,68 @@ public class DraftCriticRewriteService {
             return rewritten == null ? emptyResponse() : rewritten;
         } catch (Exception e) {
             log.warn("[길이재시도-실패] 재작성 LLM 호출 실패 - 기존 후보 유지 reason={}", e.getMessage());
+            return emptyResponse();
+        }
+    }
+
+    public WorkspaceDraftAiService.DraftResponse rewriteReportStyle(DraftParams params, String currentDraft) {
+        try {
+            List<ChatMessage> messages = List.of(
+                    SystemMessage.from("""
+                            You are RESUMADE's cover-letter prose repair editor.
+                            Return ONLY valid JSON: {"title":"...","text":"..."}.
+                            The current draft reads like a report, rubric, or resume summary. Rewrite it into a natural Korean self-introduction essay.
+                            Preserve only facts supported by Relevant Experience Data. Do not add incidents, metrics, tools, certifications, RCA/MTTR terms, or roles that are not in the context.
+                            Remove report labels and list structures, including "핵심 역량은 다음과 같습니다", "주요 경력", "관련 경험", "역할, 조치, 결과", numbered items like "1)", and section-marker dashes.
+                            For a question about required competencies, do not list competencies first. Start from the applicant's verified experience, show the situation/action/result in connected prose, then connect the learned operating principle to the role.
+                            Keep a first-person applicant voice. The answer must feel like a Korean 자기소개서, not a JD analysis memo.
+                            Stay inside the hard limit and as close as possible to the target range.
+                            """),
+                    UserMessage.from("""
+                            Company: %s
+                            Position: %s
+                            Question: %s
+
+                            <DraftPlan>
+                            %s
+                            </DraftPlan>
+
+                            <Context>
+                            ## Relevant Experience Data
+                            %s
+
+                            ## Other questions already written
+                            %s
+                            </Context>
+
+                            <LengthPolicy>
+                            Hard character limit for text: %d
+                            Target range for text: %d ~ %d characters
+                            </LengthPolicy>
+
+                            <CurrentReportStyleDraft>
+                            %s
+                            </CurrentReportStyleDraft>
+                            """.formatted(
+                            nullSafe(params.company()),
+                            nullSafe(params.position()),
+                            nullSafe(params.questionTitle()),
+                            nullSafe(params.draftPlanContext()),
+                            nullSafe(params.experienceContext()),
+                            nullSafe(params.othersContext()),
+                            params.maxLength(),
+                            params.minTarget(),
+                            params.maxTarget(),
+                            nullSafe(currentDraft)
+                    ))
+            );
+            Response<AiMessage> response = workspaceDraftChatModel.generate(messages);
+            WorkspaceDraftAiService.DraftResponse rewritten = objectMapper.readValue(
+                    sanitizeJson(response.content().text()),
+                    WorkspaceDraftAiService.DraftResponse.class);
+            return rewritten == null ? emptyResponse() : rewritten;
+        } catch (Exception e) {
+            log.warn("DraftCriticRewriteService report-style rewrite failed. reason={}", e.getMessage());
             return emptyResponse();
         }
     }

@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executors;
@@ -75,6 +76,15 @@ public class WorkspacePipelineV2Service {
     private static final int    FINAL_LENGTH_RETRY_MAX_ATTEMPTS = 3;
     private static final int    LENGTH_REWRITE_MAX_ATTEMPTS = 5;
     private static final long   HEARTBEAT_INTERVAL  = 8L;
+    private static final String NO_VERIFIED_EXPERIENCE_TITLE = "근거 경험 선택 필요";
+    private static final String NO_VERIFIED_EXPERIENCE_MESSAGE =
+            "이 문항에 연결할 검증된 경험이 아직 선택되거나 검색되지 않았습니다. 경험 보관소에서 관련 경험을 선택하거나 새 경험을 추가한 뒤 다시 생성해 주세요.";
+    private static final String NO_VERIFIED_EXPERIENCE_CONTEXT = """
+            NO_VERIFIED_EXPERIENCE_CONTEXT
+            No RAG match or selected personal story was available for this question.
+            Do not invent applicant incidents, metrics, tools, certifications, or roles.
+            Return a short JSON answer asking the user to select or add a verified experience before drafting.
+            """;
 
     private final WorkspaceQuestionRepository      questionRepository;
     private final ExperienceRepository             experienceRepository;
@@ -106,14 +116,14 @@ public class WorkspacePipelineV2Service {
         try {
             run(questionId, useDirective, targetChars, storyIds, emitter);
         } catch (SseConnectionClosedException e) {
-            log.info("V2 stream closed by client questionId={}", questionId);
+            log.info("[■ 스트림/종료] 파이프라인=초안V2 | 문항={} | 사유=클라이언트종료", questionId);
         } catch (Exception e) {
-            log.error("V2 pipeline failed questionId={}", questionId, e);
+            log.error("[!! 파이프라인/실패] 파이프라인=초안V2 | 문항={}", questionId, e);
             workspaceTaskCache.setError(questionId, resolveErrorMessage(e));
             try {
                 sendSse(emitter, "error", resolveErrorMessage(e));
             } catch (SseConnectionClosedException ignored) {
-                log.info("V2 stream already closed while reporting error");
+                log.info("[■ 스트림/종료] 파이프라인=초안V2 | 상태=오류보고중이미종료");
             }
             completeQuietly(emitter);
         } finally {
@@ -129,14 +139,14 @@ public class WorkspacePipelineV2Service {
         try {
             runRefinement(questionId, directive, targetChars, storyIds, emitter);
         } catch (SseConnectionClosedException e) {
-            log.info("V2 refinement stream closed by client questionId={}", questionId);
+            log.info("[■ 스트림/종료] 파이프라인=다듬기V2 | 문항={} | 사유=클라이언트종료", questionId);
         } catch (Exception e) {
-            log.error("V2 refinement pipeline failed questionId={}", questionId, e);
+            log.error("[!! 파이프라인/실패] 파이프라인=다듬기V2 | 문항={}", questionId, e);
             workspaceTaskCache.setError(questionId, resolveErrorMessage(e));
             try {
                 sendSse(emitter, "error", resolveErrorMessage(e));
             } catch (SseConnectionClosedException ignored) {
-                log.info("V2 refinement stream already closed while reporting error");
+                log.info("[■ 스트림/종료] 파이프라인=다듬기V2 | 상태=오류보고중이미종료");
             }
             completeQuietly(emitter);
         } finally {
@@ -169,9 +179,9 @@ public class WorkspacePipelineV2Service {
         // ── STAGE 1: Question Analysis ─────────────────────────────────────
         sendProgress(emitter, STAGE_ANALYSIS, "문항의 의도와 요구 구조를 분석하고 있습니다. 🧠");
         QuestionProfile profile = questionAnalysisService.analyze(questionTitle);
-        log.info("V2 analysis: category={} compound={} elements={} questionId={}",
-                profile.primaryCategory(), profile.isCompound(),
-                profile.requiredElements().size(), questionId);
+        log.info("[◆ 초안V2/분석] 문항={} | 카테고리={} | 복합문항={} | 필수요소={}개",
+                questionId, profile.primaryCategory(), profile.isCompound(),
+                profile.requiredElements().size());
         sendProgress(emitter, STAGE_ANALYSIS,
                 String.format("문항 분석 완료 (%s%s). 맞춤 전략을 적용합니다. 🎯",
                         profile.primaryCategory().getDisplayName(),
@@ -186,6 +196,14 @@ public class WorkspacePipelineV2Service {
         LengthPolicy lengthPolicy = resolveLengthPolicy(maxLength, targetChars);
         int minTarget    = lengthPolicy.minTarget();
         int preferredMax = lengthPolicy.desiredTarget();
+
+        if (isNoVerifiedExperienceContext(experienceContext)) {
+            log.warn("[!! RAG/근거없음] 문항={} | 카테고리={} | 처리=초안생성중단 | 안내=경험선택필요",
+                    questionId, profile.primaryCategory());
+            sendProgress(emitter, STAGE_RAG, "이 문항에 연결할 검증된 경험을 찾지 못해 초안 생성을 중단했습니다.");
+            completeWithNoVerifiedExperience(emitter, questionId, maxLength, minTarget, preferredMax);
+            return;
+        }
 
         String directive = buildDirective(question, useDirective, maxLength, targetChars);
         sendProgress(emitter, STAGE_RAG, "문항에 맞는 핵심 소재를 선별했습니다. 🧩");
@@ -234,7 +252,7 @@ public class WorkspacePipelineV2Service {
             sendProgress(emitter, STAGE_WASH, "한국어로 다시 번역하며 표현을 더 자연스럽게 다듬고 있습니다. 🫧");
             washedKr = prepareWashed(translationService.translateToKorean(translatedEn));
         } catch (Exception e) {
-            log.warn("V2 wash failed, completing with original draft. questionId={} reason={}", questionId, e.getMessage());
+            log.warn("[!! 세탁/실패] 문항={} | 처리=원문초안반환 | 사유={}", questionId, e.getMessage());
             completeWithWashFailed(emitter, questionId, draft, maxLength, minTarget);
             return;
         }
@@ -272,7 +290,7 @@ public class WorkspacePipelineV2Service {
         QuestionDraftPlan plan = questionDraftPlannerService.plan(
                 company, position, questionTitle, draftHardLimit, minTarget, preferredMax, directive);
         QuestionProfile profile = plan.toProfile();
-        log.info("[초안V2-설계] questionId={} 카테고리={} 의도={} 작성자세={} 문단={} RAG요청={} 길이목표={}~{}자 hardLimit={}자",
+        log.info("[◆ 초안V2/설계] 문항={} | 카테고리={} | 의도={} | 작성자세={} | 문단={} | RAG={} | 목표={}~{}자 | 제한={}자",
                 questionId, profile.primaryCategory(), plan.questionIntent(), plan.answerPosture(),
                 plan.paragraphCount(), plan.experienceNeeds().size(), minTarget, preferredMax, maxLength);
 
@@ -280,6 +298,14 @@ public class WorkspacePipelineV2Service {
         String companyContext = buildCompanyContext(question);
         String experienceContext = buildExperienceContext(question, questionId, plan, storyIds);
         String othersContext = buildOthersContext(question, questionId);
+
+        if (isNoVerifiedExperienceContext(experienceContext)) {
+            log.warn("[!! RAG/근거없음] 문항={} | 카테고리={} | 의도={} | RAG요청={} | 처리=초안생성중단 | 안내=경험선택필요",
+                    questionId, profile.primaryCategory(), plan.questionIntent(), plan.experienceNeeds().size());
+            sendProgress(emitter, STAGE_RAG, "이 문항에 연결할 검증된 경험을 찾지 못해 초안 생성을 중단했습니다.");
+            completeWithNoVerifiedExperience(emitter, questionId, maxLength, minTarget, preferredMax);
+            return true;
+        }
 
         DraftParams params = DraftParams.builder()
                 .company(company)
@@ -305,13 +331,14 @@ public class WorkspacePipelineV2Service {
             rewritten.text = hardTrimToLimit(rewritten.text, draftHardLimit);
         }
         String draft = assembleDraft(rewritten);
+        draft = enforceDraftGroundingIfNeeded(questionId, params, draft, "초안");
 
         sendProgress(emitter, STAGE_WASH, "초안 문체를 번역 왕복으로 세탁하고, 최종 글자 수를 검증하고 있습니다.");
         WashedDraftCandidate bestCandidate;
         try {
             bestCandidate = washAndFitFinalLength(questionId, draft, params, lengthPolicy, emitter);
         } catch (Exception e) {
-            log.warn("[세탁-실패] questionId={} 번역 세탁 실패 - 원문 초안을 반환합니다. reason={}", questionId, e.getMessage());
+            log.warn("[!! 세탁/실패] 문항={} | 처리=원문초안반환 | 사유={}", questionId, e.getMessage());
             completeWithWashFailed(emitter, questionId, draft, maxLength, minTarget);
             return true;
         }
@@ -344,7 +371,7 @@ public class WorkspacePipelineV2Service {
         logWashedCandidate("초기 세탁", questionId, best, policy, true);
 
         if (best.lengthOk()) {
-            log.info("[길이검증-통과] questionId={} 초기 후보가 목표 범위에 들어왔습니다. 최종={}자 목표={}~{}자",
+            log.info("[● 길이/통과] 문항={} | 회차=초기 | 최종={}자 | 목표={}~{}자",
                     questionId, best.washedLength(), policy.minTarget(), policy.hardLimit());
             return best;
         }
@@ -353,8 +380,9 @@ public class WorkspacePipelineV2Service {
             sendProgress(emitter, STAGE_DRAFT,
                     String.format("세탁본 글자 수가 목표 범위를 벗어나 재작성하고 있습니다 (%d/%d). 현재 최선: %d자",
                             attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS, best.washedLength()));
-            log.warn("[길이검증-재시도 {}/{}] questionId={} 현재최선={}자 목표={}~{}자 점수={} - 재작성 시작",
-                    attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS, questionId,
+            log.warn("[▲ 길이/재시도] 문항={} | 회차={}/{} | 현재최선={}자 | 목표={}~{}자 | 점수={} | 다음=재작성",
+                    questionId,
+                    attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS,
                     best.washedLength(), policy.minTarget(), policy.hardLimit(), best.score());
 
             WorkspaceDraftAiService.DraftResponse retryResponse = draftCriticRewriteService.rewriteForFinalLength(
@@ -366,22 +394,24 @@ public class WorkspacePipelineV2Service {
                     FINAL_LENGTH_RETRY_MAX_ATTEMPTS);
             String retryDraft = assembleDraft(retryResponse);
             if (retryDraft.isBlank()) {
-                log.warn("[길이검증-재시도 {}/{}] questionId={} 재작성 결과가 비어 있어 후보를 건너뜁니다.",
-                        attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS, questionId);
+                log.warn("[!! 길이/재시도] 문항={} | 회차={}/{} | 상태=빈결과 | 처리=후보건너뜀",
+                        questionId, attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS);
                 continue;
             }
             if (countVisibleChars(retryDraft) > policy.hardLimit()) {
                 retryDraft = hardTrimToLimit(retryDraft, policy.hardLimit());
-                log.warn("[길이검증-재시도 {}/{}] questionId={} 원문 초안이 hardLimit을 넘어 {}자로 절단했습니다.",
-                        attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS, questionId, policy.hardLimit());
+                log.warn("[▲ 길이/절단] 문항={} | 회차={}/{} | 사유=제한초과 | 제한={}자",
+                        questionId, attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS, policy.hardLimit());
             }
+
+            retryDraft = enforceDraftGroundingIfNeeded(questionId, params, retryDraft, "길이재시도-" + attempt);
 
             WashedDraftCandidate candidate;
             try {
                 candidate = washDraftCandidate(retryDraft, attempt, policy);
             } catch (Exception e) {
-                log.warn("[길이검증-재시도 {}/{}] questionId={} 재작성 후보 세탁 실패 - 다음 재시도로 넘어갑니다. reason={}",
-                        attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS, questionId, e.getMessage());
+                log.warn("[!! 길이/세탁실패] 문항={} | 회차={}/{} | 처리=다음재시도 | 사유={}",
+                        questionId, attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS, e.getMessage());
                 continue;
             }
 
@@ -393,14 +423,14 @@ public class WorkspacePipelineV2Service {
             logWashedCandidate("재시도 " + attempt, questionId, candidate, policy, improved);
 
             if (candidate.lengthOk()) {
-                log.info("[길이검증-통과] questionId={} 재시도 {}/{}에서 목표 범위에 진입했습니다. 최종={}자 목표={}~{}자 후보수={}",
+                log.info("[● 길이/통과] 문항={} | 회차={}/{} | 최종={}자 | 목표={}~{}자 | 후보={}개",
                         questionId, attempt, FINAL_LENGTH_RETRY_MAX_ATTEMPTS,
                         candidate.washedLength(), policy.minTarget(), policy.hardLimit(), candidateCache.size());
                 return candidate;
             }
         }
 
-        log.warn("[길이검증-최선후보반환] questionId={} 모든 재시도 실패. 후보 {}개 중 최선={}자 score={} 목표={}~{}자",
+        log.warn("[!! 길이/최선반환] 문항={} | 사유=재시도소진 | 후보={}개 | 최선={}자 | 점수={} | 목표={}~{}자",
                 questionId, candidateCache.size(), best.washedLength(), best.score(), policy.minTarget(), policy.hardLimit());
         return best;
     }
@@ -424,7 +454,7 @@ public class WorkspacePipelineV2Service {
     ) {
         String status = candidate.lengthOk() ? "통과" : "실패";
         String cache = cachedAsBest ? "최선후보 갱신" : "기존 최선 유지";
-        log.info("[길이후보-{}] questionId={} 상태={} 원문={}자 세탁본={}자 목표={}~{}자 선호={}자 score={} cache={}",
+        log.info("[▲ 길이/후보] 단계={} | 문항={} | 상태={} | 원문={}자 | 세탁본={}자 | 목표={}~{}자 | 선호={}자 | 점수={} | 캐시={}",
                 label, questionId, status,
                 candidate.sourceLength(), candidate.washedLength(),
                 policy.minTarget(), policy.hardLimit(), policy.desiredTarget(),
@@ -451,9 +481,9 @@ public class WorkspacePipelineV2Service {
 
         sendProgress(emitter, STAGE_ANALYSIS, "문항의 의도와 현재 초안의 수정 방향을 분석하고 있습니다. 🧠");
         QuestionProfile profile = questionAnalysisService.analyze(questionTitle);
-        log.info("V2 refinement analysis: category={} compound={} elements={} questionId={}",
-                profile.primaryCategory(), profile.isCompound(),
-                profile.requiredElements().size(), questionId);
+        log.info("[◆ 다듬기V2/분석] 문항={} | 카테고리={} | 복합문항={} | 필수요소={}개",
+                questionId, profile.primaryCategory(), profile.isCompound(),
+                profile.requiredElements().size());
         sendProgress(emitter, STAGE_ANALYSIS,
                 String.format("문항 분석 완료 (%s%s). v2 다듬기 전략을 적용합니다. 🎯",
                         profile.primaryCategory().getDisplayName(),
@@ -467,6 +497,14 @@ public class WorkspacePipelineV2Service {
         LengthPolicy lengthPolicy = resolveLengthPolicy(maxLength, targetChars);
         int minTarget    = lengthPolicy.minTarget();
         int preferredMax = lengthPolicy.desiredTarget();
+
+        if (isNoVerifiedExperienceContext(experienceContext)) {
+            log.warn("[!! RAG/근거없음] 단계=다듬기V2 | 문항={} | 카테고리={} | 처리=다듬기중단 | 안내=경험선택필요",
+                    questionId, profile.primaryCategory());
+            sendProgress(emitter, STAGE_RAG, "다듬기에 사용할 검증된 경험을 찾지 못해 작업을 중단했습니다.");
+            completeWithNoVerifiedExperience(emitter, questionId, maxLength, minTarget, preferredMax);
+            return;
+        }
 
         String directive = buildRefinementDirective(question, userDirective, maxLength, targetChars);
         sendProgress(emitter, STAGE_RAG, "기존 초안과 겹치지 않는 보강 포인트를 선별했습니다. 🧩");
@@ -513,7 +551,7 @@ public class WorkspacePipelineV2Service {
             sendProgress(emitter, STAGE_WASH, "한국어로 다시 번역하며 표현을 자연스럽게 정리하고 있습니다. 🫧");
             washedKr = prepareWashed(translationService.translateToKorean(translatedEn));
         } catch (Exception e) {
-            log.warn("V2 refinement wash failed, completing with refined draft. questionId={} reason={}", questionId, e.getMessage());
+            log.warn("[!! 다듬기V2/세탁실패] 문항={} | 처리=다듬은초안반환 | 사유={}", questionId, e.getMessage());
             completeWithWashFailed(emitter, questionId, draft, maxLength, minTarget);
             return;
         }
@@ -545,7 +583,7 @@ public class WorkspacePipelineV2Service {
                 return draft;
             }
 
-            log.info("V2 quality retry {}/{} lengthOk={} elementsOk={}",
+            log.info("[▲ 품질/재시도] 단계=초안 | 회차={}/{} | 길이통과={} | 요소통과={}",
                     attempt, MAX_RETRIES, quality.lengthOk(), quality.elementsOk());
             sendProgress(emitter, STAGE_DRAFT,
                     String.format("초안 품질을 개선하고 있습니다 (%d/%d). 🔄", attempt, MAX_RETRIES));
@@ -576,7 +614,7 @@ public class WorkspacePipelineV2Service {
                 return draft;
             }
 
-            log.info("V2 refinement quality retry {}/{} lengthOk={} elementsOk={}",
+            log.info("[▲ 품질/재시도] 단계=다듬기 | 회차={}/{} | 길이통과={} | 요소통과={}",
                     attempt, MAX_RETRIES, quality.lengthOk(), quality.elementsOk());
             sendProgress(emitter, STAGE_DRAFT,
                     String.format("다듬은 초안의 품질을 다시 보강하고 있습니다 (%d/%d). 🔄", attempt, MAX_RETRIES));
@@ -596,6 +634,90 @@ public class WorkspacePipelineV2Service {
         String text  = resp.text  != null ? resp.text.trim()  : "";
         if (title.isBlank()) return text;
         return "[" + title + "]" + "\n\n" + text;
+    }
+
+    private String enforceCoverLetterStyleIfNeeded(Long questionId, DraftParams params, String draft, String stage) {
+        if (!looksReportStyle(draft)) {
+            return draft;
+        }
+        log.warn("[▲ 문체/보고서감지] 문항={} | 단계={} | 처리=자소서문체재작성", questionId, stage);
+        WorkspaceDraftAiService.DraftResponse rewritten = draftCriticRewriteService.rewriteReportStyle(params, draft);
+        String repaired = assembleDraft(rewritten);
+        if (repaired.isBlank()) {
+            log.warn("[!! 문체/재작성실패] 문항={} | 단계={} | 처리=기존초안유지", questionId, stage);
+            return draft;
+        }
+        if (looksReportStyle(repaired)) {
+            log.warn("[!! 문체/보고서잔존] 문항={} | 단계={} | 처리=재작성본사용", questionId, stage);
+        } else {
+            log.info("[● 문체/자소서화] 문항={} | 단계={} | 처리=재작성완료", questionId, stage);
+        }
+        return repaired;
+    }
+
+    private String enforceDraftGroundingIfNeeded(Long questionId, DraftParams params, String draft, String stage) {
+        String repaired = enforceCoverLetterStyleIfNeeded(questionId, params, draft, stage);
+        if (!hasUnsupportedOperationalFacts(repaired, params.experienceContext())) {
+            return repaired;
+        }
+
+        log.warn("[▲ 팩트/근거없는운영사례감지] 문항={} | 단계={} | 처리=검증팩트기반재작성", questionId, stage);
+        WorkspaceDraftAiService.DraftResponse rewritten = draftCriticRewriteService.rewriteReportStyle(params, repaired);
+        String grounded = assembleDraft(rewritten);
+        if (grounded.isBlank()) {
+            log.warn("[!! 팩트/재작성실패] 문항={} | 단계={} | 처리=기존초안유지", questionId, stage);
+            return repaired;
+        }
+        if (hasUnsupportedOperationalFacts(grounded, params.experienceContext())) {
+            log.warn("[!! 팩트/근거없는운영사례잔존] 문항={} | 단계={} | 처리=재작성본사용", questionId, stage);
+        } else {
+            log.info("[● 팩트/검증근거정렬] 문항={} | 단계={} | 처리=재작성완료", questionId, stage);
+        }
+        return grounded;
+    }
+
+    private boolean looksReportStyle(String draft) {
+        if (draft == null || draft.isBlank()) {
+            return false;
+        }
+        String normalized = draft.toLowerCase(Locale.ROOT);
+        return normalized.contains("핵심 역량은 다음")
+                || normalized.contains("다음과 같습니다")
+                || normalized.contains("주요 경력")
+                || normalized.contains("관련 경험")
+                || normalized.contains("역할, 조치, 결과")
+                || normalized.contains("역할, 수행 내용, 결과")
+                || normalized.contains("사고 대응")
+                || normalized.contains("rca")
+                || normalized.contains("mttr")
+                || normalized.contains("1)")
+                || normalized.contains("2)")
+                || normalized.contains("3)");
+    }
+
+    private boolean hasUnsupportedOperationalFacts(String draft, String experienceContext) {
+        if (draft == null || draft.isBlank()) {
+            return false;
+        }
+        String normalizedDraft = draft.toLowerCase(Locale.ROOT);
+        String normalizedContext = experienceContext == null ? "" : experienceContext.toLowerCase(Locale.ROOT);
+
+        int unsupported = 0;
+        unsupported += unsupportedIfPresent(normalizedDraft, normalizedContext, "복제 지연");
+        unsupported += unsupportedIfPresent(normalizedDraft, normalizedContext, "복제");
+        unsupported += unsupportedIfPresent(normalizedDraft, normalizedContext, "8시간");
+        unsupported += unsupportedIfPresent(normalizedDraft, normalizedContext, "dba");
+        unsupported += unsupportedIfPresent(normalizedDraft, normalizedContext, "읽기 전용");
+        unsupported += unsupportedIfPresent(normalizedDraft, normalizedContext, "재동기화");
+        unsupported += unsupportedIfPresent(normalizedDraft, normalizedContext, "rto");
+        unsupported += unsupportedIfPresent(normalizedDraft, normalizedContext, "rpo");
+        unsupported += unsupportedIfPresent(normalizedDraft, normalizedContext, "무결성 검사");
+        unsupported += unsupportedIfPresent(normalizedDraft, normalizedContext, "경영진");
+        return unsupported >= 2;
+    }
+
+    private int unsupportedIfPresent(String draft, String context, String token) {
+        return draft.contains(token) && !context.contains(token) ? 1 : 0;
     }
 
     private void saveDraft(Long questionId, String draft) {
@@ -629,7 +751,7 @@ public class WorkspacePipelineV2Service {
 
             LengthDecision decision = decideLengthAction(currentLength, policy);
             if (decision == LengthDecision.ACCEPT) {
-                log.debug("V2 draft length ok chars={} target={}-{}", currentLength, policy.minTarget(), policy.desiredTarget());
+                log.debug("[● 초안길이/통과] 현재={}자 | 목표={}~{}자", currentLength, policy.minTarget(), policy.desiredTarget());
                 return candidate;
             }
 
@@ -644,12 +766,12 @@ public class WorkspacePipelineV2Service {
                 if (!shortened.isBlank()
                         && shortenedLength >= policy.minTarget()
                         && shortenedLength <= policy.desiredTarget()) {
-                    log.info("V2 draft trimmed {}→{} chars (target={}-{})",
+                    log.info("[■ 초안길이/압축] 이전={}자 | 이후={}자 | 목표={}~{}자",
                             currentLength, shortenedLength, policy.minTarget(), policy.desiredTarget());
                     return shortened;
                 }
 
-                log.warn("V2 draft [attempt {}/{}] mini-trim {}→{} missed target={}-{}, rewriting",
+                log.warn("[▲ 초안길이/압축미달] 회차={}/{} | 이전={}자 | 이후={}자 | 목표={}~{}자 | 다음=재작성",
                         attempt, LENGTH_REWRITE_MAX_ATTEMPTS,
                         currentLength, shortenedLength, policy.minTarget(), policy.desiredTarget());
                 candidate = !shortened.isBlank() ? shortened : candidate;
@@ -660,7 +782,7 @@ public class WorkspacePipelineV2Service {
                 break;
             }
 
-            log.warn("V2 draft [attempt {}/{}] rewriting chars={} target={}-{} limit={}",
+            log.warn("[▲ 초안길이/재작성] 회차={}/{} | 현재={}자 | 목표={}~{}자 | 제한={}자",
                     attempt, LENGTH_REWRITE_MAX_ATTEMPTS,
                     countVisibleChars(candidate), policy.minTarget(), policy.desiredTarget(), policy.hardLimit());
             sendProgress(emitter, STAGE_DRAFT,
@@ -675,7 +797,7 @@ public class WorkspacePipelineV2Service {
 
         int finalLength = countVisibleChars(candidate);
         int bestLength = countVisibleChars(bestCandidate);
-        log.warn("V2 draft length failed after retries chars={} bestChars={} target={}-{} limit={}",
+        log.warn("[!! 초안길이/실패] 최종={}자 | 최선={}자 | 목표={}~{}자 | 제한={}자",
                 finalLength, bestLength, policy.minTarget(), policy.desiredTarget(), policy.hardLimit());
         throw new DraftLengthFitException(String.format(
                 "초안이 목표 구간(%d-%d자)에 맞지 않아 세탁을 중단했습니다. 가장 가까운 초안(%d자)을 저장했습니다.",
@@ -737,7 +859,7 @@ public class WorkspacePipelineV2Service {
                     ? normalizeLengthText(shortened.text).trim()
                     : "";
         } catch (Exception e) {
-            log.warn("V2 draft mini-trim failed chars={} reason={}", currentLength, e.getMessage());
+            log.warn("[!! 초안길이/미니압축실패] 현재={}자 | 사유={}", currentLength, e.getMessage());
             return "";
         }
     }
@@ -779,7 +901,8 @@ public class WorkspacePipelineV2Service {
             return normalized;
         }
 
-        log.warn("V2 {} over limit chars={} maxLength={}, shortening", stage, currentLength, maxLength);
+        log.warn("[▲ 초안길이/제한초과] 단계={} | 현재={}자 | 제한={}자 | 다음=압축",
+                stage, currentLength, maxLength);
         try {
             WorkspaceDraftAiService.DraftResponse shortened = workspaceDraftAiService.shortenToLimit(
                     params.company(),
@@ -798,10 +921,12 @@ public class WorkspacePipelineV2Service {
                 return candidate;
             }
 
-            log.warn("V2 {} shorten insufficient {}chars, hard-trimming to {}", stage, candidateLength, maxLength);
+            log.warn("[▲ 초안길이/압축부족] 단계={} | 압축후={}자 | 제한={}자 | 다음=강제절단",
+                    stage, candidateLength, maxLength);
             return hardTrimToLimit(!candidate.isBlank() ? candidate : normalized, maxLength);
         } catch (Exception e) {
-            log.warn("V2 {} shorten failed chars={} limit={} reason={}", stage, currentLength, maxLength, e.getMessage());
+            log.warn("[!! 초안길이/압축실패] 단계={} | 현재={}자 | 제한={}자 | 처리=강제절단 | 사유={}",
+                    stage, currentLength, maxLength, e.getMessage());
             return hardTrimToLimit(normalized, maxLength);
         }
     }
@@ -826,13 +951,13 @@ public class WorkspacePipelineV2Service {
             reviewReport = DraftAnalysisResult.AiReviewReport.builder()
                     .summary(warningMessage)
                     .build();
-            log.warn("V2 washed {}chars outside target [{}-{}]", finalLength, minTarget, maxLength);
+            log.warn("[!! 세탁본/길이초과] 최종={}자 | 목표={}~{}자", finalLength, minTarget, maxLength);
         } else {
             reviewReport = DraftAnalysisResult.AiReviewReport.builder()
                     .summary(String.format("글자 수 조건을 충족했습니다. 최종 세탁본은 %d자이며 목표 범위는 %d-%d자입니다.",
                             finalLength, minTarget, maxLength))
                     .build();
-            log.info("V2 washed {}chars ok (target [{}-{}])", finalLength, minTarget, maxLength);
+            log.info("[● 세탁본/길이통과] 최종={}자 | 목표={}~{}자", finalLength, minTarget, maxLength);
         }
 
         question.setAiReview(objectMapper.writeValueAsString(reviewReport));
@@ -867,7 +992,7 @@ public class WorkspacePipelineV2Service {
                     originalDraft, washedKr,
                     maxLength, minTarget, findingTarget, "");
         } catch (Exception e) {
-            log.warn("V2 patch analysis failed, using washed draft as-is. reason={}", e.getMessage());
+            log.warn("[!! 휴먼패치/분석실패] 처리=세탁본그대로사용 | 사유={}", e.getMessage());
             analysis = DraftAnalysisResult.builder()
                     .mistranslations(List.of())
                     .aiReviewReport(DraftAnalysisResult.AiReviewReport.builder()
@@ -893,9 +1018,9 @@ public class WorkspacePipelineV2Service {
             warningMessage = String.format(
                     "세탁본은 %d자입니다. 번역 전 초안이 목표 범위를 통과했으므로 세탁본을 그대로 사용합니다.",
                     finalLength);
-            log.warn("V2 washed {}chars outside target [{}-{}]", finalLength, minTarget, maxLength);
+            log.warn("[!! 세탁본/길이초과] 최종={}자 | 목표={}~{}자", finalLength, minTarget, maxLength);
         } else {
-            log.info("V2 washed {}chars ok (target [{}-{}])", finalLength, minTarget, maxLength);
+            log.info("[● 세탁본/길이통과] 최종={}자 | 목표={}~{}자", finalLength, minTarget, maxLength);
         }
 
         Map<String, Object> result = new HashMap<>();
@@ -931,6 +1056,28 @@ public class WorkspacePipelineV2Service {
         completeQuietly(emitter);
     }
 
+    private void completeWithNoVerifiedExperience(SseEmitter emitter, Long questionId,
+                                                  int maxLength, int minTarget, int preferredMax) throws Exception {
+        String draft = "[" + NO_VERIFIED_EXPERIENCE_TITLE + "]\n" + NO_VERIFIED_EXPERIENCE_MESSAGE;
+        Map<String, Object> result = new HashMap<>();
+        result.put("draft", draft);
+        result.put("washedDraft", draft);
+        result.put("sourceDraft", draft);
+        result.put("mistranslations", List.of());
+        result.put("aiReviewReport", null);
+        result.put("minTarget", minTarget);
+        result.put("maxLength", maxLength);
+        result.put("preferredMax", preferredMax);
+        result.put("warningMessage", NO_VERIFIED_EXPERIENCE_MESSAGE);
+        result.put("requiresExperienceSelection", true);
+
+        workspaceTaskCache.setComplete(questionId, result);
+        sendStage(emitter, STAGE_DONE);
+        sendSse(emitter, "draft_intermediate", draft);
+        sendSse(emitter, "complete", result);
+        completeQuietly(emitter);
+    }
+
     private void completeWithDraftLengthFailed(SseEmitter emitter, Long questionId,
                                                String draft, int maxLength, int minTarget,
                                                int preferredMax, String warningMessage) {
@@ -953,6 +1100,10 @@ public class WorkspacePipelineV2Service {
     // -------------------------------------------------------------------------
     // Context Builders
     // -------------------------------------------------------------------------
+
+    private boolean isNoVerifiedExperienceContext(String experienceContext) {
+        return experienceContext != null && experienceContext.contains("NO_VERIFIED_EXPERIENCE_CONTEXT");
+    }
 
     private String buildCompanyContext(WorkspaceQuestion question) {
         var app = question.getApplication();
@@ -993,6 +1144,7 @@ public class WorkspacePipelineV2Service {
                 plan.experienceNeeds(), reflectivePlan ? 4 : 6, Set.of(), profile.primaryCategory());
 
         if (!results.isEmpty()) {
+            logRagMatches(questionId, profile.primaryCategory(), results);
             Map<String, List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem>> grouped = new LinkedHashMap<>();
             for (var item : results) {
                 String key = item.getExperienceId() + ":" + item.getFacetId();
@@ -1020,7 +1172,7 @@ public class WorkspacePipelineV2Service {
                     .collect(Collectors.joining("\n---\n"));
         }
 
-        return buildCompactExperienceFallback();
+        return NO_VERIFIED_EXPERIENCE_CONTEXT;
     }
 
     private boolean isReflectiveNarrativePlan(QuestionDraftPlan plan) {
@@ -1064,6 +1216,7 @@ public class WorkspacePipelineV2Service {
                 profile.primaryCategory());
 
         if (!results.isEmpty()) {
+            logRagMatches(questionId, profile.primaryCategory(), results);
             return results.stream()
                     .map(item -> {
                         String header = (item.getFacetTitle() != null && !item.getFacetTitle().isBlank())
@@ -1074,10 +1227,26 @@ public class WorkspacePipelineV2Service {
                     .collect(Collectors.joining("\n---\n"));
         }
 
-        // RAG 결과 없으면 전체 경험 로드
-        return experienceRepository.findAll().stream()
-                .map(Experience::getRawContent)
-                .collect(Collectors.joining("\n---\n"));
+        return NO_VERIFIED_EXPERIENCE_CONTEXT;
+    }
+
+    private void logRagMatches(
+            Long questionId,
+            QuestionCategory category,
+            List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> results
+    ) {
+        String matches = results.stream()
+                .limit(8)
+                .map(item -> String.format("%s%s#%s score=%s",
+                        firstNonBlank(item.getExperienceTitle(), "Untitled"),
+                        item.getFacetTitle() == null || item.getFacetTitle().isBlank()
+                                ? ""
+                                : " / " + item.getFacetTitle(),
+                        firstNonBlank(item.getId(), "-"),
+                        item.getRelevanceScore()))
+                .collect(Collectors.joining(" | "));
+        log.info("[● RAG/매칭] 문항={} | 카테고리={} | 매칭={}개 | 사용후보={}",
+                questionId, category, results.size(), matches);
     }
 
     private String buildCompactExperienceFallback() {
@@ -1144,7 +1313,12 @@ public class WorkspacePipelineV2Service {
     }
 
     private String buildOthersContext(WorkspaceQuestion currentQuestion, Long questionId) {
-        return currentQuestion.getApplication().getQuestions().stream()
+        Long applicationId = resolveApplicationId(currentQuestion);
+        if (applicationId == null) {
+            return "";
+        }
+
+        return questionRepository.findByApplicationIdOrderByIdAsc(applicationId).stream()
                 .filter(q -> !q.getId().equals(questionId))
                 .filter(q -> q.getContent() != null && !q.getContent().isBlank())
                 .map(q -> String.format("[%s]\n%s",
@@ -1153,6 +1327,13 @@ public class WorkspacePipelineV2Service {
                                 ? q.getContent().substring(0, 200) + "..."
                                 : q.getContent()))
                 .collect(Collectors.joining("\n---\n"));
+    }
+
+    private Long resolveApplicationId(WorkspaceQuestion question) {
+        if (question == null || question.getApplication() == null) {
+            return null;
+        }
+        return question.getApplication().getId();
     }
 
     private String buildDirective(WorkspaceQuestion question, boolean useDirective,

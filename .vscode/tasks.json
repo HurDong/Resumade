@@ -4,7 +4,7 @@
     {
       "label": "backend: dev",
       "type": "shell",
-      "command": "chcp 65001; [Console]::InputEncoding = [System.Text.UTF8Encoding]::new(); [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); $OutputEncoding = [System.Text.UTF8Encoding]::new(); .\\gradlew.bat bootRun",
+      "command": "chcp 65001; [Console]::InputEncoding = [System.Text.UTF8Encoding]::new(); [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); $OutputEncoding = [System.Text.UTF8Encoding]::new(); $env:JAVA_TOOL_OPTIONS = '-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -Dresumade.console.charset=UTF-8'; .\\gradlew.bat bootRun",
       "options": {
         "cwd": "${workspaceFolder}/Backend"
       },

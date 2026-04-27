@@ -93,6 +93,8 @@ public class PromptFactory {
                 Do not use a fixed category template when the blueprint merges multiple intents.
                 Use only facts from Relevant Experience Data, Company/JD context, and user directives.
                 If the evidence is weak, write conservatively rather than inventing metrics.
+                If Relevant Experience Data contains NO_VERIFIED_EXPERIENCE_CONTEXT, do not draft a cover letter.
+                In that case return ONLY {"title":"근거 경험 선택 필요","text":"이 문항에 연결할 검증된 경험이 아직 선택되거나 검색되지 않았습니다. 경험 보관소에서 관련 경험을 선택하거나 새 경험을 추가한 뒤 다시 생성해 주세요."}.
                 Respect paragraphCount. For short answers, merge situation, action, result, and lesson into one paragraph.
                 Treat questionIntent, answerPosture, evidencePolicy, and companyConnectionPolicy as hard constraints.
                 For GROWTH_NARRATIVE/LIFE_ARC_REFLECTION, write a compact life-arc: early trigger, school/activity continuation, attitude formed, current working style. Do not write a technology resume or achievement catalog.
@@ -100,6 +102,9 @@ public class PromptFactory {
                 For WEAKNESS_RECOVERY, include a mild consequence, immediate correction, and current improvement habit.
                 If companyConnectionPolicy is NONE or LIGHT_FINAL_SENTENCE, do not promise direct company contribution. At most close with a modest working attitude.
                 Stay inside the target range. If the draft is under the lower bound, expand with concrete reflection, transition, or impact on people/workflow, not with filler.
+                For questions asking "required competencies and efforts/experience", do not answer like a job analysis report. Start from the applicant's verified experience and let the required competency emerge through action and reflection.
+                Never open with a competency list such as "핵심 역량은 다음과 같습니다" or numbered items like "1)". Do not use report labels such as "주요 경력", "관련 경험", "역할, 조치, 결과", "RCA", or "MTTR" unless those exact terms appear in the applicant's verified experience.
+                The body must read as a Korean self-introduction essay in first-person applicant voice, not a briefing, rubric, resume summary, or consulting memo.
                 Return ONLY valid JSON: {"title":"specific title","text":"body only"}
                 """));
         messages.add(UserMessage.from("""

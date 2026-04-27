@@ -43,7 +43,7 @@ public class DeepLTranslationService implements TranslationProvider {
 
     private String translate(String text, String targetLang) {
         if (authKey == null || authKey.equals("demo") || authKey.isBlank()) {
-            log.warn("[번역-스킵] DeepL API 키가 없어 원문을 그대로 반환합니다.");
+            log.warn("[!! 번역/스킵] 제공자=DeepL | 사유=API키없음 | 처리=원문반환");
             return text;
         }
 
@@ -54,7 +54,7 @@ public class DeepLTranslationService implements TranslationProvider {
         try {
             return requestDeepL(text, targetLang);
         } catch (Exception e) {
-            log.error("[번역-실패] DeepL 래퍼 처리 중 오류가 발생해 원문을 반환합니다.", e);
+            log.error("[!! 번역/실패] 제공자=DeepL | 단계=래퍼처리 | 처리=원문반환", e);
             return text;
         }
     }
@@ -72,20 +72,20 @@ public class DeepLTranslationService implements TranslationProvider {
 
             HttpEntity<org.springframework.util.MultiValueMap<String, String>> entity = new HttpEntity<>(map, headers);
 
-            log.info("[번역-요청] DeepL target={} 입력길이={}자", targetLang, text.length());
+            log.info("[▶ 번역/요청] 제공자=DeepL | 방향={} | 입력={}자", targetLang, text.length());
             Map<String, Object> response = restTemplate.postForObject(DEEPL_API_URL, entity, Map.class);
             
             if (response != null && response.containsKey("translations")) {
                 List<Map<String, String>> translations = (List<Map<String, String>>) response.get("translations");
                 String translated = translations.get(0).get("text");
-                log.info("[번역-완료] DeepL target={} 출력길이={}자", targetLang, translated == null ? 0 : translated.length());
+                log.info("[■ 번역/완료] 제공자=DeepL | 방향={} | 출력={}자", targetLang, translated == null ? 0 : translated.length());
                 return translated;
             }
         } catch (org.springframework.web.client.HttpClientErrorException.Forbidden e) {
-            log.error("[번역-권한오류] DeepL 403 Forbidden - API 키 확인 필요. keySuffix={}",
+            log.error("[!! 번역/권한오류] 제공자=DeepL | 상태=403 | 조치=API키확인 | keySuffix={}",
                 authKey.length() > 3 ? authKey.substring(authKey.length() - 3) : "too-short");
         } catch (Exception e) {
-            log.error("[번역-실패] DeepL 단일 요청 실패 - 원문 반환", e);
+            log.error("[!! 번역/실패] 제공자=DeepL | 단계=단일요청 | 처리=원문반환", e);
         }
         return text;
     }

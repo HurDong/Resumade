@@ -481,9 +481,10 @@ public class WorkspaceService {
     private final WorkspaceTaskCache workspaceTaskCache;
     private final com.resumade.api.experience.domain.PersonalStoryRepository personalStoryRepository;
 
+    @Transactional(readOnly = true)
     public List<com.resumade.api.workspace.dto.ExperienceContextResponse.ContextItem> getMatchedExperiences(
             Long questionId, String customQuery) {
-        WorkspaceQuestion question = questionRepository.findById(questionId)
+        WorkspaceQuestion question = questionRepository.findByIdWithApplication(questionId)
                 .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
 
         String query = (customQuery != null && !customQuery.isBlank()) ? customQuery : question.getTitle();
@@ -1243,7 +1244,12 @@ public class WorkspaceService {
 
     private String buildOthersContext(WorkspaceQuestion initialQuestion, Long questionId,
             List<Experience> allExperiences) {
-        String others = initialQuestion.getApplication().getQuestions().stream()
+        Long applicationId = resolveApplicationId(initialQuestion);
+        if (applicationId == null) {
+            return "[OTHER_QUESTION]\nNo other question drafts available.";
+        }
+
+        String others = questionRepository.findByApplicationIdOrderByIdAsc(applicationId).stream()
                 .filter(q -> !q.getId().equals(questionId))
                 .map(q -> {
                     String draft = preferredQuestionDraft(q);
@@ -3613,7 +3619,12 @@ public class WorkspaceService {
             List<Experience> allExperiences) {
         // 다른 문항들에서 제목이 언급된 경험을 모두(findFirst 아닌 전체) 수집.
         // 한 문항에 여러 경험이 언급될 수 있어 flatMap으로 처리.
-        return initialQuestion.getApplication().getQuestions().stream()
+        Long applicationId = resolveApplicationId(initialQuestion);
+        if (applicationId == null) {
+            return Set.of();
+        }
+
+        return questionRepository.findByApplicationIdOrderByIdAsc(applicationId).stream()
                 .filter(q -> !q.getId().equals(questionId))
                 .flatMap(q -> {
                     String searchableContent = String.join("\n",
@@ -3626,6 +3637,13 @@ public class WorkspaceService {
                 })
                 .filter(id -> id != null)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private Long resolveApplicationId(WorkspaceQuestion question) {
+        if (question == null || question.getApplication() == null) {
+            return null;
+        }
+        return question.getApplication().getId();
     }
 
     private boolean shouldRelaxExperienceExclusion(WorkspaceQuestion question, QuestionCategory category) {
