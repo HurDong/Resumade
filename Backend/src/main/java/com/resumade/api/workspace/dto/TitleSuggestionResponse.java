@@ -23,6 +23,8 @@ public class TitleSuggestionResponse {
         private String title;
         private int score;
         private String reason;
+        private String pattern;
+        private String risk;
         private boolean recommended;
     }
 }

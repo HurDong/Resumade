@@ -15,6 +15,8 @@ public interface WorkspaceDraftAiService {
         public String title;
         public Integer score;
         public String reason;
+        public String pattern;
+        public String risk;
     }
 
     class TitleCandidatesResponse {
@@ -347,27 +349,31 @@ public interface WorkspaceDraftAiService {
 
     @SystemMessage({
             "You write Korean self-introduction titles.",
-            "Always return a JSON object with the shape {\"candidates\":[{\"title\":\"...\",\"score\":0,\"reason\":\"...\"}]}",
+            "Always return a JSON object with the shape {\"candidates\":[{\"title\":\"...\",\"score\":0,\"reason\":\"...\",\"pattern\":\"...\",\"risk\":\"...\"}]}",
             "Write in Korean.",
-            "Generate 4 to 5 title candidates.",
-            "Each title must stay in bracket form like [Title].",
-            "Each title must read like a concrete cover-letter headline grounded in action, result, role fit, or contribution.",
-            "Prefer action + result, problem + resolution, or role + concrete value over a short slogan.",
-            "Use a metric only when it is explicitly supported by the current text or supplied context.",
-            "Do not use question-summary titles.",
+            "Generate exactly 5 title candidates.",
+            "Each title must stay in bracket form like [제목].",
+            "Prefer 14 to 28 visible Korean characters inside the brackets when natural.",
+            "Each title must read like a hiring-ready cover-letter subheading, not a summary label.",
+            "Use the Question and Current text as the primary evidence. Company and Position are only weak hints and must not dominate the title.",
+            "Prefer applicant action, verified experience, problem-solving process, concrete work standard, or grounded result.",
+            "Use a metric, achievement, technology name, or result only when it is explicitly supported by Current text.",
+            "Do not use question-summary titles, report labels, slogans, or company-perspective titles.",
             "Do not repeat the company name, position name, or question wording.",
             "Do not use first-person pronouns.",
-            "Do not turn titles into report labels or meta categories such as [역할], [결정], [결과 요약], [성장 경험], [문제 해결], [협업 역량], or similar.",
-            "Avoid vague buzzwords or bare nouns unless anchored by a specific action or outcome.",
+            "Do not use phrases such as 성장 과정, 핵심 역량, 문제 해결 능력, 팀워크, 소통의 중요성, 최고, 완벽, 혁신을 선도, 귀사와 함께 성장, 당사의, 귀사의, 우리 회사의, 주제:, 구체적으로, 그 결과, 핵심 교훈은.",
+            "Allowed pattern values: 역량+성과형, 문제해결형, 수치증명형, 가치관+행동형, 경험압축형, 전환/성장형, 협업조율형, 지원동기접점형, 트렌드판단형.",
+            "Make candidates meaningfully different from each other across patterns or angles.",
             "Score: an integer 0-100. Primary criterion is how well the title addresses the Question's evaluation intent. Secondary criterion is how well it is grounded in the body content. A title that ignores the question angle must score below 60 regardless of how strong the body content is.",
-            "Reason: one concise Korean sentence that MUST explain (1) what the Question is evaluating and (2) how this title directly addresses that evaluation angle through the body's evidence. Do NOT write a reason that only describes why the title matches the body content.",
+            "Reason: one concise Korean sentence that MUST explain (1) what the Question is evaluating and (2) how this title directly addresses that evaluation angle through the body's evidence.",
+            "Risk: one short Korean phrase only when there is a tradeoff, otherwise an empty string.",
             "CRITICAL: The Question field is the primary constraint. Read it first. A title that showcases impressive content but misses what the question is asking is always wrong."
     })
     @UserMessage("""
             Company: {{company}}
             Position: {{position}}
             Question (primary constraint — read this first): {{question}}
-            Company context:
+            Company context (weak hint only; never override the Question or Current text):
             {{companyContext}}
 
             Current text:
@@ -393,8 +399,9 @@ public interface WorkspaceDraftAiService {
             - A title that ignores what the question is asking is always wrong, even if it sounds impressive.
 
             Requirements:
-            - Generate 4 to 5 candidates
+            - Generate exactly 5 candidates
             - Rank by fitness for this question's evaluation intent first, body evidence second
+            - Include pattern and risk fields for every candidate
             - Keep the body unchanged; only propose title lines
             - Return only the required JSON shape
             """)

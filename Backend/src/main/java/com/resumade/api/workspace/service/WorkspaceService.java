@@ -95,6 +95,25 @@ public class WorkspaceService {
             "\uB178\uB825",
             "\uC131\uACFC",
             "\uACBD\uD5D8");
+    private static final List<String> FORBIDDEN_TITLE_SNIPPETS = List.of(
+            "저의성장과정",
+            "성장과정",
+            "핵심역량",
+            "문제해결능력",
+            "팀워크",
+            "소통의중요성",
+            "최고",
+            "완벽",
+            "혁신을선도",
+            "귀사와함께성장",
+            "당사의",
+            "귀사의",
+            "우리회사의",
+            "주제",
+            "구체적으로",
+            "그결과",
+            "핵심교훈은",
+            "부모님의가르침");
     private static final List<String> TITLE_ACTION_SIGNALS = List.of(
             "\uD574\uACB0",
             "\uAC1C\uC120",
@@ -546,10 +565,6 @@ public class WorkspaceService {
         String company = question.getApplication().getCompanyName();
         String position = question.getApplication().getPosition();
         QuestionCategory category = resolveQuestionCategory(question);
-        String companyContext = buildApplicationResearchContext(question, category);
-        List<Experience> allExperiences = experienceRepository.findAll();
-        String context = buildFilteredContext(question, questionId, allExperiences, category);
-        String others = buildOthersContext(question, questionId, allExperiences);
 
         List<TitleSuggestionResponse.TitleCandidate> candidates = buildTitleSuggestionCandidates(
                 currentDraft,
@@ -557,9 +572,9 @@ public class WorkspaceService {
                 position,
                 question.getTitle(),
                 category,
-                companyContext,
-                context,
-                others);
+                "",
+                "",
+                "");
 
         log.info("Title suggestions generated questionId={} candidateCount={} currentTitle={}",
                 questionId,
@@ -1447,74 +1462,101 @@ public class WorkspaceService {
         String safeQuestionTitle = safeTrim(questionTitle);
         QuestionCategory effectiveCategory = category != null ? category : QuestionCategory.DEFAULT;
 
-        // 카테고리별 제목 형태(shape) 및 패턴 가이드 — Intent는 문항 원문에서 AI가 직접 추론
-        String requiredShape = "Use a concrete evidence-first headline instead of a generic slogan.";
-        String preferredPatterns = "- [core evidence] + [strongest role-fit signal]\n- [problem or action] + [result or value created]";
-        String avoidLine = "Avoid titles that only paraphrase the question or sound like a project retrospective label.";
+        String categoryName = "기본";
+        String requiredShape = "문항 의도와 본문 핵심 근거를 지원자 행동 중심 제목으로 압축한다.";
+        String preferredPatterns = """
+                - [본문의 핵심 근거] + [직무 적합 신호]
+                - [문제 또는 행동] + [결과 또는 만든 가치]
+                - [일하는 기준] + [본문 속 행동 증거]
+                """;
+        String avoidLine = "문항을 그대로 요약한 제목, 프로젝트 회고 라벨, 추상 슬로건을 피한다.";
+        String goodExample = "[검증된 경험으로 답을 좁히다]";
+        String badExample = "[핵심 역량]";
 
         switch (effectiveCategory) {
             case MOTIVATION -> {
-                requiredShape = "Show one prepared capability or selection criterion that naturally points to the applicant's early contribution direction.";
+                categoryName = "지원동기";
+                requiredShape = "회사/직무 접점과 본문에 있는 지원자의 경험 또는 일하는 기준을 연결한다.";
                 preferredPatterns = """
-                        - [prepared capability or criterion] + [contribution direction]
-                        - [past proof] + [why-this-role value]
-                        - [problem awareness or value] + [execution direction]
+                        - [준비된 경험 또는 기준] + [이 직무로 이어진 이유]
+                        - [과거의 문제의식] + [직무에서 확인하고 싶은 가치]
+                        - [본문 속 근거] + [초기 기여 방향]
                         """;
-                avoidLine = "Avoid pure achievement-summary titles, abstract company-praise titles, and aspiration-only titles that never show why this company and role are the next step now.";
+                avoidLine = "회사 찬양, 포부만 있는 제목, 귀사와 함께 성장하겠다는 문구, 회사명을 반복하는 제목을 피한다.";
+                goodExample = "[검증 가능한 AI를 고민한 이유]";
+                badExample = "[귀사와 함께 성장하겠습니다]";
             }
             case EXPERIENCE -> {
-                requiredShape = "Show the owned technical action or decision and the bounded result, not just the project name or a competence slogan.";
+                categoryName = "직무/프로젝트 경험";
+                requiredShape = "내 역할, 기술적 행동 또는 판단, 그로 만든 결과를 드러낸다.";
                 preferredPatterns = """
-                        - [technical action or decision] + [measurable result]
-                        - [problem] + [solution or architecture choice] + [result]
-                        - [owned scope] + [stabilized or improved outcome]
+                        - [내가 한 기술 행동] + [결과]
+                        - [문제] + [선택한 해결 방식]
+                        - [맡은 범위] + [안정화 또는 개선 결과]
                         """;
-                avoidLine = "Avoid project-name-only titles, vague competence slogans, and titles that hide the applicant's actual role, decision, or measurable outcome.";
+                avoidLine = "프로젝트명만 쓰는 제목, 백엔드 개발 역량 같은 역량 라벨, 실제 역할이 보이지 않는 제목을 피한다.";
+                goodExample = "[로그 분석으로 장애 원인을 좁히다]";
+                badExample = "[프로젝트 경험]";
             }
             case PROBLEM_SOLVING -> {
-                requiredShape = "Name the problem pressure or failure point and the resolution or turnaround, not just the final achievement.";
+                categoryName = "문제해결";
+                requiredShape = "문제, 병목, 실패 지점과 그것을 바꾼 해결 방식을 함께 보여준다.";
                 preferredPatterns = """
-                        - [problem pressure or bottleneck] + [resolution]
-                        - [root cause or re-diagnosis] + [turnaround result]
-                        - [constraint or failure point] + [chosen fix]
+                        - [문제 또는 병목] + [해결 방식]
+                        - [원인 재진단] + [전환 결과]
+                        - [제약 또는 실패 지점] + [선택한 수정]
                         """;
-                avoidLine = "Avoid meta titles like 문제 해결 or 도전 경험, and avoid pure result titles that hide what had to be solved or re-diagnosed.";
+                avoidLine = "문제 해결 능력, 위기를 기회로 같은 메타 제목과 무엇을 해결했는지 숨기는 성과 요약 제목을 피한다.";
+                goodExample = "[반복 오류를 점검 자동화로 바꾸다]";
+                badExample = "[문제 해결 능력]";
             }
             case COLLABORATION -> {
-                requiredShape = "Show the shared goal, the applicant's owned role, and the coordination or conflict-handling method through a concrete team scene.";
+                categoryName = "협업/갈등";
+                requiredShape = "갈등, 기준 차이, 공동 목표와 내가 한 조율 행동 또는 팀 결과를 보여준다.";
                 preferredPatterns = """
-                        - [owned role or coordination action] + [team outcome]
-                        - [conflict or blocker] + [resolution method]
-                        - [shared goal] + [alignment process]
+                        - [다른 우선순위] + [조율 행동]
+                        - [갈등 또는 막힘] + [해결 방식]
+                        - [공동 목표] + [합의 과정]
                         """;
-                avoidLine = "Avoid meta titles like 협업 경험 or 팀워크 역량, and avoid titles that only name an individual achievement without the shared goal, team context, or coordination process.";
+                avoidLine = "팀워크, 소통의 중요성, 협업 경험 같은 라벨과 개인 성과만 강조해 팀 장면이 사라지는 제목을 피한다.";
+                goodExample = "[다른 우선순위를 하나의 일정으로 맞추다]";
+                badExample = "[팀워크]";
             }
             case PERSONAL_GROWTH -> {
-                requiredShape = "Show one formed value or work principle through a decisive episode and the way it still appears in current behavior.";
+                categoryName = "성장과정";
+                requiredShape = "전환 계기와 그 경험이 만든 현재의 일하는 기준을 연결한다.";
                 preferredPatterns = """
-                        - [formed value] + [current behavior]
-                        - [turning-point lesson] + [today's work principle]
-                        - [decisive episode] + [formed standard]
+                        - [실수 또는 전환 계기] + [현재 습관]
+                        - [배운 기준] + [현재 행동]
+                        - [결정적 사건] + [형성된 일의 기준]
                         """;
-                avoidLine = "Avoid meta titles like 성장과정 or 가치관, pure company-choice framing, and technical metric headlines that erase the human story or value formation.";
+                avoidLine = "저의 성장 과정, 부모님의 가르침, 가치관 같은 메타 제목과 사람의 변화가 사라지는 기술 성과 제목을 피한다.";
+                goodExample = "[실수 기록이 만든 검증 습관]";
+                badExample = "[저의 성장 과정]";
             }
             case CULTURE_FIT -> {
-                requiredShape = "Show one value, trait, or working style through a concrete behavior episode and its team or customer impact.";
+                categoryName = "인재상/가치관";
+                requiredShape = "가치관 또는 성향을 말로 주장하지 말고 본문 속 행동 증거로 보여준다.";
                 preferredPatterns = """
-                        - [value or trait] + [behavioral proof]
-                        - [customer or team-facing action] + [impact]
-                        - [weakness improvement] + [changed behavior]
+                        - [일하는 기준] + [행동 증거]
+                        - [팀 또는 고객을 향한 행동] + [영향]
+                        - [약점 보완] + [달라진 행동]
                         """;
-                avoidLine = "Avoid abstract culture praise, trait-only slogans, and meta titles like 성격의 장단점 or 고객 중심 without a concrete behavior trace.";
+                avoidLine = "책임감 있는 인재, 열정과 도전, 성격의 장단점처럼 성향만 말하는 제목을 피한다.";
+                goodExample = "[작은 이상 징후를 지나치지 않습니다]";
+                badExample = "[책임감 있는 인재]";
             }
             case TREND_INSIGHT -> {
-                requiredShape = "Name one external issue and the company-side implication or application scene instead of turning it into a generic opinion label.";
+                categoryName = "트렌드/견해";
+                requiredShape = "외부 이슈나 기술 관점을 본문 속 지원자 판단과 연결하되 보고서 제목처럼 쓰지 않는다.";
                 preferredPatterns = """
-                        - [external issue or trend] + [company-side implication]
-                        - [judgment] + [product, customer, service, or system scene]
-                        - [trade-off or condition] + [practical direction]
+                        - [외부 이슈 또는 기술 관점] + [지원자 판단]
+                        - [판단 기준] + [현장 적용 장면]
+                        - [트레이드오프] + [실무적 방향]
                         """;
-                avoidLine = "Avoid broad theme labels, project-retrospective titles, and abstract AI slogans that never show the applicant's actual angle, evidence, or company-side implication.";
+                avoidLine = "RAG 기반 출처검증으로 IT 신뢰성 강화처럼 보고서형 명사구로만 흐르는 제목, 추상 AI 슬로건, 실제 판단이 없는 주제 라벨을 피한다.";
+                goodExample = "[빠른 답보다 출처가 남는 AI]";
+                badExample = "[RAG 기반 출처검증으로 IT 신뢰성 강화]";
             }
             default -> {
             }
@@ -1523,19 +1565,27 @@ public class WorkspaceService {
         return """
                 [Title Framing Guide]
                 Question (raw): %s
-                Evaluation intent: Read the Question above and identify what the recruiter is specifically testing \
-                (e.g., self-awareness of strength/weakness, growth mindset, technical depth, motivation fit, \
-                collaboration style). The title must directly address that intent — not just highlight the most \
-                impressive content regardless of what was asked.
+                Category: %s
+                Evaluation intent: Read the Question above and identify what the recruiter is specifically testing.
+                The title must directly address that intent through evidence in the current body, not through extra context.
                 Mandatory shape: %s
                 Preferred patterns:
                 %s
+                Good example shape: %s
+                Bad example shape: %s
+                Common banned forms:
+                - 성장 과정, 핵심 역량, 문제 해결 능력, 팀워크, 소통의 중요성
+                - 최고, 완벽, 혁신을 선도, 귀사와 함께 성장
+                - 당사의, 귀사의, 우리 회사의, 주제:, 구체적으로, 그 결과, 핵심 교훈은
                 Avoid:
                 %s
                 """.formatted(
                 safeQuestionTitle.isBlank() ? "No question text provided." : safeQuestionTitle,
+                categoryName,
                 requiredShape,
                 preferredPatterns.stripTrailing(),
+                goodExample,
+                badExample,
                 avoidLine);
     }
 
@@ -1588,6 +1638,8 @@ public class WorkspaceService {
                                     titleLine,
                                     category))
                             .reason(safeTrim(candidate.reason))
+                            .pattern(resolveTitleCandidatePattern(candidate.pattern, titleLine, category))
+                            .risk(safeTrim(candidate.risk))
                             .recommended(false)
                             .build());
                 }
@@ -1617,7 +1669,7 @@ public class WorkspaceService {
 
         List<TitleSuggestionResponse.TitleCandidate> ranked = deduped.values().stream()
                 .sorted(Comparator.comparingInt(TitleSuggestionResponse.TitleCandidate::getScore).reversed())
-                .limit(3)
+                .limit(5)
                 .collect(Collectors.toCollection(ArrayList::new));
 
         if (!ranked.isEmpty()) {
@@ -1663,8 +1715,42 @@ public class WorkspaceService {
                 .title(normalizedTitleLine)
                 .score(adjustTitleCandidateScore(score, normalizedTitleLine, category))
                 .reason(reason)
+                .pattern(resolveTitleCandidatePattern("", normalizedTitleLine, category))
+                .risk("")
                 .recommended(false)
                 .build());
+    }
+
+    private String resolveTitleCandidatePattern(
+            String requestedPattern,
+            String titleLine,
+            QuestionCategory category) {
+        String normalizedPattern = safeTrim(requestedPattern);
+        if (!normalizedPattern.isBlank()) {
+            return normalizedPattern;
+        }
+
+        String core = extractBracketTitleCore(titleLine);
+        String normalizedTitle = normalizeTitleComparison(core);
+        if (core.chars().anyMatch(Character::isDigit)) {
+            return "수치증명형";
+        }
+        if (hasProblemSolvingProblemSignal(core, normalizedTitle)
+                || hasProblemSolvingResolutionSignal(core, normalizedTitle)) {
+            return "문제해결형";
+        }
+
+        QuestionCategory effectiveCategory = category != null ? category : QuestionCategory.DEFAULT;
+        return switch (effectiveCategory) {
+            case MOTIVATION -> "지원동기접점형";
+            case EXPERIENCE -> "역량+성과형";
+            case PROBLEM_SOLVING -> "문제해결형";
+            case COLLABORATION -> "협업조율형";
+            case PERSONAL_GROWTH -> "전환/성장형";
+            case CULTURE_FIT -> "가치관+행동형";
+            case TREND_INSIGHT -> "트렌드판단형";
+            default -> "경험압축형";
+        };
     }
 
     private boolean isAcceptedTitleLine(
@@ -1703,6 +1789,10 @@ public class WorkspaceService {
 
         if (normalizedCore.contains("\uAE30\uD0C0") || normalizedCore.contains("\uC81C\uBAA9")) {
             return "contains_meta_word";
+        }
+
+        if (containsAny(normalizedCore, FORBIDDEN_TITLE_SNIPPETS)) {
+            return "contains_forbidden_phrase";
         }
 
         if (containsNormalized(normalizedCore, company) || containsNormalized(normalizedCore, position)) {

@@ -26,6 +26,8 @@ export interface TitleCandidate {
   title: string
   score: number
   reason: string
+  pattern?: string | null
+  risk?: string | null
   recommended: boolean
 }
 

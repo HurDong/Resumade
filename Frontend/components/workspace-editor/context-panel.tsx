@@ -1874,11 +1874,12 @@ export function ContextPanel() {
                         key={`${candidate.title}-${index}`}
                         type="button"
                         onClick={() => setSelectedTitleSuggestion(candidate.title)}
-                        className={`group flex min-h-[196px] w-full flex-col rounded-3xl border px-5 py-5 text-left transition-all ${
+                        className={cn(
+                          "group flex min-h-[196px] w-full flex-col rounded-3xl border px-5 py-5 text-left transition-all",
                           isSelected
                             ? "border-primary/70 bg-primary/[0.07] shadow-[0_10px_30px_rgba(15,118,110,0.12)]"
                             : "border-border/70 bg-background hover:border-primary/35 hover:bg-muted/20"
-                        }`}
+                        )}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1886,11 +1887,15 @@ export function ContextPanel() {
                               {candidate.recommended ? "AI 추천" : `${index + 1}순위`}
                             </Badge>
                             <Badge variant="outline">적합도 {candidate.score}</Badge>
+                            {candidate.pattern ? (
+                              <Badge variant="outline">{candidate.pattern}</Badge>
+                            ) : null}
                           </div>
                           <span
-                            className={`text-xs font-semibold transition-colors ${
+                            className={cn(
+                              "text-xs font-semibold transition-colors",
                               isSelected ? "text-primary" : "text-muted-foreground group-hover:text-foreground/80"
-                            }`}
+                            )}
                           >
                             {isSelected ? "선택됨" : "클릭해서 선택"}
                           </span>

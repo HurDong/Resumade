@@ -1208,39 +1208,48 @@ export function DraftWasher({
                           ))}
                         </div>
                       ) : (
-                        <div className="grid gap-2 lg:grid-cols-3">
-                          {titleCandidates.slice(0, 3).map((candidate, index) => {
-                            const isSelected = selectedTitle === candidate.title
-                            return (
-                              <button
-                                key={`${candidate.title}-${index}`}
-                                type="button"
-                                className={cn(
-                                  "min-h-[74px] rounded-lg border px-3 py-2.5 text-left transition-colors",
-                                  isSelected
-                                    ? "border-primary bg-primary/5"
-                                    : "border-border/70 bg-background hover:border-primary/35 hover:bg-muted/30"
-                                )}
-                                onClick={() => handleApplyTitleCandidate(candidate.title)}
-                              >
-                                <div className="mb-1.5 flex items-center justify-between gap-2">
-                                  <Badge
-                                    variant={candidate.recommended ? "default" : "secondary"}
-                                    className="rounded-full text-[10px]"
-                                  >
-                                    {candidate.recommended ? "추천" : `${index + 1}안`}
-                                  </Badge>
-                                  {isSelected ? <CheckCircle2 className="size-3.5 shrink-0 text-primary" /> : null}
-                                </div>
-                                <p className="line-clamp-2 text-sm font-semibold leading-5 text-foreground">
-                                  {candidate.title}
-                                </p>
-                                <p className="mt-1 line-clamp-1 text-xs leading-5 text-muted-foreground">
-                                  {candidate.reason}
-                                </p>
-                              </button>
-                            )
-                          })}
+                        <div className="max-h-64 overflow-y-auto pr-1">
+                          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                            {titleCandidates.slice(0, 5).map((candidate, index) => {
+                              const isSelected = selectedTitle === candidate.title
+                              return (
+                                <button
+                                  key={`${candidate.title}-${index}`}
+                                  type="button"
+                                  className={cn(
+                                    "min-h-[74px] rounded-lg border px-3 py-2.5 text-left transition-colors",
+                                    isSelected
+                                      ? "border-primary bg-primary/5"
+                                      : "border-border/70 bg-background hover:border-primary/35 hover:bg-muted/30"
+                                  )}
+                                  onClick={() => handleApplyTitleCandidate(candidate.title)}
+                                >
+                                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                                    <div className="flex min-w-0 items-center gap-1.5">
+                                      <Badge
+                                        variant={candidate.recommended ? "default" : "secondary"}
+                                        className="shrink-0 rounded-full text-[10px]"
+                                      >
+                                        {candidate.recommended ? "추천" : `${index + 1}안`}
+                                      </Badge>
+                                      {candidate.pattern ? (
+                                        <Badge variant="outline" className="max-w-24 truncate rounded-full text-[10px]">
+                                          {candidate.pattern}
+                                        </Badge>
+                                      ) : null}
+                                    </div>
+                                    {isSelected ? <CheckCircle2 className="size-3.5 shrink-0 text-primary" /> : null}
+                                  </div>
+                                  <p className="line-clamp-2 text-sm font-semibold leading-5 text-foreground">
+                                    {candidate.title}
+                                  </p>
+                                  <p className="mt-1 line-clamp-1 text-xs leading-5 text-muted-foreground">
+                                    {candidate.reason}
+                                  </p>
+                                </button>
+                              )
+                            })}
+                          </div>
                         </div>
                       )}
                     </div>
