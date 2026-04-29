@@ -5,6 +5,7 @@ import com.resumade.api.workspace.dto.ApplyTitleSuggestionRequest;
 import com.resumade.api.workspace.dto.BatchPlanRequest;
 import com.resumade.api.workspace.dto.BatchPlanResponse;
 import com.resumade.api.workspace.dto.ManualDraftRequest;
+import com.resumade.api.workspace.dto.TitleSuggestionRequest;
 import com.resumade.api.workspace.dto.TitleSuggestionResponse;
 import com.resumade.api.workspace.dto.UpdateCategoryRequest;
 import com.resumade.api.workspace.service.WorkspaceBatchPlanService;
@@ -119,6 +120,13 @@ public class WorkspaceController {
     @GetMapping("/title-suggestions/{questionId}")
     public TitleSuggestionResponse suggestTitles(@PathVariable Long questionId) {
         return workspaceService.suggestTitles(questionId);
+    }
+
+    @PostMapping("/title-suggestions/{questionId}")
+    public TitleSuggestionResponse suggestTitlesForDraft(
+            @PathVariable Long questionId,
+            @RequestBody TitleSuggestionRequest request) {
+        return workspaceService.suggestTitles(questionId, request.draftText());
     }
 
     @PostMapping("/batch-plan")

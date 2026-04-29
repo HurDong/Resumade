@@ -8,6 +8,7 @@ import {
   ArrowRightLeft,
   Building2,
   CheckCircle2,
+  ChevronDown,
   ClipboardCheck,
   Copy,
   ExternalLink,
@@ -26,6 +27,7 @@ import {
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Progress } from "@/components/ui/progress"
 import {
   Select,
@@ -48,7 +50,12 @@ import {
   type QuestionWashResult,
   type WashApplicationSummary,
 } from "@/lib/api/draft-wash"
-import { fetchFinalEditorData, saveFinalText } from "@/lib/api/final-editor"
+import {
+  fetchFinalEditorData,
+  fetchTitleSuggestionsForDraft,
+  saveFinalText,
+  type TitleCandidate,
+} from "@/lib/api/final-editor"
 import { countResumeCharacters } from "@/lib/text/resume-character-count"
 import { cn } from "@/lib/utils"
 
@@ -218,6 +225,22 @@ function questionStageIndex(stage: string | null | undefined) {
   return questionSteps.findIndex((step) => step.stage === normalized)
 }
 
+const LEADING_BRACKET_TITLE_PATTERN = /^\s*\[[^\]\n]+\]\s*/
+
+function applyTitleLineToText(text: string, titleLine: string) {
+  const normalizedTitle = titleLine.trim()
+  const normalizedText = text.trim()
+
+  if (!normalizedTitle) return text
+  if (!normalizedText) return normalizedTitle
+
+  if (LEADING_BRACKET_TITLE_PATTERN.test(normalizedText)) {
+    return normalizedText.replace(LEADING_BRACKET_TITLE_PATTERN, `${normalizedTitle}\n\n`)
+  }
+
+  return `${normalizedTitle}\n\n${normalizedText}`
+}
+
 function findApplicationForInitialQuestion(
   applications: WashApplicationSummary[],
   initialApplicationId?: string,
@@ -251,6 +274,9 @@ export function DraftWasher({
   const [draftText, setDraftText] = useState("")
   const [washedText, setWashedText] = useState("")
   const [finalText, setFinalText] = useState("")
+  const [selectedTitle, setSelectedTitle] = useState("")
+  const [titleCandidates, setTitleCandidates] = useState<TitleCandidate[]>([])
+  const [isTitlePanelOpen, setIsTitlePanelOpen] = useState(false)
   const [englishText, setEnglishText] = useState("")
   const [progress, setProgress] = useState<DraftWashProgress | QuestionWashProgress | null>(null)
   const [result, setResult] = useState<DraftWashResult | QuestionWashResult | null>(null)
@@ -259,6 +285,7 @@ export function DraftWasher({
   const [isLoadingQuestion, setIsLoadingQuestion] = useState(false)
   const [isSavingDraft, setIsSavingDraft] = useState(false)
   const [isSavingFinal, setIsSavingFinal] = useState(false)
+  const [isGeneratingTitle, setIsGeneratingTitle] = useState(false)
   const [isWashing, setIsWashing] = useState(false)
   const [copied, setCopied] = useState(false)
   const [outputTab, setOutputTab] = useState<"final" | "wash">("final")
@@ -303,6 +330,15 @@ export function DraftWasher({
     : "공고 선택 없이 임시 WASH"
   const copySourceLabel = finalText.trim() ? "최종본" : "WASH 결과"
   const charLimit = hasConnectedQuestion && maxLength ? maxLength : MAX_DRAFT_LENGTH
+  const titleSourceText = finalText.trim() || washedText.trim() || draftText.trim()
+  const topTitleCandidate = titleCandidates[0]
+  const canGenerateTitle =
+    hasConnectedQuestion &&
+    questionDbId !== null &&
+    titleSourceText.length > 0 &&
+    !isLoadingQuestion &&
+    !isSavingFinal &&
+    !isWashing
 
   const statusText = useMemo(() => {
     if (isLoadingApplications) return "공고 목록을 불러오는 중입니다."
@@ -352,6 +388,9 @@ export function DraftWasher({
       setDraftText(savedDraft)
       setWashedText(savedWashed)
       setFinalText(displayFinal)
+      setSelectedTitle(data.selectedTitle ?? "")
+      setTitleCandidates(data.titleCandidates ?? [])
+      setIsTitlePanelOpen(false)
       setEnglishText("")
       setProgress(null)
       setResult(null)
@@ -427,6 +466,9 @@ export function DraftWasher({
   useEffect(() => {
     if (!hasConnectedQuestion || questionDbId === null) {
       setLoadedQuestion(null)
+      setSelectedTitle("")
+      setTitleCandidates([])
+      setIsTitlePanelOpen(false)
       return
     }
 
@@ -524,6 +566,9 @@ export function DraftWasher({
         setEnglishText(nextResult.englishText ?? "")
         setWashedText(nextResult.washedText ?? "")
         setFinalText(nextResult.washedText ?? "")
+        setSelectedTitle("")
+        setTitleCandidates([])
+        setIsTitlePanelOpen(false)
         setOutputTab("final")
       },
     })
@@ -599,6 +644,9 @@ export function DraftWasher({
     setResult(null)
     setErrorMessage(null)
     setCopied(false)
+    setSelectedTitle("")
+    setTitleCandidates([])
+    setIsTitlePanelOpen(false)
 
     try {
       if (hasConnectedQuestion && questionDbId !== null) {
@@ -634,7 +682,7 @@ export function DraftWasher({
     setErrorMessage(null)
 
     try {
-      await saveFinalText(questionDbId, finalText)
+      await saveFinalText(questionDbId, finalText, selectedTitle || null)
       setLoadedQuestion((current) =>
         current
           ? {
@@ -676,10 +724,54 @@ export function DraftWasher({
     window.setTimeout(() => setCopied(false), 1600)
   }
 
+  const handleFinalTextChange = (nextText: string) => {
+    setFinalText(nextText)
+    if (selectedTitle && !nextText.trimStart().startsWith(selectedTitle)) {
+      setSelectedTitle("")
+    }
+  }
+
+  const handleGenerateTitles = async () => {
+    if (!canGenerateTitle || questionDbId === null) return
+
+    setIsGeneratingTitle(true)
+    setErrorMessage(null)
+    setIsTitlePanelOpen(true)
+
+    try {
+      const data = await fetchTitleSuggestionsForDraft(questionDbId, titleSourceText)
+      const candidates = data.candidates ?? []
+      setTitleCandidates(candidates)
+      setIsTitlePanelOpen(candidates.length > 0)
+
+      if (candidates.length === 0) {
+        toast.info("추천할 제목 후보를 찾지 못했습니다.")
+      } else {
+        toast.success("제목 후보를 생성했습니다.")
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "제목 생성에 실패했습니다."
+      setErrorMessage(message)
+      toast.error(message)
+    } finally {
+      setIsGeneratingTitle(false)
+    }
+  }
+
+  const handleApplyTitleCandidate = (title: string) => {
+    const sourceText = finalText.trim() ? finalText : washedText.trim() ? washedText : draftText
+    setSelectedTitle(title)
+    setFinalText(applyTitleLineToText(sourceText, title))
+    setOutputTab("final")
+    toast.success("제목을 최종본에 적용했습니다.")
+  }
+
   const handleSwapFinalWithWash = () => {
     if (!washedText.trim() || isWashing) return
 
     setFinalText(washedText)
+    setSelectedTitle("")
+    setIsTitlePanelOpen(false)
     setOutputTab("final")
     toast.success("WASH 원본을 최종본에 갈아끼웠습니다.")
   }
@@ -695,6 +787,9 @@ export function DraftWasher({
     setDraftText("")
     setWashedText("")
     setFinalText("")
+    setSelectedTitle("")
+    setTitleCandidates([])
+    setIsTitlePanelOpen(false)
     setEnglishText("")
     setProgress(null)
     setResult(null)
@@ -1038,6 +1133,16 @@ export function DraftWasher({
                     </TabsTrigger>
                   </TabsList>
                   <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-full px-3 text-xs font-semibold"
+                    disabled={!canGenerateTitle || isGeneratingTitle}
+                    onClick={() => void handleGenerateTitles()}
+                  >
+                    {isGeneratingTitle ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                    제목 생성
+                  </Button>
+                  <Button
                     variant="default"
                     size="sm"
                     className="h-8 rounded-full px-3 text-xs font-semibold shadow-sm"
@@ -1054,11 +1159,100 @@ export function DraftWasher({
                 </div>
               </div>
 
+              {isGeneratingTitle || titleCandidates.length > 0 ? (
+                <Collapsible
+                  open={isTitlePanelOpen}
+                  onOpenChange={setIsTitlePanelOpen}
+                  className="shrink-0 border-b border-border/70 bg-muted/20"
+                >
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-2 text-left transition-colors hover:bg-muted/40"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="shrink-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          제목 후보
+                        </span>
+                        <Badge variant="secondary" className="shrink-0 rounded-full text-[10px]">
+                          {isGeneratingTitle ? "생성 중" : `${titleCandidates.length}개`}
+                        </Badge>
+                        {topTitleCandidate ? (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {topTitleCandidate.title}
+                          </span>
+                        ) : null}
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          "size-4 shrink-0 text-muted-foreground transition-transform",
+                          isTitlePanelOpen && "rotate-180"
+                        )}
+                      />
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="flex flex-col gap-2 px-4 pb-3">
+                      <div className="flex justify-end">
+                        <Badge variant="outline" className="rounded-full text-[10px]">
+                          현재 본문 기준
+                        </Badge>
+                      </div>
+                      {isGeneratingTitle ? (
+                        <div className="grid gap-2 lg:grid-cols-3">
+                          {[0, 1, 2].map((index) => (
+                            <div
+                              key={index}
+                              className="min-h-[74px] rounded-lg border border-border/60 bg-background/60"
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid gap-2 lg:grid-cols-3">
+                          {titleCandidates.slice(0, 3).map((candidate, index) => {
+                            const isSelected = selectedTitle === candidate.title
+                            return (
+                              <button
+                                key={`${candidate.title}-${index}`}
+                                type="button"
+                                className={cn(
+                                  "min-h-[74px] rounded-lg border px-3 py-2.5 text-left transition-colors",
+                                  isSelected
+                                    ? "border-primary bg-primary/5"
+                                    : "border-border/70 bg-background hover:border-primary/35 hover:bg-muted/30"
+                                )}
+                                onClick={() => handleApplyTitleCandidate(candidate.title)}
+                              >
+                                <div className="mb-1.5 flex items-center justify-between gap-2">
+                                  <Badge
+                                    variant={candidate.recommended ? "default" : "secondary"}
+                                    className="rounded-full text-[10px]"
+                                  >
+                                    {candidate.recommended ? "추천" : `${index + 1}안`}
+                                  </Badge>
+                                  {isSelected ? <CheckCircle2 className="size-3.5 shrink-0 text-primary" /> : null}
+                                </div>
+                                <p className="line-clamp-2 text-sm font-semibold leading-5 text-foreground">
+                                  {candidate.title}
+                                </p>
+                                <p className="mt-1 line-clamp-1 text-xs leading-5 text-muted-foreground">
+                                  {candidate.reason}
+                                </p>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              ) : null}
+
               <TabsContent value="final" className="min-h-0 flex-1 data-[state=inactive]:hidden">
                 <div className="flex h-full min-h-0 flex-col">
                   <Textarea
                     value={finalText}
-                    onChange={(event) => setFinalText(event.target.value)}
+                    onChange={(event) => handleFinalTextChange(event.target.value)}
                     placeholder="WASH 결과를 다듬어 채용 플랫폼에 붙여넣을 최종본으로 저장하세요."
                     className="min-h-0 flex-1 resize-none rounded-none border-0 bg-emerald-500/[0.025] px-5 py-4 text-[15px] leading-8 shadow-none focus-visible:ring-0"
                   />

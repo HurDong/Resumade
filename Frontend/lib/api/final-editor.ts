@@ -86,6 +86,20 @@ export async function fetchTitleSuggestions(questionId: number): Promise<TitleSu
   return res.json()
 }
 
+/** AI 제목 추천 — 저장 전 본문을 기준으로 후보 생성 */
+export async function fetchTitleSuggestionsForDraft(
+  questionId: number,
+  draftText: string
+): Promise<TitleSuggestionData> {
+  const res = await fetch(toApiUrl(`/api/workspace/title-suggestions/${questionId}`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draftText }),
+  })
+  if (!res.ok) throw new Error(`Failed to fetch title suggestions: ${res.status}`)
+  return res.json()
+}
+
 /** 동일 Application 내 형제 문항 목록 — 네비게이터용 */
 export async function fetchSiblingQuestions(questionId: number): Promise<QuestionNavItem[]> {
   const res = await fetch(toApiUrl(`/api/v1/workspace/final/${questionId}/siblings`))

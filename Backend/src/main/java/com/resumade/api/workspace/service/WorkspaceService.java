@@ -523,10 +523,22 @@ public class WorkspaceService {
 
     @Transactional
     public TitleSuggestionResponse suggestTitles(Long questionId) {
+        return suggestTitlesInternal(questionId, null, true);
+    }
+
+    @Transactional
+    public TitleSuggestionResponse suggestTitles(Long questionId, String draftText) {
+        return suggestTitlesInternal(questionId, draftText, false);
+    }
+
+    private TitleSuggestionResponse suggestTitlesInternal(
+            Long questionId,
+            String draftText,
+            boolean cacheCandidates) {
         WorkspaceQuestion question = questionRepository.findById(questionId)
                 .orElseThrow(() -> new RuntimeException("Question not found: " + questionId));
 
-        String currentDraft = preferredQuestionDraft(question);
+        String currentDraft = draftText != null ? normalizeTitleSpacing(normalizeLengthText(draftText)).trim() : preferredQuestionDraft(question);
         if (currentDraft == null || currentDraft.isBlank()) {
             throw new IllegalStateException("Draft is empty");
         }
@@ -554,10 +566,12 @@ public class WorkspaceService {
                 candidates.size(),
                 safeSnippet(normalizeTitleLine(extractActualTitleLine(currentDraft)), 80));
 
-        try {
-            question.setTitleCandidatesJson(objectMapper.writeValueAsString(candidates));
-        } catch (Exception e) {
-            log.warn("제목 추천 캐시 저장 실패: questionId={}", questionId);
+        if (cacheCandidates) {
+            try {
+                question.setTitleCandidatesJson(objectMapper.writeValueAsString(candidates));
+            } catch (Exception e) {
+                log.warn("제목 추천 캐시 저장 실패: questionId={}", questionId);
+            }
         }
 
         return TitleSuggestionResponse.builder()
