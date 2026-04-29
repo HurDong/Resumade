@@ -688,6 +688,7 @@ export function ContextPanel() {
   }, [activeQuestion.category])
 
   const { mistranslations, aiReviewReport, washedKr } = activeQuestion
+  const qualityReport = aiReviewReport?.qualityReport ?? null
   const companyResearchData = parseCompanyResearch(companyResearch)
   const pipelineState = getPipelineState(pipelineStage, progressMessage, isProcessing)
   const activeStepIndex = PIPELINE_STEPS.findIndex((step) => step.id === pipelineState.activeStepId)
@@ -1635,6 +1636,64 @@ export function ContextPanel() {
               </div>
             </CardContent>
           </Card>
+
+          {qualityReport && (
+            <Card className="border border-border/60 bg-background shadow-none">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm font-black">
+                  <CheckCheck className="size-4 text-primary" />
+                  v3 진정성 리포트
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  경험 밀도와 면접 설명 가능성을 기준으로 초안을 점검했습니다.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: "경험 밀도", value: qualityReport.experienceDensityScore },
+                    { label: "문체 위험", value: qualityReport.authenticityRiskScore, invert: true },
+                    { label: "면접 방어력", value: qualityReport.interviewDefensibilityScore },
+                  ].map((item) => {
+                    const tone = item.invert
+                      ? item.value >= 50 ? "text-red-600" : "text-emerald-600"
+                      : item.value >= 70 ? "text-emerald-600" : item.value >= 50 ? "text-amber-600" : "text-red-600"
+                    return (
+                      <div key={item.label} className="rounded-xl border border-border/50 bg-muted/20 p-3">
+                        <p className="text-[10px] font-bold text-muted-foreground">{item.label}</p>
+                        <p className={`mt-1 text-xl font-black tabular-nums ${tone}`}>{item.value}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {(qualityReport.riskFlags.length > 0 || qualityReport.factGaps.length > 0) && (
+                  <div className="space-y-2">
+                    {[...qualityReport.riskFlags, ...qualityReport.factGaps].slice(0, 5).map((item, index) => (
+                      <div key={`${item}-${index}`} className="flex gap-2 rounded-lg bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-foreground/75">
+                        <AlertTriangle className="mt-0.5 size-3 shrink-0 text-amber-500" />
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {qualityReport.verificationQuestions.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-[11px] font-black text-muted-foreground">
+                      <MessageSquare className="size-3.5" />
+                      면접 검증 질문
+                    </div>
+                    {qualityReport.verificationQuestions.slice(0, 4).map((question, index) => (
+                      <p key={`${question}-${index}`} className="rounded-lg border border-border/50 px-3 py-2 text-[11px] leading-relaxed">
+                        {question}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
             {/* ── 오역 카드 섹션 ──────────────────────────────────────── */}
             <div className="space-y-3">

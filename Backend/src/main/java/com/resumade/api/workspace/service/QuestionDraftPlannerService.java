@@ -7,6 +7,7 @@ import com.resumade.api.workspace.prompt.DraftBlueprint;
 import com.resumade.api.workspace.prompt.ExperienceNeed;
 import com.resumade.api.workspace.prompt.QuestionCategory;
 import com.resumade.api.workspace.prompt.QuestionDraftPlan;
+import com.resumade.api.workspace.prompt.QuestionDraftPlanV3;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
@@ -49,6 +50,19 @@ public class QuestionDraftPlannerService {
             log.warn("QuestionDraftPlannerService failed, using deterministic fallback. reason={}", e.getMessage());
             return fallbackPlan(question, hardLimit, minTarget, desiredTarget);
         }
+    }
+
+    public QuestionDraftPlanV3 planV3(
+            String company,
+            String position,
+            String question,
+            int hardLimit,
+            int minTarget,
+            int desiredTarget,
+            String directive
+    ) {
+        QuestionDraftPlan basePlan = plan(company, position, question, hardLimit, minTarget, desiredTarget, directive);
+        return QuestionDraftPlanV3.from(basePlan, question);
     }
 
     private String systemPrompt() {
@@ -329,6 +343,7 @@ public class QuestionDraftPlannerService {
         if (containsAny(q, "성격", "장점", "단점", "강점", "약점", "성향", "일하는 방식", "스타일")) return QuestionCategory.CULTURE_FIT;
         if (containsAny(q, "문제", "해결", "실패", "극복", "어려움")) return QuestionCategory.PROBLEM_SOLVING;
         if (containsAny(q, "협업", "팀", "갈등", "소통")) return QuestionCategory.COLLABORATION;
+        if (containsAny(q, "최근", "트렌드", "동향", "산업", "시장", "AI", "LLM", "생성형")) return QuestionCategory.TREND_INSIGHT;
         if (containsAny(q, "지원동기", "입사", "회사")) return QuestionCategory.MOTIVATION;
         if (containsAny(q, "직무", "프로젝트", "기술", "역량")) return QuestionCategory.EXPERIENCE;
         return QuestionCategory.DEFAULT;
@@ -356,6 +371,9 @@ public class QuestionDraftPlannerService {
         }
         if (containsAny(q, "지원동기", "입사", "회사")) {
             return "MOTIVATION";
+        }
+        if (containsAny(q, "최근", "트렌드", "동향", "산업", "시장", "AI", "LLM", "생성형")) {
+            return "TREND_INSIGHT";
         }
         return "DEFAULT";
     }

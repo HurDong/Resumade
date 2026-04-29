@@ -9,6 +9,7 @@ import com.resumade.api.workspace.dto.TitleSuggestionResponse;
 import com.resumade.api.workspace.dto.UpdateCategoryRequest;
 import com.resumade.api.workspace.service.WorkspaceBatchPlanService;
 import com.resumade.api.workspace.service.WorkspacePipelineV2Service;
+import com.resumade.api.workspace.service.WorkspacePipelineV3Service;
 import com.resumade.api.workspace.service.WorkspaceService;
 import com.resumade.api.workspace.service.WorkspaceTaskCache;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class WorkspaceController {
 
     private final WorkspaceService workspaceService;
     private final WorkspacePipelineV2Service workspacePipelineV2Service;
+    private final WorkspacePipelineV3Service workspacePipelineV3Service;
     private final WorkspaceBatchPlanService workspaceBatchPlanService;
     private final WorkspaceTaskCache workspaceTaskCache;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
@@ -48,6 +50,19 @@ public class WorkspaceController {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
         executorService.execute(() ->
                 workspacePipelineV2Service.processV2(questionId, useDirective, targetChars, storyIds, emitter));
+        return emitter;
+    }
+
+    /** v3 파이프라인 엔드포인트 — 설계안 기반 생성 + 진정성 품질 리포트 */
+    @GetMapping(value = "/v3/stream/{questionId}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
+    public SseEmitter streamHumanPatchV3(
+            @PathVariable Long questionId,
+            @RequestParam(defaultValue = "true") boolean useDirective,
+            @RequestParam(required = false) Integer targetChars,
+            @RequestParam(required = false) java.util.List<Long> storyIds) {
+        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(10).toMillis());
+        executorService.execute(() ->
+                workspacePipelineV3Service.processV3(questionId, useDirective, targetChars, storyIds, emitter));
         return emitter;
     }
 

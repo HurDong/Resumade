@@ -13,6 +13,7 @@ import type {
   TitleSuggestionResponse,
   WorkspaceCompletionPayload,
   WorkspaceQuestion,
+  DraftAuthenticityReport,
 } from "@/lib/workspace/types";
 import {
   applySuggestionToQuestion,
@@ -33,6 +34,7 @@ export type {
   TitleSuggestionResponse,
   WorkspaceQuestion,
   QuestionCategory,
+  DraftAuthenticityReport,
 } from "@/lib/workspace/types";
 export { QUESTION_CATEGORY_LABELS } from "@/lib/workspace/types";
 
@@ -507,6 +509,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const finalWashedDraft = data.draft || "";
     const sourceDraft = data.sourceDraft || activeQ.content;
     const warningMessage = data.warningMessage || null;
+    const mergedAiReviewReport = mergeQualityReportIntoAiReview(data.aiReviewReport, data.qualityReport);
 
     set((state) => ({
       isProcessing: false,
@@ -527,7 +530,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
               content: sourceDraft,
               washedKr: finalWashedDraft,
               mistranslations: updatedMistranslations,
-              aiReviewReport: data.aiReviewReport ?? null,
+              aiReviewReport: mergedAiReviewReport,
             }
           : q
       ),
@@ -542,7 +545,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         content: sourceDraft,
         washedKr: finalWashedDraft,
         mistranslations: updatedMistranslations,
-        aiReviewReport: data.aiReviewReport ?? null,
+        aiReviewReport: mergedAiReviewReport,
       }).catch((err) => console.error("Initial wash save failed", err));
     }
   },
@@ -612,7 +615,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     registerBackgroundTask(activeQ.dbId, get().applicationId, "generate");
     await runWorkspaceSse({
       url: toApiUrl(
-        `/api/workspace/v2/stream/${activeQ.dbId}?useDirective=${useDirective}${targetQuery}`
+        `/api/workspace/v3/stream/${activeQ.dbId}?useDirective=${useDirective}${targetQuery}`
       ),
       set,
       get,
@@ -1000,6 +1003,24 @@ function parseSseJson(raw: string) {
   }
 }
 
+function mergeQualityReportIntoAiReview(
+  aiReviewReport: WorkspaceCompletionPayload["aiReviewReport"] | null | undefined,
+  qualityReport: DraftAuthenticityReport | null | undefined
+) {
+  if (!qualityReport) {
+    return aiReviewReport ?? null;
+  }
+
+  return {
+    ...(aiReviewReport ?? {}),
+    summary: aiReviewReport?.summary || qualityReport.summary,
+    overallScore: aiReviewReport?.overallScore ?? qualityReport.interviewDefensibilityScore,
+    technicalAccuracy: aiReviewReport?.technicalAccuracy ?? qualityReport.experienceDensityScore,
+    readability: aiReviewReport?.readability ?? Math.max(0, 100 - qualityReport.authenticityRiskScore),
+    qualityReport,
+  };
+}
+
 function parsePipelineStage(raw: string): PipelineStage | null {
   const parsed = parseSsePayload(raw);
   const rawStage = typeof parsed === "object" && parsed && typeof parsed.stage === "string"
@@ -1144,6 +1165,24 @@ async function runWorkspaceSse({
           return;
         }
 
+        if (eventName === "quality_report") {
+          const qualityReport = parseSseJson(data) as DraftAuthenticityReport | null;
+          if (qualityReport) {
+            get().updateProgress(qualityReport.summary || "v3 품질 리포트를 업데이트했습니다.");
+            set((state) => ({
+              questions: state.questions.map((q) =>
+                q.id === state.activeQuestionId
+                  ? {
+                      ...q,
+                      aiReviewReport: mergeQualityReportIntoAiReview(q.aiReviewReport, qualityReport),
+                    }
+                  : q
+              ),
+            }));
+          }
+          return;
+        }
+
         if (eventName === "complete") {
           const parsed = parseSseJson(data);
           if (!parsed) {
@@ -1245,7 +1284,7 @@ async function runBatchQuestionSse(
 
   try {
     await streamSse({
-      url: toApiUrl(`/api/workspace/v2/stream/${dbId}?useDirective=${useDirective}`),
+      url: toApiUrl(`/api/workspace/v3/stream/${dbId}?useDirective=${useDirective}`),
       signal: controller.signal,
       onOpen: () => {
         setBatchQuestion(set, questionId, { message: "파이프라인 연결됨" });
@@ -1288,6 +1327,24 @@ async function runBatchQuestionSse(
           return;
         }
 
+        if (eventName === "quality_report") {
+          const qualityReport = parseSseJson(data) as DraftAuthenticityReport | null;
+          if (qualityReport) {
+            setBatchQuestion(set, questionId, { message: qualityReport.summary || "v3 품질 리포트 완료" });
+            set((state) => ({
+              questions: state.questions.map((q) =>
+                q.id === questionId
+                  ? {
+                      ...q,
+                      aiReviewReport: mergeQualityReportIntoAiReview(q.aiReviewReport, qualityReport),
+                    }
+                  : q
+              ),
+            }));
+          }
+          return;
+        }
+
         if (eventName === "complete") {
           const parsed = parseSseJson(data);
           if (!parsed) {
@@ -1303,6 +1360,7 @@ async function runBatchQuestionSse(
           const updatedMistranslations = normalizeCompletionMistranslations(parsed.mistranslations);
           const finalWashedDraft = parsed.draft || "";
           const sourceDraft = parsed.sourceDraft || "";
+          const mergedAiReviewReport = mergeQualityReportIntoAiReview(parsed.aiReviewReport, parsed.qualityReport);
 
           set((state) => {
             const question = state.questions.find((q) => q.id === questionId);
@@ -1312,7 +1370,7 @@ async function runBatchQuestionSse(
                 content: sourceDraft || question.content,
                 washedKr: finalWashedDraft,
                 mistranslations: updatedMistranslations,
-                aiReviewReport: parsed.aiReviewReport ?? null,
+                aiReviewReport: mergedAiReviewReport,
               }).catch((err) => console.error("Batch question save failed", err));
             }
             return {
@@ -1327,7 +1385,7 @@ async function runBatchQuestionSse(
                       content: sourceDraft || q.content,
                       washedKr: finalWashedDraft,
                       mistranslations: updatedMistranslations,
-                      aiReviewReport: parsed.aiReviewReport ?? null,
+                      aiReviewReport: mergedAiReviewReport,
                     }
                   : q
               ),

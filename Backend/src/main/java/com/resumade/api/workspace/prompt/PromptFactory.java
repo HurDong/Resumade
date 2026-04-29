@@ -151,6 +151,94 @@ public class PromptFactory {
         return messages;
     }
 
+    public List<ChatMessage> buildDraftPlanMessagesV3(QuestionDraftPlanV3 plan, DraftParams params) {
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(SystemMessage.from("""
+                You are RESUMADE's v3 Korean cover-letter draft writer.
+                Your goal is not to hide AI usage. Your goal is to produce a truthful, interview-defensible draft grounded in the applicant's verified experience.
+                Return ONLY valid JSON: {"title":"specific title","text":"body only"}.
+
+                <V3_Core_Principles>
+                - Use the provided dominant spine as the answer backbone.
+                - Integrate secondary requirements at the injection points. Do not split the answer into category-by-category paragraphs.
+                - Every important claim must be traceable to one of these evidence types: role, judgment, action, result, measured or observable outcome.
+                - If a metric is not present in the context, do not invent it. Use a bounded observable result instead.
+                - Keep the voice as a Korean applicant's first-person prose, not a report, rubric, resume summary, or consultant memo.
+                - Avoid detector-like patterns: repeated transition phrases, perfectly uniform sentence rhythm, abstract adjective chains, passive voice, third-person descriptions, and over-polished generic endings.
+                - Do not insert deliberate typos, awkward slang, or artificial imperfection.
+                - Prefer sentences that can survive a follow-up interview question.
+                </V3_Core_Principles>
+
+                <Category_Direction>
+                MOTIVATION: connect one company-specific anchor, one applicant readiness proof, why now, and a realistic early contribution. No company worship, stability, salary, welfare, or brand-only motive.
+                EXPERIENCE: write problem, owned role, technology choice reason, execution, result, and measurement basis. Treat stack-name lists as failure.
+                PROBLEM_SOLVING: include root-cause confirmation, risk of inaction, option comparison, constraint, and changed judgment.
+                COLLABORATION: include shared goal, role split, coordination method, friction or bottleneck, team result, and personal contribution.
+                PERSONAL_GROWTH: center life/growth arc, turning point, formed attitude, and current working behavior. Do not turn it into a project achievement retrospective.
+                CULTURE_FIT: prove traits or values through choices, reactions, improvement habits, and team/customer impact.
+                TREND_INSIGHT: start from an external trend, then company application scene, limitation/condition, and only brief applicant support.
+                DEFAULT: infer the strongest micro-ask and absorb secondary asks into one narrative.
+                </Category_Direction>
+
+                <Hard_Rules>
+                - Respect the hard character limit and target range.
+                - Title must be concrete and grounded in action, value, result, or behavior. No generic labels.
+                - Text must not repeat the title.
+                - No section labels, no numbered list, no parenthetical meta labels, no "핵심 역량은 다음과 같습니다".
+                - No empty endings such as "최선을 다하겠습니다" or "열심히 하겠습니다".
+                - If Relevant Experience Data contains NO_VERIFIED_EXPERIENCE_CONTEXT, return only:
+                  {"title":"근거 경험 선택 필요","text":"이 문항에 연결할 검증된 경험이 아직 선택되거나 검색되지 않았습니다. 경험 보관소에서 관련 경험을 선택하거나 새 경험을 추가한 뒤 다시 생성해 주세요."}
+                </Hard_Rules>
+                """));
+        messages.add(UserMessage.from("""
+                Company: %s
+                Position: %s
+                Question: %s
+
+                <DraftPlanV3>
+                %s
+                </DraftPlanV3>
+
+                <Context>
+                ## Company & JD Analysis
+                %s
+
+                ## Relevant Experience Data
+                %s
+
+                ## Other questions already written (HARD anti-overlap constraint)
+                %s
+                </Context>
+
+                <LengthPolicy>
+                Hard character limit for text: %d
+                Target range for text: %d ~ %d characters
+                </LengthPolicy>
+
+                <UserDirective>
+                %s
+                </UserDirective>
+
+                <Output_Format>
+                Return ONLY valid JSON:
+                {"title":"specific title","text":"body only"}
+                </Output_Format>
+                """.formatted(
+                nullSafe(params.company()),
+                nullSafe(params.position()),
+                nullSafe(params.questionTitle()),
+                plan == null ? "" : plan.toPromptBlock(),
+                nullSafe(params.companyContext()),
+                nullSafe(params.experienceContext()),
+                nullSafe(params.othersContext()),
+                params.maxLength(),
+                params.minTarget(),
+                params.maxTarget(),
+                nullSafe(params.directive())
+        )));
+        return messages;
+    }
+
     /**
      * [v2 refine] QuestionProfile + retryDirective 기반 리파인 메시지.
      */

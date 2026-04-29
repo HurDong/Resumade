@@ -37,6 +37,18 @@ export interface AiReviewReport {
   overallScore?: number;
   technicalAccuracy?: number;
   readability?: number;
+  qualityReport?: DraftAuthenticityReport | null;
+}
+
+export interface DraftAuthenticityReport {
+  experienceDensityScore: number;
+  authenticityRiskScore: number;
+  interviewDefensibilityScore: number;
+  riskFlags: string[];
+  factGaps: string[];
+  verificationQuestions: string[];
+  rewriteDirective?: string;
+  summary: string;
 }
 
 export interface WorkspaceCompletionPayload {
@@ -48,6 +60,12 @@ export interface WorkspaceCompletionPayload {
   warningMessage?: string | null;
   mistranslations?: Mistranslation[];
   aiReviewReport?: AiReviewReport | null;
+  qualityReport?: DraftAuthenticityReport | null;
+  lengthOk?: boolean;
+  finalLength?: number;
+  minTarget?: number;
+  maxLength?: number;
+  preferredMax?: number;
 }
 
 export interface WorkspaceQuestion {

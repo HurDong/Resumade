@@ -1,6 +1,7 @@
 package com.resumade.api.workspace.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.resumade.api.workspace.dto.DraftAuthenticityReport;
 import com.resumade.api.workspace.prompt.DraftParams;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -239,6 +240,89 @@ public class DraftCriticRewriteService {
             return rewritten == null ? emptyResponse() : rewritten;
         } catch (Exception e) {
             log.warn("DraftCriticRewriteService report-style rewrite failed. reason={}", e.getMessage());
+            return emptyResponse();
+        }
+    }
+
+    public WorkspaceDraftAiService.DraftResponse rewriteForAuthenticity(
+            DraftParams params,
+            String currentDraft,
+            DraftAuthenticityReport report
+    ) {
+        try {
+            List<ChatMessage> messages = List.of(
+                    SystemMessage.from("""
+                            You are RESUMADE's v3 authenticity repair editor.
+                            Return ONLY valid JSON: {"title":"...","text":"..."}.
+                            Preserve verified facts and the main narrative. Do not add unsupported metrics, tools, roles, company facts, or incidents.
+                            The goal is truthful Korean cover-letter prose that is interview-defensible, not AI-detector evasion.
+                            Remove report-like structure, repeated transition phrases, abstract adjective chains, passive/third-person phrasing, and stack-name lists.
+                            Keep the answer grounded in role, judgment, action, result, and measurement basis.
+                            If a metric or claim is not supported by Relevant Experience Data, either remove it or weaken it to a bounded observable result.
+                            Do not insert deliberate typos, awkward slang, or artificial imperfection.
+                            Stay inside the hard character limit and as close as natural to the target range.
+                            """),
+                    UserMessage.from("""
+                            Company: %s
+                            Position: %s
+                            Question: %s
+
+                            <DraftPlan>
+                            %s
+                            </DraftPlan>
+
+                            <Context>
+                            ## Relevant Experience Data
+                            %s
+
+                            ## Other questions already written
+                            %s
+                            </Context>
+
+                            <LengthPolicy>
+                            Hard character limit for text: %d
+                            Target range for text: %d ~ %d characters
+                            </LengthPolicy>
+
+                            <AuthenticityReport>
+                            experienceDensityScore: %d
+                            authenticityRiskScore: %d
+                            interviewDefensibilityScore: %d
+                            riskFlags: %s
+                            factGaps: %s
+                            rewriteDirective:
+                            %s
+                            </AuthenticityReport>
+
+                            <CurrentDraft>
+                            %s
+                            </CurrentDraft>
+                            """.formatted(
+                            nullSafe(params.company()),
+                            nullSafe(params.position()),
+                            nullSafe(params.questionTitle()),
+                            nullSafe(params.draftPlanContext()),
+                            nullSafe(params.experienceContext()),
+                            nullSafe(params.othersContext()),
+                            params.maxLength(),
+                            params.minTarget(),
+                            params.maxTarget(),
+                            report == null ? 0 : report.experienceDensityScore(),
+                            report == null ? 0 : report.authenticityRiskScore(),
+                            report == null ? 0 : report.interviewDefensibilityScore(),
+                            report == null ? "[]" : report.riskFlags().toString(),
+                            report == null ? "[]" : report.factGaps().toString(),
+                            report == null ? "" : nullSafe(report.rewriteDirective()),
+                            nullSafe(currentDraft)
+                    ))
+            );
+            Response<AiMessage> response = workspaceDraftChatModel.generate(messages);
+            WorkspaceDraftAiService.DraftResponse rewritten = objectMapper.readValue(
+                    sanitizeJson(response.content().text()),
+                    WorkspaceDraftAiService.DraftResponse.class);
+            return rewritten == null ? emptyResponse() : rewritten;
+        } catch (Exception e) {
+            log.warn("DraftCriticRewriteService authenticity rewrite failed. reason={}", e.getMessage());
             return emptyResponse();
         }
     }
