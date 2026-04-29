@@ -152,6 +152,51 @@ class QuestionDraftPlannerServiceTest {
         assertThat(plans.get(3).primaryCategory().name()).isEqualTo("TREND_INSIGHT");
     }
 
+    @Test
+    void v3CorrectsOperationsAutomationQuestionAwayFromMotivation() {
+        String plannerJson = """
+                {
+                  "primaryCategory": "MOTIVATION",
+                  "questionIntent": "MOTIVATION",
+                  "answerPosture": "MOTIVATION_FIT",
+                  "companyConnectionPolicy": "ROLE_RELEVANT",
+                  "compound": true,
+                  "primaryIntent": "회사 지원동기를 설명한다.",
+                  "secondaryIntents": [],
+                  "lengthBand": "extended",
+                  "paragraphCount": 3,
+                  "answerContract": {"mustInclude": [], "mustNotOverdo": [], "successCriteria": []},
+                  "contentUnits": [],
+                  "compressionPlan": [],
+                  "experienceNeeds": [
+                    {"unit": "지원동기", "query": "회사 지원동기", "preferredUnitTypes": ["SITUATION"], "intentTags": ["지원동기"]}
+                  ],
+                  "draftBlueprint": {"targetLength": 1200, "paragraphCount": 3, "paragraphs": []},
+                  "framingNote": "",
+                  "requiredElements": [],
+                  "ragKeywords": []
+                }
+                """;
+        QuestionDraftPlannerService service = new QuestionDraftPlannerService(modelReturning(plannerJson), objectMapper);
+
+        QuestionDraftPlanV3 plan = service.planV3(
+                "동국제약",
+                "Backend",
+                "내부 서비스의 가용성과 복구 속도 향상을 위해 인프라 모니터링 및 운영 자동화에 주력하고 있습니다. ERP 및 그룹웨어 환경에 적용할 방안을 작성해 주세요.",
+                1500,
+                1200,
+                1350,
+                ""
+        );
+
+        assertThat(plan.primaryCategory().name()).isEqualTo("TREND_INSIGHT");
+        assertThat(plan.dominantSpine()).contains("운영");
+        assertThat(plan.basePlan().experienceNeeds()).extracting(need -> need.query())
+                .anySatisfy(query -> assertThat(query).contains("SSE").contains("하트비트"));
+        assertThat(plan.basePlan().answerContract().mustNotOverdo())
+                .anySatisfy(item -> assertThat(item).contains("당사"));
+    }
+
     private ChatLanguageModel modelReturning(String responseText) {
         return new ChatLanguageModel() {
             @Override

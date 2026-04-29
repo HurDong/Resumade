@@ -26,7 +26,7 @@ public class DraftAuthenticityReviewService {
     private static final Pattern SENTENCE_PATTERN = Pattern.compile("[^.!?\\n]+[.!?]?", Pattern.UNICODE_CHARACTER_CLASS);
 
     private static final List<String> TRANSITION_PHRASES = List.of(
-            "이를 통해", "나아가", "구체적으로는", "또한", "더불어", "이러한 경험을 바탕으로", "결과적으로"
+            "이를 통해", "나아가", "구체적으로는", "구체적으로,", "또한", "더불어", "이러한 경험을 바탕으로", "이번 경험을 통해", "결과적으로"
     );
     private static final List<String> ABSTRACT_WORDS = List.of(
             "혁신", "열정", "최선", "성실", "책임감", "주도적", "적극적", "효율적", "최적화", "시너지", "성장 가능성"
@@ -52,6 +52,7 @@ public class DraftAuthenticityReviewService {
         int abstractRisk = abstractWordRisk(text, riskFlags);
         int rhythmRisk = sentenceRhythmRisk(text, riskFlags);
         int reportRisk = reportStyleRisk(text, riskFlags);
+        int corporateVoiceRisk = corporateVoiceRisk(text, riskFlags, factGaps);
         int stackRisk = stackListRisk(text, riskFlags);
         int passiveRisk = passiveVoiceRisk(text, riskFlags);
         int unsupportedMetricRisk = unsupportedMetricRisk(text, params == null ? "" : params.experienceContext(), factGaps);
@@ -61,7 +62,7 @@ public class DraftAuthenticityReviewService {
 
         int evidenceSignals = evidenceSignals(text);
         int density = clamp(38 + (evidenceSignals * 7) - (abstractRisk / 2) - stackRisk - (roleGap / 2));
-        int risk = clamp(transitionRisk + abstractRisk + rhythmRisk + reportRisk + stackRisk + passiveRisk + unsupportedMetricRisk);
+        int risk = clamp(transitionRisk + abstractRisk + rhythmRisk + reportRisk + corporateVoiceRisk + stackRisk + passiveRisk + unsupportedMetricRisk);
         int defensibility = clamp(52 + (evidenceSignals * 6) - risk / 2 - roleGap - judgmentGap - resultGap - factGaps.size() * 8);
 
         List<String> verificationQuestions = buildVerificationQuestions(plan, factGaps, text);
@@ -127,6 +128,10 @@ public class DraftAuthenticityReviewService {
         String lower = text.toLowerCase(Locale.ROOT);
         boolean reportStyle = lower.contains("핵심 역량은 다음")
                 || lower.contains("다음과 같습니다")
+                || lower.contains("주제:")
+                || lower.contains("구체적으로,")
+                || lower.contains("이번 경험을 통해")
+                || lower.contains("핵심 교훈은")
                 || lower.contains("주요 경력")
                 || lower.contains("관련 경험")
                 || lower.contains("역할, 조치, 결과")
@@ -138,6 +143,20 @@ public class DraftAuthenticityReviewService {
             return 28;
         }
         return 0;
+    }
+
+    private int corporateVoiceRisk(String text, List<String> riskFlags, List<String> factGaps) {
+        int count = countOccurrences(text, "당사는")
+                + countOccurrences(text, "저희 회사")
+                + countOccurrences(text, "저희의 노력")
+                + countOccurrences(text, "저희는")
+                + countOccurrences(text, "우리는");
+        if (count == 0) {
+            return 0;
+        }
+        riskFlags.add("회사 입장이나 집단 주어로 말해 지원자 본인의 역할과 판단이 흐려집니다.");
+        factGaps.add("지원자 관점의 1인칭 역할 문장으로 바꿔야 합니다. '당사는/저희/우리는' 표현을 제거하세요.");
+        return Math.min(30, 18 + count * 6);
     }
 
     private int stackListRisk(String text, List<String> riskFlags) {

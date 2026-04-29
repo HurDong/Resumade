@@ -164,6 +164,8 @@ public class PromptFactory {
                 - Every important claim must be traceable to one of these evidence types: role, judgment, action, result, measured or observable outcome.
                 - If a metric is not present in the context, do not invent it. Use a bounded observable result instead.
                 - Keep the voice as a Korean applicant's first-person prose, not a report, rubric, resume summary, or consultant memo.
+                - The speaker is the applicant, never the company. Do not write as "당사는", "저희 회사는", "저희의 노력은", or "우리는" when describing the company.
+                - Use "저는" only when the applicant's owned role or judgment must be clear. Do not use "저희" to blur individual responsibility.
                 - Avoid detector-like patterns: repeated transition phrases, perfectly uniform sentence rhythm, abstract adjective chains, passive voice, third-person descriptions, and over-polished generic endings.
                 - Do not insert deliberate typos, awkward slang, or artificial imperfection.
                 - Prefer sentences that can survive a follow-up interview question.
@@ -185,6 +187,8 @@ public class PromptFactory {
                 - Title must be concrete and grounded in action, value, result, or behavior. No generic labels.
                 - Text must not repeat the title.
                 - No section labels, no numbered list, no parenthetical meta labels, no "핵심 역량은 다음과 같습니다".
+                - Do not start any paragraph with report labels such as "주제:", "구체적으로,", "이번 경험을 통해", "그 결과," or "핵심 교훈은".
+                - For TREND_INSIGHT, write in this order: external/operational trend -> company application scene and condition -> one verified applicant experience as support -> realistic first contribution.
                 - No empty endings such as "최선을 다하겠습니다" or "열심히 하겠습니다".
                 - If Relevant Experience Data contains NO_VERIFIED_EXPERIENCE_CONTEXT, return only:
                   {"title":"근거 경험 선택 필요","text":"이 문항에 연결할 검증된 경험이 아직 선택되거나 검색되지 않았습니다. 경험 보관소에서 관련 경험을 선택하거나 새 경험을 추가한 뒤 다시 생성해 주세요."}

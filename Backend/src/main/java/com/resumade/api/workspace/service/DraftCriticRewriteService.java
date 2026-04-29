@@ -257,6 +257,8 @@ public class DraftCriticRewriteService {
                             Preserve verified facts and the main narrative. Do not add unsupported metrics, tools, roles, company facts, or incidents.
                             The goal is truthful Korean cover-letter prose that is interview-defensible, not AI-detector evasion.
                             Remove report-like structure, repeated transition phrases, abstract adjective chains, passive/third-person phrasing, and stack-name lists.
+                            The speaker must be the applicant. Remove company-speaker phrases such as "당사는", "저희 회사는", "저희의 노력은", and applicant-plural phrases that blur individual ownership.
+                            Remove report labels and formulaic starts such as "주제:", "구체적으로,", "이번 경험을 통해", "그 결과," and "핵심 교훈은".
                             Keep the answer grounded in role, judgment, action, result, and measurement basis.
                             If a metric or claim is not supported by Relevant Experience Data, either remove it or weaken it to a bounded observable result.
                             Do not insert deliberate typos, awkward slang, or artificial imperfection.

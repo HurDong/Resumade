@@ -62,7 +62,7 @@ public class QuestionDraftPlannerService {
             String directive
     ) {
         QuestionDraftPlan basePlan = plan(company, position, question, hardLimit, minTarget, desiredTarget, directive);
-        return QuestionDraftPlanV3.from(basePlan, question);
+        return QuestionDraftPlanV3.from(applyV3QuestionCorrections(basePlan, question), question);
     }
 
     private String systemPrompt() {
@@ -331,6 +331,10 @@ public class QuestionDraftPlannerService {
             case EXPERIENCE -> List.of(
                     new ExperienceNeed("직무경험", base + " 기술 역할 행동 성과", List.of("ACTION", "RESULT", "TECH_STACK"), List.of("직무역량"))
             );
+            case TREND_INSIGHT -> List.of(
+                    new ExperienceNeed("운영 흐름 적용 근거", base + " 모니터링 가시성 장애 탐지 자동화 복구 운영 경험", List.of("SITUATION", "JUDGMENT"), List.of("트렌드", "운영", "자동화")),
+                    new ExperienceNeed("개인 경험 보조 근거", base + " SSE 하트비트 스트리밍 상태 감지 재시도 정리 워크플로", List.of("ROLE", "ACTION", "RESULT", "TECH_STACK"), List.of("스트리밍", "복구", "자동화"))
+            );
             default -> List.of(
                     new ExperienceNeed("핵심경험", base + " 관련 경험 역할 행동 결과", List.of("SITUATION", "ACTION", "RESULT"), category.getRelatedTags())
             );
@@ -339,6 +343,7 @@ public class QuestionDraftPlannerService {
 
     private QuestionCategory inferCategory(String question) {
         String q = question == null ? "" : question;
+        if (looksLikeOperationsAutomationQuestion(q)) return QuestionCategory.TREND_INSIGHT;
         if (containsAny(q, "성장", "학교활동", "학창", "교내외", "가치관", "인생")) return QuestionCategory.PERSONAL_GROWTH;
         if (containsAny(q, "성격", "장점", "단점", "강점", "약점", "성향", "일하는 방식", "스타일")) return QuestionCategory.CULTURE_FIT;
         if (containsAny(q, "문제", "해결", "실패", "극복", "어려움")) return QuestionCategory.PROBLEM_SOLVING;
@@ -351,6 +356,9 @@ public class QuestionDraftPlannerService {
 
     private String inferQuestionIntent(String question) {
         String q = question == null ? "" : question;
+        if (looksLikeOperationsAutomationQuestion(q)) {
+            return "TREND_INSIGHT";
+        }
         if (containsAny(q, "성장", "학교활동", "학창", "교내외")) {
             return "GROWTH_NARRATIVE";
         }
@@ -405,6 +413,66 @@ public class QuestionDraftPlannerService {
             return "LIGHT_FINAL_SENTENCE";
         }
         return "ROLE_RELEVANT";
+    }
+
+    private QuestionDraftPlan applyV3QuestionCorrections(QuestionDraftPlan plan, String question) {
+        if (plan == null || !looksLikeOperationsAutomationQuestion(question)) {
+            return plan;
+        }
+
+        List<ExperienceNeed> needs = defaultExperienceNeeds(QuestionCategory.TREND_INSIGHT, question);
+        List<String> requiredElements = mergeLists(
+                plan.requiredElements(),
+                List.of("운영 가용성/복구 속도 관점", "회사 적용 장면", "본인 경험은 보조 근거로 제한")
+        );
+        List<String> contentUnits = mergeLists(
+                plan.contentUnits(),
+                List.of("외부 운영 흐름", "회사 적용 조건", "본인 역할", "판단 근거", "실행", "결과")
+        );
+        AnswerContract contract = new AnswerContract(
+                mergeLists(plan.answerContract().mustInclude(), List.of("장애 탐지/복구 자동화 관점", "본인의 구현 범위", "도입 조건 또는 제약")),
+                mergeLists(plan.answerContract().mustNotOverdo(), List.of("지원동기식 회사 찬양", "회사 입장에서 말하는 당사/저희 문체", "주제: 라벨로 시작하는 보고서식 문장")),
+                mergeLists(plan.answerContract().successCriteria(), List.of("운영 관점과 개인 경험이 구분됨", "회사 적용 방안이 면접에서 설명 가능함"))
+        );
+
+        return new QuestionDraftPlan(
+                QuestionCategory.TREND_INSIGHT,
+                "TREND_INSIGHT",
+                "COMPETENCY_PROOF",
+                "외부 운영/자동화 흐름을 먼저 세우고, 검증된 개인 경험은 적용 가능성을 뒷받침하는 보조 근거로만 사용한다.",
+                "DIRECT_CONTRIBUTION_ALLOWED",
+                true,
+                "운영 가용성과 복구 자동화 흐름을 회사 환경에 적용하는 관점으로 답한다.",
+                mergeLists(plan.secondaryIntents(), List.of("직무 적용", "검증 가능한 경험 근거")),
+                plan.lengthBand(),
+                plan.paragraphCount(),
+                contract,
+                contentUnits,
+                mergeLists(plan.compressionPlan(), List.of("지원동기 문단으로 흐르지 않게 운영 관점, 적용 조건, 개인 경험 순서로 압축한다.")),
+                needs,
+                plan.draftBlueprint(),
+                plan.framingNote(),
+                requiredElements,
+                mergeLists(plan.ragKeywords(), List.of("모니터링", "운영 자동화", "장애 탐지", "복구", "SSE", "하트비트"))
+        );
+    }
+
+    private List<String> mergeLists(List<String> first, List<String> second) {
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        if (first != null) {
+            merged.addAll(first);
+        }
+        if (second != null) {
+            merged.addAll(second);
+        }
+        return List.copyOf(merged);
+    }
+
+    private boolean looksLikeOperationsAutomationQuestion(String question) {
+        String q = question == null ? "" : question;
+        boolean operationsSignal = containsAny(q, "모니터링", "운영 자동화", "가용성", "복구", "장애", "중단", "연결 끊김", "헬프데스크", "ERP", "그룹웨어", "인프라");
+        boolean applicationSignal = containsAny(q, "적용", "도입", "기여", "방안", "주제", "선정", "환경", "시스템");
+        return operationsSignal && applicationSignal;
     }
 
     private boolean containsAny(String text, String... values) {

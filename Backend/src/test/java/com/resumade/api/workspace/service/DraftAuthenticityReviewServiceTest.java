@@ -38,6 +38,20 @@ class DraftAuthenticityReviewServiceTest {
     }
 
     @Test
+    void detectsReportLabelAndCorporateVoiceRisk() {
+        DraftAuthenticityReport report = service.review(params("Role: SSE 파이프라인 설계 | Judgment: 하트비트 선택 | Result: 연결 상태 감지"), null, """
+                [실시간 스트리밍 가시성]
+
+                주제: 당사는 내부 서비스의 가용성과 복구 속도를 향상시키기 위해 인프라 모니터링에 주력하고 있습니다. 구체적으로, 저희의 실질적인 노력은 문제를 신속하게 탐지하고 수동 개입 없이 복구하는 데 집중되어 있습니다. 이번 경험을 통해 우리는 모니터링의 중요성을 배웠습니다.
+                """);
+
+        assertThat(report.requiresRewrite()).isTrue();
+        assertThat(report.riskFlags()).anySatisfy(flag -> assertThat(flag).contains("보고서식"));
+        assertThat(report.riskFlags()).anySatisfy(flag -> assertThat(flag).contains("회사 입장"));
+        assertThat(report.factGaps()).anySatisfy(gap -> assertThat(gap).contains("당사는"));
+    }
+
+    @Test
     void generatesInterviewVerificationQuestions() {
         DraftAuthenticityReport report = service.review(params("Role: 서버 담당 | Judgment: Redis 선택 | Result: 지연 단축"), null, """
                 [응답 지연 개선]
