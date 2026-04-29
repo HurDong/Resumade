@@ -84,6 +84,73 @@ export interface CompanyResearchData {
   searchSources?: SearchSource[]
 }
 
+export type FitProfileConfidence = "CONFIRMED" | "INFERRED" | "UNCERTAIN"
+
+export interface FitProfileFocus {
+  company?: string
+  position?: string
+  inferredBusinessUnit?: string
+  inferredProduct?: string
+}
+
+export interface FitProfileItem {
+  title: string
+  detail: string
+  confidence: FitProfileConfidence
+  evidenceIds: string[]
+}
+
+export interface FitProfileLexiconItem {
+  term: string
+  usage: string
+  confidence: FitProfileConfidence
+  evidenceIds: string[]
+}
+
+export interface FitProfileEvidence {
+  id: string
+  type: "JD" | "OFFICIAL" | "BLOG" | "NEWS" | "INTERVIEW" | "SEARCH" | string
+  title: string
+  uri?: string
+  summary?: string
+  publishedAt?: string
+}
+
+export interface CompanyFitProfileData {
+  focus: FitProfileFocus
+  summary: string
+  businessAgenda: FitProfileItem[]
+  roleMission: FitProfileItem[]
+  hiringSignals: FitProfileItem[]
+  workStyle: FitProfileItem[]
+  domainLexicon: FitProfileLexiconItem[]
+  strategyWarnings: FitProfileItem[]
+  evidence: FitProfileEvidence[]
+  confidenceNotes: string[]
+  searchQueries?: string[]
+  searchSources?: SearchSource[]
+}
+
+export interface CompanyFitProfileRecord {
+  id: number
+  applicationId: number
+  profile: CompanyFitProfileData
+  reviewNote?: string | null
+  modelName?: string | null
+  groundingStatus?: "GROUNDED" | "JD_ONLY" | string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface CompanyFitProfileCandidate {
+  uuid: string
+  applicationId: number
+  profile: CompanyFitProfileData
+  modelName?: string | null
+  groundingStatus?: "GROUNDED" | "JD_ONLY" | string | null
+  expiresAt?: string | null
+}
+
 // ── 파서 ───────────────────────────────────────────────────────────
 
 export function parseJdInsight(raw?: string): JdInsightData | null {

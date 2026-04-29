@@ -7,8 +7,13 @@ import com.resumade.api.workspace.domain.ApplicationResult;
 import com.resumade.api.workspace.domain.ApplicationStatus;
 import com.resumade.api.workspace.domain.WorkspaceQuestion;
 import com.resumade.api.workspace.domain.WorkspaceQuestionRepository;
+import com.resumade.api.workspace.dto.CompanyFitProfileActivateRequest;
+import com.resumade.api.workspace.dto.CompanyFitProfileRequest;
+import com.resumade.api.workspace.dto.CompanyFitProfileResponse;
+import com.resumade.api.workspace.dto.CompanyFitProfileReviewNoteRequest;
 import com.resumade.api.workspace.dto.CompanyResearchRequest;
 import com.resumade.api.workspace.dto.JdAnalysisResponse;
+import com.resumade.api.workspace.service.CompanyFitProfileService;
 import com.resumade.api.workspace.service.CompanyResearchService;
 import com.resumade.api.workspace.service.JdAnalysisService;
 import com.resumade.api.workspace.service.PdfTextExtractorService;
@@ -44,6 +49,7 @@ public class ApplicationController {
     private final JdAnalysisService jdAnalysisService;
     private final PdfTextExtractorService pdfTextExtractorService;
     private final CompanyResearchService companyResearchService;
+    private final CompanyFitProfileService companyFitProfileService;
     private final WorkspaceService workspaceService;
     private final QuestionImageParserService questionImageParserService;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
@@ -107,6 +113,44 @@ public class ApplicationController {
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
         executorService.execute(() -> companyResearchService.processResearch(uuid, emitter));
         return emitter;
+    }
+
+    @PostMapping("/{id}/fit-profile/init")
+    public Map<String, String> initFitProfile(@PathVariable Long id,
+                                              @RequestBody(required = false) CompanyFitProfileRequest request) {
+        String uuid = companyFitProfileService.initProfile(id, request);
+        return Map.of("uuid", uuid);
+    }
+
+    @GetMapping(value = "/fit-profile/stream/{uuid}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
+    public SseEmitter streamFitProfile(@PathVariable String uuid) {
+        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
+        executorService.execute(() -> companyFitProfileService.processProfile(uuid, emitter));
+        return emitter;
+    }
+
+    @PostMapping("/{id}/fit-profile/activate")
+    public CompanyFitProfileResponse activateFitProfile(@PathVariable Long id,
+                                                        @RequestBody CompanyFitProfileActivateRequest request) {
+        return companyFitProfileService.activateProfile(id, request);
+    }
+
+    @DeleteMapping("/{id}/fit-profile/candidate/{uuid}")
+    public ResponseEntity<Void> discardFitProfileCandidate(@PathVariable Long id, @PathVariable String uuid) {
+        companyFitProfileService.discardCandidate(id, uuid);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}/fit-profile")
+    public ResponseEntity<CompanyFitProfileResponse> getFitProfile(@PathVariable Long id) {
+        return companyFitProfileService.responseOrNoContent(id);
+    }
+
+    @PatchMapping("/{id}/fit-profile/review-note")
+    public CompanyFitProfileResponse updateFitProfileReviewNote(
+            @PathVariable Long id,
+            @RequestBody(required = false) CompanyFitProfileReviewNoteRequest request) {
+        return companyFitProfileService.updateReviewNote(id, request);
     }
 
     @Transactional

@@ -36,6 +36,7 @@ import {
   type SearchSource,
 } from "@/lib/application-intelligence"
 import { type Application } from "@/lib/mock-data"
+import { FitProfileCard } from "./fit-profile-card"
 
 interface CompanyResearchPanelProps {
   application: Application
@@ -155,6 +156,8 @@ export function CompanyResearchPanel({
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-5 overflow-visible">
+      <FitProfileCard application={application} />
+
       {/* ── 분석 시작 카드 ── */}
       <Card className="w-full min-w-0 max-w-full overflow-hidden border-primary/15 bg-gradient-to-br from-primary/5 via-background to-background shadow-none">
         <CardContent className="space-y-4 p-4 sm:p-5">
