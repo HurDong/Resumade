@@ -438,14 +438,11 @@ public class WorkspacePipelineV3Service {
     }
 
     private String buildDirective(WorkspaceQuestion question, boolean useDirective, Integer targetChars) {
-        if (!useDirective) {
-            return "No extra user directive.";
-        }
         List<String> parts = new ArrayList<>();
         if (question.getBatchStrategyDirective() != null && !question.getBatchStrategyDirective().isBlank()) {
             parts.add(question.getBatchStrategyDirective().trim());
         }
-        if (question.getUserDirective() != null && !question.getUserDirective().isBlank()) {
+        if (useDirective && question.getUserDirective() != null && !question.getUserDirective().isBlank()) {
             parts.add(question.getUserDirective().trim());
         }
         if (targetChars != null) {

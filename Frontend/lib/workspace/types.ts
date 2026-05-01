@@ -105,6 +105,76 @@ export interface BatchPlanResponse {
   assignments: BatchPlanAssignment[];
 }
 
+export interface StrategyCardText {
+  title: string;
+  detail: string;
+}
+
+export interface StrategyCardExperiencePlan {
+  primaryExperiences: string[];
+  facets: string[];
+  proofPoints: string[];
+  learningPoints: string[];
+}
+
+export interface StrategyCardFitConnection {
+  companyAnchor: string;
+  domainBridge: string;
+  lexicon: string[];
+  evidence: string[];
+}
+
+export interface StrategyCardParagraphPlan {
+  paragraph: number;
+  role: string;
+  contents: string[];
+}
+
+export interface QuestionStrategyCard {
+  questionId: number;
+  questionTitle: string;
+  category: QuestionCategory;
+  summary: string;
+  intent: StrategyCardText;
+  primaryClaim: string;
+  experiencePlan: StrategyCardExperiencePlan;
+  fitConnection: StrategyCardFitConnection;
+  paragraphPlan: StrategyCardParagraphPlan[];
+  warnings: string[];
+  draftDirective: string;
+  confidenceNotes: string[];
+}
+
+export interface QuestionStrategyCardRecord {
+  id: number | null;
+  applicationId: number;
+  questionId: number;
+  card: QuestionStrategyCard;
+  directivePrefix: string;
+  reviewNote?: string | null;
+  sourceType: "SINGLE" | "BATCH" | string;
+  modelName?: string | null;
+  fitProfileId?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface QuestionStrategyCardCandidate {
+  uuid: string;
+  applicationId: number;
+  sourceType: "SINGLE" | "BATCH" | string;
+  modelName?: string | null;
+  expiresAt?: string | null;
+  cards: QuestionStrategyCardRecord[];
+}
+
+export interface QuestionStrategyCardBatchResponse {
+  applicationId: number;
+  sourceType: "BATCH" | string;
+  modelName?: string | null;
+  cards: QuestionStrategyCardRecord[];
+}
+
 export interface TitleSuggestion {
   title: string;
   score: number;

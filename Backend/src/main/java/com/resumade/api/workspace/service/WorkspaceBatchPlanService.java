@@ -8,6 +8,8 @@ import com.resumade.api.experience.domain.ExperienceFacet;
 import com.resumade.api.experience.domain.ExperienceRepository;
 import com.resumade.api.workspace.domain.Application;
 import com.resumade.api.workspace.domain.ApplicationRepository;
+import com.resumade.api.workspace.domain.CompanyFitProfile;
+import com.resumade.api.workspace.domain.CompanyFitProfileRepository;
 import com.resumade.api.workspace.dto.BatchPlanRequest;
 import com.resumade.api.workspace.dto.BatchPlanResponse;
 import com.resumade.api.workspace.prompt.QuestionCategory;
@@ -170,6 +172,7 @@ public class WorkspaceBatchPlanService {
             """;
 
     private final ApplicationRepository applicationRepository;
+    private final CompanyFitProfileRepository companyFitProfileRepository;
     private final ExperienceRepository experienceRepository;
     private final ObjectMapper objectMapper;
     private final QuestionClassifierService questionClassifierService;
@@ -281,6 +284,7 @@ public class WorkspaceBatchPlanService {
                 : experiences.stream()
                         .map(this::formatExperienceBlock)
                         .collect(Collectors.joining("\n\n"));
+        String fitProfileBlock = buildFitProfileBlock(application);
 
         return """
                 Company: %s
@@ -291,6 +295,9 @@ public class WorkspaceBatchPlanService {
                 - Company research: %s
                 - Raw JD: %s
 
+                Active company Fit profile:
+                %s
+
                 Questions:
                 %s
 
@@ -299,6 +306,7 @@ public class WorkspaceBatchPlanService {
 
                 Planning rules:
                 - userDirective always takes the highest priority. Read each question's userDirective first and honor it exactly before applying any default rule.
+                - If an active company Fit profile exists, use it as the strongest company-specific anchor. Do not invent company facts outside the Fit profile, JD, research, or supplied evidence.
                 - Ignore any previous internal batch strategy or previously generated draft wording. Re-plan from the current experience vault and current company context.
                 - Default: assign exactly 1 primary experience per question for depth and focus. Only assign multiple experiences when the question's userDirective explicitly requests a list-style answer or multiple experiences.
                 - Same project may appear in multiple questions when the detailed topic is different.
@@ -314,8 +322,30 @@ public class WorkspaceBatchPlanService {
                 safe(snippet(application.getAiInsight(), 700)),
                 safe(snippet(application.getCompanyResearch(), 1000)),
                 safe(snippet(application.getRawJd(), 1000)),
+                fitProfileBlock,
                 questionsBlock,
                 experiencesBlock
+        );
+    }
+
+    private String buildFitProfileBlock(Application application) {
+        if (application == null || application.getId() == null) {
+            return "No active company Fit profile.";
+        }
+        return companyFitProfileRepository.findByApplicationId(application.getId())
+                .map(this::formatFitProfileBlock)
+                .orElse("No active company Fit profile.");
+    }
+
+    private String formatFitProfileBlock(CompanyFitProfile profile) {
+        return """
+                groundingStatus: %s
+                reviewNote: %s
+                profileJson: %s
+                """.formatted(
+                safe(profile.getGroundingStatus()),
+                safe(snippet(profile.getReviewNote(), 600)),
+                safe(snippet(profile.getProfileJson(), 1600))
         );
     }
 

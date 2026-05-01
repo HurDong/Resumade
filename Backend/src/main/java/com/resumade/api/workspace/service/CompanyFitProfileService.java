@@ -33,7 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class CompanyFitProfileService {
 
-    private static final Duration CANDIDATE_TTL = Duration.ofMinutes(30);
+    private static final Duration CANDIDATE_TTL = Duration.ofHours(12);
     private static final String DEFAULT_RAW_JD = "No JD provided.";
 
     private final ApplicationRepository applicationRepository;

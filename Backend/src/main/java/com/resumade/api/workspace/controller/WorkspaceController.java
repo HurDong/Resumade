@@ -5,9 +5,14 @@ import com.resumade.api.workspace.dto.ApplyTitleSuggestionRequest;
 import com.resumade.api.workspace.dto.BatchPlanRequest;
 import com.resumade.api.workspace.dto.BatchPlanResponse;
 import com.resumade.api.workspace.dto.ManualDraftRequest;
+import com.resumade.api.workspace.dto.QuestionStrategyCardActivateRequest;
+import com.resumade.api.workspace.dto.QuestionStrategyCardBatchResponse;
+import com.resumade.api.workspace.dto.QuestionStrategyCardResponse;
+import com.resumade.api.workspace.dto.QuestionStrategyCardReviewNoteRequest;
 import com.resumade.api.workspace.dto.TitleSuggestionRequest;
 import com.resumade.api.workspace.dto.TitleSuggestionResponse;
 import com.resumade.api.workspace.dto.UpdateCategoryRequest;
+import com.resumade.api.workspace.service.QuestionStrategyCardService;
 import com.resumade.api.workspace.service.WorkspaceBatchPlanService;
 import com.resumade.api.workspace.service.WorkspacePipelineV2Service;
 import com.resumade.api.workspace.service.WorkspacePipelineV3Service;
@@ -26,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Duration;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -38,6 +44,7 @@ public class WorkspaceController {
     private final WorkspacePipelineV2Service workspacePipelineV2Service;
     private final WorkspacePipelineV3Service workspacePipelineV3Service;
     private final WorkspaceBatchPlanService workspaceBatchPlanService;
+    private final QuestionStrategyCardService questionStrategyCardService;
     private final WorkspaceTaskCache workspaceTaskCache;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
@@ -132,6 +139,71 @@ public class WorkspaceController {
     @PostMapping("/batch-plan")
     public BatchPlanResponse createBatchPlan(@RequestBody BatchPlanRequest request) {
         return workspaceBatchPlanService.createPlan(request);
+    }
+
+    @PostMapping("/questions/{questionId}/strategy-card/init")
+    public Map<String, String> initQuestionStrategyCard(@PathVariable Long questionId) {
+        return Map.of("uuid", questionStrategyCardService.initSingle(questionId));
+    }
+
+    @GetMapping(value = "/strategy-card/stream/{uuid}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
+    public SseEmitter streamQuestionStrategyCard(@PathVariable String uuid) {
+        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
+        executorService.execute(() -> questionStrategyCardService.processCards(uuid, emitter));
+        return emitter;
+    }
+
+    @PostMapping("/questions/{questionId}/strategy-card/activate")
+    public QuestionStrategyCardResponse activateQuestionStrategyCard(
+            @PathVariable Long questionId,
+            @RequestBody QuestionStrategyCardActivateRequest request) {
+        return questionStrategyCardService.activateSingle(questionId, request);
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/questions/{questionId}/strategy-card/candidate/{uuid}")
+    public ResponseEntity<Void> discardQuestionStrategyCardCandidate(
+            @PathVariable Long questionId,
+            @PathVariable String uuid) {
+        questionStrategyCardService.discardCandidate(questionId, uuid);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/questions/{questionId}/strategy-card")
+    public ResponseEntity<QuestionStrategyCardResponse> getQuestionStrategyCard(@PathVariable Long questionId) {
+        return questionStrategyCardService.responseOrNoContent(questionId);
+    }
+
+    @PatchMapping("/questions/{questionId}/strategy-card/review-note")
+    public QuestionStrategyCardResponse updateQuestionStrategyCardReviewNote(
+            @PathVariable Long questionId,
+            @RequestBody(required = false) QuestionStrategyCardReviewNoteRequest request) {
+        return questionStrategyCardService.updateReviewNote(questionId, request);
+    }
+
+    @PostMapping("/strategy-cards/batch/init")
+    public Map<String, String> initBatchStrategyCards(@RequestBody BatchPlanRequest request) {
+        return Map.of("uuid", questionStrategyCardService.initBatch(request));
+    }
+
+    @GetMapping(value = "/strategy-cards/batch/stream/{uuid}", produces = Utf8SseSupport.TEXT_EVENT_STREAM_UTF8_VALUE)
+    public SseEmitter streamBatchStrategyCards(@PathVariable String uuid) {
+        SseEmitter emitter = new SseEmitter(Duration.ofMinutes(5).toMillis());
+        executorService.execute(() -> questionStrategyCardService.processCards(uuid, emitter));
+        return emitter;
+    }
+
+    @PostMapping("/strategy-cards/batch/activate")
+    public QuestionStrategyCardBatchResponse activateBatchStrategyCards(
+            @RequestBody QuestionStrategyCardActivateRequest request) {
+        return questionStrategyCardService.activateBatch(request);
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/strategy-cards/batch/candidate/{applicationId}/{uuid}")
+    public ResponseEntity<Void> discardBatchStrategyCardsCandidate(
+            @PathVariable Long applicationId,
+            @PathVariable String uuid) {
+        questionStrategyCardService.discardBatchCandidate(applicationId, uuid);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/title/{questionId}")

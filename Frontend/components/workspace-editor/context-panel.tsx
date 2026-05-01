@@ -52,7 +52,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { BatchPlanDialog } from "@/components/workspace-editor/batch-plan-dialog"
+import { StrategyCardBatchDialog } from "@/components/workspace-editor/strategy-card-batch-dialog"
+import { StrategyCardPanel } from "@/components/workspace-editor/strategy-card-panel"
 import type { TitleSuggestion } from "@/lib/workspace/types"
 import {
   DropdownMenu,
@@ -611,12 +612,12 @@ export function ContextPanel() {
     toggleActiveQuestionCompletion,
     isBatchRunning,
     batchState,
-    batchPlan,
-    isBatchPlanLoading,
-    batchPlanError,
-    fetchBatchPlan,
-    applyBatchPlan,
-    clearBatchPlan,
+    batchStrategyCandidate,
+    isBatchStrategyLoading,
+    batchStrategyError,
+    fetchBatchStrategyCards,
+    activateBatchStrategyCards,
+    clearBatchStrategyCards,
     batchGenerate,
     cancelBatch,
     cancelSingle,
@@ -759,7 +760,7 @@ export function ContextPanel() {
     scrollToTop()
 
     try {
-      await fetchBatchPlan()
+      await fetchBatchStrategyCards()
       setIsBatchPlanDialogOpen(true)
     } catch {
       setIsBatchPlanDialogOpen(false)
@@ -767,13 +768,13 @@ export function ContextPanel() {
   }
 
   const handleConfirmBatchPlan = async () => {
-    if (!batchPlan) {
+    if (!batchStrategyCandidate?.uuid) {
       return
     }
 
     setIsApplyingBatchPlan(true)
     try {
-      applyBatchPlan(batchPlan)
+      await activateBatchStrategyCards(batchStrategyCandidate.uuid)
       setIsBatchPlanDialogOpen(false)
       await batchGenerate({ useDirective: true })
     } finally {
@@ -924,10 +925,10 @@ export function ContextPanel() {
                   size="sm"
                   className="relative gap-1.5 h-8 rounded-full px-4 font-black text-[11px] bg-gradient-to-r from-primary to-primary/80 border-0 shadow-md"
                   onClick={handleOpenBatchPlan}
-                  disabled={isProcessing || isBatchPlanLoading}
+                  disabled={isProcessing || isBatchStrategyLoading}
                   title="모든 문항 동시 생성"
                 >
-                  {isBatchPlanLoading ? (
+                  {isBatchStrategyLoading ? (
                     <Loader2 className="size-3.5 animate-spin" />
                   ) : (
                     <motion.div
@@ -937,7 +938,7 @@ export function ContextPanel() {
                       <Zap className="size-3.5 fill-current" />
                     </motion.div>
                   )}
-                  {isBatchPlanLoading ? "전략 수립 중" : "전체 생성"}
+                  {isBatchStrategyLoading ? "전략 수립 중" : "전체 생성"}
                 </Button>
               </motion.div>
             )
@@ -956,9 +957,9 @@ export function ContextPanel() {
         </div>
 
         <div className="space-y-4">
-          {batchPlanError ? (
+          {batchStrategyError ? (
             <div className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-              {batchPlanError}
+              {batchStrategyError}
             </div>
           ) : null}
 
@@ -1495,6 +1496,8 @@ export function ContextPanel() {
             )}
           </section>
 
+          <StrategyCardPanel />
+
           <section className="min-w-0 overflow-hidden">
             {/* AI 작성 가이드 (Directives) */}
             <div className="mb-3 flex items-center gap-3">
@@ -1937,13 +1940,13 @@ export function ContextPanel() {
         </DialogContent>
       </Dialog>
 
-      <BatchPlanDialog
+      <StrategyCardBatchDialog
         open={isBatchPlanDialogOpen}
-        plan={batchPlan}
+        candidate={batchStrategyCandidate}
         onOpenChange={(open) => {
           setIsBatchPlanDialogOpen(open)
           if (!open) {
-            clearBatchPlan()
+            clearBatchStrategyCards()
           }
         }}
         onConfirm={handleConfirmBatchPlan}

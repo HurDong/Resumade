@@ -28,6 +28,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(responseBody);
     }
 
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, String>> handleIllegalStateException(IllegalStateException e) {
+        Map<String, String> responseBody = new HashMap<>();
+        responseBody.put("message", e.getMessage());
+        responseBody.put("type", e.getClass().getSimpleName());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(responseBody);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleAllExceptions(Exception e, HttpServletRequest request, HttpServletResponse response) {
         if (isClientDisconnectException(e)) {

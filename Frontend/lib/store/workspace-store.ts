@@ -10,6 +10,9 @@ import type {
   BatchPlanResponse,
   ContextItem,
   PipelineStage,
+  QuestionStrategyCardBatchResponse,
+  QuestionStrategyCardCandidate,
+  QuestionStrategyCardRecord,
   TitleSuggestionResponse,
   WorkspaceCompletionPayload,
   WorkspaceQuestion,
@@ -30,6 +33,9 @@ export type {
   Mistranslation,
   PipelineStage,
   BatchPlanResponse,
+  QuestionStrategyCardBatchResponse,
+  QuestionStrategyCardCandidate,
+  QuestionStrategyCardRecord,
   TitleSuggestion,
   TitleSuggestionResponse,
   WorkspaceQuestion,
@@ -83,6 +89,9 @@ interface WorkspaceState {
   batchPlan: BatchPlanResponse | null;
   isBatchPlanLoading: boolean;
   batchPlanError: string | null;
+  batchStrategyCandidate: QuestionStrategyCardCandidate | null;
+  isBatchStrategyLoading: boolean;
+  batchStrategyError: string | null;
 
   // Actions
   setCompany: (company: string) => void;
@@ -121,6 +130,9 @@ interface WorkspaceState {
   fetchBatchPlan: () => Promise<BatchPlanResponse>;
   applyBatchPlan: (plan: BatchPlanResponse) => void;
   clearBatchPlan: () => void;
+  fetchBatchStrategyCards: () => Promise<QuestionStrategyCardCandidate>;
+  activateBatchStrategyCards: (uuid: string) => Promise<QuestionStrategyCardBatchResponse>;
+  clearBatchStrategyCards: () => void;
   batchGenerate: (options?: { useDirective?: boolean }) => Promise<void>;
   cancelBatch: () => void;
   cancelSingle: () => void;
@@ -222,6 +234,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   batchPlan: null,
   isBatchPlanLoading: false,
   batchPlanError: null,
+  batchStrategyCandidate: null,
+  isBatchStrategyLoading: false,
+  batchStrategyError: null,
 
   setCompany: (company) => set({ company }),
   setPosition: (position) => set({ position }),
@@ -379,6 +394,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         batchPlan: null,
         batchPlanError: null,
         isBatchPlanLoading: false,
+        batchStrategyCandidate: null,
+        batchStrategyError: null,
+        isBatchStrategyLoading: false,
         isProcessing: false,
         pipelineStage: "IDLE",
         progressMessage: "",
@@ -847,6 +865,137 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   clearBatchPlan: () => set({ batchPlan: null, batchPlanError: null, isBatchPlanLoading: false }),
 
+  fetchBatchStrategyCards: async () => {
+    const state = get();
+    const targets = state.questions.filter((q) => q.dbId && q.title.trim().length > 0);
+    if (!state.applicationId || targets.length === 0) {
+      throw new Error("No eligible questions found for strategy cards.");
+    }
+
+    set({
+      isBatchStrategyLoading: true,
+      batchStrategyError: null,
+      batchStrategyCandidate: null,
+    });
+
+    try {
+      const initResponse = await fetch(toApiUrl("/api/workspace/strategy-cards/batch/init"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          applicationId: Number(state.applicationId),
+          questions: targets.map((question) => ({
+            questionId: question.dbId,
+            title: question.title,
+            maxLength: question.maxLength,
+            userDirective: question.userDirective,
+            batchStrategyDirective: "",
+            content: question.content,
+            washedKr: question.washedKr,
+            category: question.category ?? null,
+          })),
+        }),
+      });
+
+      if (!initResponse.ok) {
+        throw new Error(await initResponse.text().catch(() => "Failed to initialize strategy cards"));
+      }
+
+      const { uuid } = (await initResponse.json()) as { uuid: string };
+      let candidate: QuestionStrategyCardCandidate | null = null;
+      let streamError: string | null = null;
+
+      await streamSse({
+        url: toApiUrl(`/api/workspace/strategy-cards/batch/stream/${uuid}`),
+        onEvent: ({ event, data }) => {
+          if (event === "COMPLETE") {
+            candidate = JSON.parse(data) as QuestionStrategyCardCandidate;
+            return;
+          }
+          if (event === "ERROR") {
+            streamError = parseSseErrorMessage(data);
+          }
+        },
+      });
+
+      if (streamError) {
+        throw new Error(streamError);
+      }
+      if (!candidate) {
+        throw new Error("Strategy card stream ended without a result.");
+      }
+
+      set({
+        batchStrategyCandidate: candidate,
+        isBatchStrategyLoading: false,
+        batchStrategyError: null,
+      });
+      return candidate;
+    } catch (error) {
+      console.error("Failed to fetch batch strategy cards", error);
+      set({
+        batchStrategyCandidate: null,
+        isBatchStrategyLoading: false,
+        batchStrategyError: "전략카드 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+      });
+      throw error;
+    }
+  },
+
+  activateBatchStrategyCards: async (uuid: string) => {
+    try {
+      const response = await fetch(toApiUrl("/api/workspace/strategy-cards/batch/activate"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uuid }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text().catch(() => "Failed to activate strategy cards"));
+      }
+
+      const data = (await response.json()) as QuestionStrategyCardBatchResponse;
+      const directiveMap = new Map(
+        (data.cards || []).map((card) => [card.questionId, card.directivePrefix || card.card?.draftDirective || ""])
+      );
+
+      set((state) => ({
+        batchStrategyCandidate: null,
+        batchStrategyError: null,
+        isBatchStrategyLoading: false,
+        questions: state.questions.map((question) => {
+          if (!question.dbId || !directiveMap.has(question.dbId)) {
+            return question;
+          }
+          return {
+            ...question,
+            batchStrategyDirective: directiveMap.get(question.dbId) ?? "",
+          };
+        }),
+      }));
+
+      return data;
+    } catch (error) {
+      console.error("Failed to activate batch strategy cards", error);
+      set({
+        batchStrategyError: "전략카드 적용에 실패했습니다. 다시 생성해 주세요.",
+        isBatchStrategyLoading: false,
+      });
+      throw error;
+    }
+  },
+
+  clearBatchStrategyCards: () => {
+    const candidate = get().batchStrategyCandidate;
+    const applicationId = candidate?.applicationId ?? Number(get().applicationId);
+    if (candidate?.uuid && applicationId) {
+      fetch(toApiUrl(`/api/workspace/strategy-cards/batch/candidate/${applicationId}/${candidate.uuid}`), {
+        method: "DELETE",
+      }).catch(() => undefined);
+    }
+    set({ batchStrategyCandidate: null, batchStrategyError: null, isBatchStrategyLoading: false });
+  },
+
   batchGenerate: async (options) => {
     const state = get();
 
@@ -993,6 +1142,10 @@ function parseSseMessage(raw: string) {
     return parsed.stage;
   }
   return "";
+}
+
+function parseSseErrorMessage(raw: string) {
+  return parseSseMessage(raw) || "Strategy card stream failed.";
 }
 
 function parseSseJson(raw: string) {

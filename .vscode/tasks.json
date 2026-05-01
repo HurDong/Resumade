@@ -32,6 +32,15 @@
         "clear": true
       },
       "problemMatcher": []
+    },
+    {
+      "label": "dev: fullstack",
+      "dependsOn": [
+        "backend: dev",
+        "frontend: dev"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
     }
   ]
 }

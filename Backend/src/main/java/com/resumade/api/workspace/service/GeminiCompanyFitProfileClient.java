@@ -28,6 +28,8 @@ import java.util.Map;
 public class GeminiCompanyFitProfileClient {
 
     private static final int DISABLED_THINKING_BUDGET = 0;
+    private static final int MAX_OUTPUT_TOKENS = 12000;
+    private static final int MAX_PARSE_ATTEMPTS = 2;
     private static final double DEFAULT_TEMPERATURE = 0.1;
 
     private final ObjectMapper objectMapper;
@@ -56,11 +58,34 @@ public class GeminiCompanyFitProfileClient {
         }
 
         try {
-            JsonNode root = sendGenerateContent(
-                    buildSystemPrompt(),
-                    buildUserPrompt(company, position, rawJd, aiInsight, additionalFocus)
-            );
-            CompanyFitProfileDto profile = parseProfile(extractResponseText(root));
+            JsonNode root = null;
+            CompanyFitProfileDto profile = null;
+            IOException lastParseError = null;
+
+            for (int attempt = 1; attempt <= MAX_PARSE_ATTEMPTS; attempt++) {
+                root = sendGenerateContent(
+                        buildSystemPrompt(),
+                        buildUserPrompt(company, position, rawJd, aiInsight, additionalFocus)
+                );
+                String responseText = extractResponseText(root);
+                try {
+                    profile = parseProfile(responseText);
+                    break;
+                } catch (IOException e) {
+                    lastParseError = e;
+                    String finishReason = root.path("candidates").path(0).path("finishReason").asText("UNKNOWN");
+                    log.warn("Gemini company fit profile JSON parse failed: attempt={}/{}, finishReason={}, textLength={}, reason={}",
+                            attempt, MAX_PARSE_ATTEMPTS, finishReason, responseText.length(), e.getMessage());
+                }
+            }
+
+            if (profile == null) {
+                if (lastParseError != null) {
+                    throw lastParseError;
+                }
+                throw new IllegalStateException("Gemini returned an invalid fit profile.");
+            }
+
             enrichWithGroundingMetadata(profile, root);
             normalizeConfidence(profile);
 
@@ -113,6 +138,7 @@ public class GeminiCompanyFitProfileClient {
         payload.put("tools", List.of(Map.of("google_search", Map.of())));
         payload.put("generationConfig", Map.of(
                 "temperature", DEFAULT_TEMPERATURE,
+                "maxOutputTokens", MAX_OUTPUT_TOKENS,
                 "thinkingConfig", Map.of("thinkingBudget", DISABLED_THINKING_BUDGET)
         ));
         return payload;
@@ -127,6 +153,12 @@ public class GeminiCompanyFitProfileClient {
                 All natural-language values must be written in Korean.
                 Do not invent facts. If a conclusion is inferred, mark confidence as INFERRED or UNCERTAIN.
                 Use these confidence values only: CONFIRMED, INFERRED, UNCERTAIN.
+                Keep output compact enough to finish as valid JSON:
+                - summary: max 2 Korean sentences.
+                - businessAgenda, roleMission, hiringSignals, workStyle, strategyWarnings: max 3 items each.
+                - domainLexicon: max 6 items.
+                - evidence: max 8 items.
+                - Each detail/usage/summary: max 160 Korean characters.
 
                 Evidence rules:
                 - Prefer official recruiting pages, official company/service pages, official engineering blogs, recent news, and employee interviews.
