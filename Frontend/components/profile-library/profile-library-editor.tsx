@@ -1,7 +1,11 @@
 "use client";
 
 import { LoaderCircle, Trash2 } from "lucide-react";
-import type { ProfileCategory, ProfileEntry } from "@/lib/profile-library";
+import {
+  normalizeProfileDateLabel,
+  type ProfileCategory,
+  type ProfileEntry,
+} from "@/lib/profile-library";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -68,8 +72,10 @@ const editorMeta: Record<
   certification: {
     titleLabel: "자격증명",
     titlePlaceholder: "정보처리기사",
-    dateLabel: "취득 연월",
-    datePlaceholder: "2025.06",
+    dateLabel: "취득일",
+    datePlaceholder: "2026.03.27 또는 20260327",
+    organizationLabel: "발급기관",
+    organizationPlaceholder: "한국산업인력공단",
     referenceLabel: "등록번호",
     referencePlaceholder: "등록번호를 입력하세요",
     referenceDescription: "채용 사이트 입력칸에 그대로 붙여 넣을 값을 입력합니다.",
@@ -77,8 +83,8 @@ const editorMeta: Record<
   language: {
     titleLabel: "어학 종류",
     titlePlaceholder: "OPIc",
-    dateLabel: "취득 연월",
-    datePlaceholder: "2026.02",
+    dateLabel: "취득일",
+    datePlaceholder: "2026.03.27 또는 20260327",
     highlightLabel: "등급",
     highlightPlaceholder: "IH",
     referenceLabel: "등록번호",
@@ -88,8 +94,8 @@ const editorMeta: Record<
   award: {
     titleLabel: "수상명",
     titlePlaceholder: "광명융합기술교육원 우수상",
-    dateLabel: "수상 연월",
-    datePlaceholder: "2025.12",
+    dateLabel: "수상일",
+    datePlaceholder: "2026.03.27 또는 20260327",
     organizationLabel: "수여 기관",
     organizationPlaceholder: "한국폴리텍대학 광명융합기술교육원",
     summaryLabel: "상세 내용",
@@ -99,7 +105,7 @@ const editorMeta: Record<
     titleLabel: "교육명",
     titlePlaceholder: "삼성 청년 SW 아카데미 11기",
     dateLabel: "교육 기간",
-    datePlaceholder: "2024.01.02 - 2024.12.19",
+    datePlaceholder: "2024.01.02 - 2024.12.19 또는 20240102 - 20241219",
     organizationLabel: "교육 기관",
     organizationPlaceholder: "SSAFY",
     highlightLabel: "교육 시간",
@@ -207,6 +213,11 @@ export function ProfileLibraryEditor({
                 id="entry-date-label"
                 value={entry.dateLabel}
                 onChange={(event) => onChange({ dateLabel: event.target.value })}
+                onBlur={(event) =>
+                  onChange({
+                    dateLabel: normalizeProfileDateLabel(event.target.value),
+                  })
+                }
                 placeholder={meta.datePlaceholder}
                 className="h-11 rounded-2xl border-border/60 bg-muted/20"
               />

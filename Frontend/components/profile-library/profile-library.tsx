@@ -51,6 +51,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   createEmptyProfileEntry,
+  getProfileDateCopyValue,
+  getProfileDateParts,
+  normalizeProfileDateLabel,
+  normalizeProfileEntryForSave,
   profileCategoryOrder,
   type ProfileCategory,
   type ProfileEntry,
@@ -69,6 +73,7 @@ type FieldRow = {
   label: string;
   value: string;
   copyable: boolean;
+  copyValue?: string;
 };
 
 type MetaChip = {
@@ -82,7 +87,7 @@ type DraftMode = "create" | "edit";
 const categoryMeta: Record<ProfileCategory, CategoryMeta> = {
   certification: {
     label: "자격증",
-    description: "자격증명, 등록번호, 취득 연월",
+    description: "자격증명, 발급기관, 등록번호, 취득일",
     icon: BadgeCheck,
     toneClassName:
       "border-violet-200 bg-violet-50/80 text-violet-700",
@@ -91,7 +96,7 @@ const categoryMeta: Record<ProfileCategory, CategoryMeta> = {
   },
   language: {
     label: "어학",
-    description: "시험명, 등급, 등록번호, 취득 연월",
+    description: "시험명, 등급, 등록번호, 취득일",
     icon: Languages,
     toneClassName:
       "border-sky-200 bg-sky-50/80 text-sky-700",
@@ -100,7 +105,7 @@ const categoryMeta: Record<ProfileCategory, CategoryMeta> = {
   },
   award: {
     label: "수상",
-    description: "수상명, 수여 기관, 수상 연월, 상세 내용",
+    description: "수상명, 수여 기관, 수상일, 상세 내용",
     icon: Trophy,
     toneClassName:
       "border-amber-200 bg-amber-50/80 text-amber-700",
@@ -132,31 +137,72 @@ function getFieldRows(entry: ProfileEntry): FieldRow[] {
     case "certification":
       return [
         { label: "자격증명", value: entry.title, copyable: true },
+        { label: "발급기관", value: entry.organization, copyable: true },
         { label: "등록번호", value: entry.referenceId, copyable: true },
-        { label: "취득 연월", value: entry.dateLabel, copyable: false },
+        {
+          label: "취득일",
+          value: normalizeProfileDateLabel(entry.dateLabel),
+          copyable: true,
+          copyValue: getProfileDateCopyValue(entry.dateLabel),
+        },
       ];
     case "language":
       return [
         { label: "어학 종류", value: entry.title, copyable: true },
         { label: "등급", value: entry.highlight, copyable: true },
-        { label: "취득 연월", value: entry.dateLabel, copyable: false },
+        {
+          label: "취득일",
+          value: normalizeProfileDateLabel(entry.dateLabel),
+          copyable: true,
+          copyValue: getProfileDateCopyValue(entry.dateLabel),
+        },
         { label: "등록번호", value: entry.referenceId, copyable: true },
       ];
     case "award":
       return [
         { label: "수상명", value: entry.title, copyable: true },
         { label: "수여 기관", value: entry.organization, copyable: true },
-        { label: "수상 연월", value: entry.dateLabel, copyable: false },
+        {
+          label: "수상일",
+          value: normalizeProfileDateLabel(entry.dateLabel),
+          copyable: true,
+          copyValue: getProfileDateCopyValue(entry.dateLabel),
+        },
         { label: "상세 내용", value: entry.summary, copyable: true },
       ];
-    case "education":
+    case "education": {
+      const periodDates = getProfileDateParts(entry.dateLabel);
+
       return [
         { label: "교육명", value: entry.title, copyable: true },
         { label: "교육 기관", value: entry.organization, copyable: true },
-        { label: "교육 기간", value: entry.dateLabel, copyable: false },
+        ...(periodDates.length >= 2
+          ? [
+              {
+                label: "교육 시작일",
+                value: periodDates[0].value,
+                copyable: true,
+                copyValue: periodDates[0].copyValue,
+              },
+              {
+                label: "교육 종료일",
+                value: periodDates[1].value,
+                copyable: true,
+                copyValue: periodDates[1].copyValue,
+              },
+            ]
+          : [
+              {
+                label: "교육 기간",
+                value: normalizeProfileDateLabel(entry.dateLabel),
+                copyable: true,
+                copyValue: getProfileDateCopyValue(entry.dateLabel),
+              },
+            ]),
         { label: "교육 시간", value: entry.highlight, copyable: true },
         { label: "교육 내용", value: entry.summary, copyable: true },
       ];
+    }
     case "skill":
       return [
         { label: "기술 / 언어", value: entry.title, copyable: true },
@@ -178,16 +224,19 @@ function getEntryMetaChips(entry: ProfileEntry): MetaChip[] {
   switch (entry.category) {
     case "certification":
       return [
+        ...(entry.organization
+          ? [{ icon: Building2, value: entry.organization }]
+          : []),
         ...(entry.referenceId ? [{ icon: Hash, value: entry.referenceId }] : []),
         ...(entry.dateLabel
-          ? [{ icon: CalendarDays, value: entry.dateLabel, accent: true }]
+          ? [{ icon: CalendarDays, value: normalizeProfileDateLabel(entry.dateLabel), accent: true }]
           : []),
       ];
     case "language":
       return [
         ...(entry.highlight ? [{ icon: BadgeCheck, value: entry.highlight }] : []),
         ...(entry.dateLabel
-          ? [{ icon: CalendarDays, value: entry.dateLabel, accent: true }]
+          ? [{ icon: CalendarDays, value: normalizeProfileDateLabel(entry.dateLabel), accent: true }]
           : []),
         ...(entry.referenceId ? [{ icon: Hash, value: entry.referenceId }] : []),
       ];
@@ -197,7 +246,7 @@ function getEntryMetaChips(entry: ProfileEntry): MetaChip[] {
           ? [{ icon: Building2, value: entry.organization }]
           : []),
         ...(entry.dateLabel
-          ? [{ icon: CalendarDays, value: entry.dateLabel, accent: true }]
+          ? [{ icon: CalendarDays, value: normalizeProfileDateLabel(entry.dateLabel), accent: true }]
           : []),
       ];
     case "education":
@@ -206,7 +255,7 @@ function getEntryMetaChips(entry: ProfileEntry): MetaChip[] {
           ? [{ icon: Building2, value: entry.organization }]
           : []),
         ...(entry.dateLabel
-          ? [{ icon: CalendarDays, value: entry.dateLabel, accent: true }]
+          ? [{ icon: CalendarDays, value: normalizeProfileDateLabel(entry.dateLabel), accent: true }]
           : []),
         ...(entry.highlight ? [{ icon: Clock3, value: entry.highlight }] : []),
       ];
@@ -249,14 +298,16 @@ function getEmptyStateCopy(category: ProfileCategory) {
   }
 }
 
-async function copyField(value: string, label: string) {
-  if (!value.trim()) {
+async function copyField(field: FieldRow) {
+  const copyValue = (field.copyValue ?? field.value).trim();
+
+  if (!copyValue) {
     toast.error("복사할 값이 없습니다.");
     return;
   }
   try {
-    await navigator.clipboard.writeText(value);
-    toast.success(`${label} 복사 완료`, {
+    await navigator.clipboard.writeText(copyValue);
+    toast.success(`${field.label} 복사 완료`, {
       description: "바로 붙여넣을 수 있도록 클립보드에 저장했습니다.",
       position: "top-center",
     });
@@ -385,14 +436,15 @@ export function ProfileLibrary() {
 
   const handleSaveDraft = async () => {
     if (!draftEntry) return;
+    const normalizedDraftEntry = normalizeProfileEntryForSave(draftEntry);
     try {
       setIsSavingDraft(true);
       if (draftMode === "create") {
-        const createdEntry = await createProfileEntry(draftEntry);
+        const createdEntry = await createProfileEntry(normalizedDraftEntry);
         setEntries((current) => [createdEntry, ...current]);
         setSelectedEntryId(createdEntry.id);
       } else if (editingEntryId) {
-        const savedEntry = await updateProfileEntry(draftEntry);
+        const savedEntry = await updateProfileEntry(normalizedDraftEntry);
         setEntries((current) =>
           current.map((entry) => (entry.id === savedEntry.id ? savedEntry : entry)),
         );
@@ -708,7 +760,7 @@ export function ProfileLibrary() {
                           {selectedEntry.title || "제목 없는 항목"}
                         </h2>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          텍스트 필드는 클릭해서 복사하고, 날짜는 확인만 합니다.
+                          채용 플랫폼에 붙여넣을 값을 클릭해서 바로 복사합니다.
                         </p>
                       </div>
 
@@ -725,8 +777,8 @@ export function ProfileLibrary() {
                               <button
                                 key={`${selectedEntry.id}-${field.label}`}
                                 type="button"
-                                disabled={!field.value.trim()}
-                                onClick={() => void copyField(field.value, field.label)}
+                                disabled={!(field.copyValue ?? field.value).trim()}
+                                onClick={() => void copyField(field)}
                                 className="group w-full rounded-2xl border border-border/60 bg-muted/15 px-4 py-3 text-left transition-all hover:border-primary/35 hover:bg-primary/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 <div className="flex items-start justify-between gap-3">
@@ -737,6 +789,11 @@ export function ProfileLibrary() {
                                     <p className="mt-1 break-words text-sm font-semibold text-foreground">
                                       {field.value || "—"}
                                     </p>
+                                    {field.copyValue && field.copyValue !== field.value ? (
+                                      <p className="mt-1 font-mono text-xs text-muted-foreground">
+                                        복사값 {field.copyValue}
+                                      </p>
+                                    ) : null}
                                   </div>
                                   <Copy className="mt-0.5 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-disabled:opacity-0" />
                                 </div>
